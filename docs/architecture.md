@@ -1,5 +1,7 @@
 # Architecture
 
+**English** · [简体中文](architecture.zh-CN.md)
+
 ## Goals and non-goals
 
 Mailhearth wraps Purelymail's reliable, inexpensive mail infrastructure into

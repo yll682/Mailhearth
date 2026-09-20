@@ -357,13 +357,13 @@ func (s *Service) Sync(ctx context.Context, orgID, actor int64) (*ImportResult, 
 			switch {
 			case existingID == 0:
 				if _, err := tx.ExecContext(ctx, `INSERT INTO addresses(org_id, domain_id, local_part, address, kind, mailbox_id, targets_json, pm_rule_id, is_prefix, is_catchall, note, created_at, updated_at)
-					VALUES (?,?,?,?,?,?,?,?,?,?,'Imported from Purelymail',?,?)`, orgID, domID, local, full, kind, mailboxID, targets, r.ID, boolInt(r.Prefix), boolInt(r.Catchall), now, now); err != nil {
+					VALUES (?,?,?,?,?,?,?,?,?,?,'',?,?)`, orgID, domID, local, full, kind, mailboxID, targets, r.ID, boolInt(r.Prefix), boolInt(r.Catchall), now, now); err != nil {
 					return err
 				}
 				res.AddressesNew++
 			case existingKind == model.AddressPrimary:
 				// A rule on a mailbox's own address: forwarding overrides delivery.
-				if _, err := tx.ExecContext(ctx, `UPDATE addresses SET kind = 'forward', targets_json = ?, pm_rule_id = ?, note = 'Forwarding rule overrides mailbox delivery', updated_at = ? WHERE id = ?`, targets, r.ID, now, existingID); err != nil {
+				if _, err := tx.ExecContext(ctx, `UPDATE addresses SET kind = 'forward', targets_json = ?, pm_rule_id = ?, updated_at = ? WHERE id = ?`, targets, r.ID, now, existingID); err != nil {
 					return err
 				}
 				res.AddressesUpdated++
@@ -437,10 +437,14 @@ func (s *Service) CompleteSetup(ctx context.Context, orgID, actor int64, bindMai
 		return nil, err
 	}
 	if bindMailbox = strings.ToLower(strings.TrimSpace(bindMailbox)); bindMailbox != "" {
+		owner, err := s.Member(ctx, orgID, actor)
+		if err != nil {
+			return nil, err
+		}
 		mb, err := s.mailboxByAddress(ctx, s.DB, orgID, bindMailbox)
 		if err != nil {
 			res.Warnings = append(res.Warnings, "mailbox "+bindMailbox+" not found")
-		} else if _, err := s.BindMailbox(ctx, orgID, actor, mb.ID, actor, ""); err != nil {
+		} else if _, err := s.BindMailbox(ctx, orgID, actor, mb.ID, actor, owner.DisplayName); err != nil {
 			res.Warnings = append(res.Warnings, "could not connect "+bindMailbox+": "+err.Error())
 		}
 	}

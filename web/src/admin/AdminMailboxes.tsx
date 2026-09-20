@@ -30,7 +30,7 @@ export function MailboxesPage() {
                 <td><div>{m.displayName || m.address}</div><div class="muted small mono">{m.address}</div></td>
                 <td>{m.kind === "shared" ? <Badge tone="accent">{t("Shared")}</Badge> : <Badge>{t("Personal")}</Badge>}</td>
                 <td>{m.ownerName || (m.kind === "personal" ? <span class="warn-text">—</span> : "")}</td>
-                <td class="muted">{m.accessCount || ""}</td>
+                <td class="muted">{m.accessCount || "—"}</td>
                 <td>{m.hasCredential ? <Badge tone="good">{t("Connected")}</Badge> : <Badge tone="warn">{t("Not connected")}</Badge>}</td>
                 <td><StatusBadge status={m.status} /></td>
               </tr>

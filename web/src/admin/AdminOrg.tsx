@@ -21,7 +21,16 @@ export function OverviewPage() {
   if (error || !data) return <ErrorBox error={error} onRetry={reload} />;
   const o = data;
   const dnsBad = o.domains.filter((d) => d.dns && !(d.dns.mx && d.dns.spf && d.dns.dkim && d.dns.dmarc) && !d.isShared);
-  const attention = o.unconnected.length + o.unassigned.length + dnsBad.length + (o.connection.lastError ? 1 : 0);
+  // A freshly imported mailbox is usually both unconnected and unowned, so
+  // list each mailbox once and show everything it still needs.
+  const needy = new Map<number, { address: string; needs: string[] }>();
+  for (const m of o.unconnected) needy.set(m.id, { address: m.address, needs: [t("Not connected")] });
+  for (const m of o.unassigned) {
+    const e = needy.get(m.id) ?? { address: m.address, needs: [] };
+    e.needs.push(t("No owner"));
+    needy.set(m.id, e);
+  }
+  const attention = needy.size + dnsBad.length + (o.connection.lastError ? 1 : 0);
   return (
     <div class="page">
       <PageHead title={t("Overview")}>
@@ -46,7 +55,7 @@ export function OverviewPage() {
           <a class="stat" href="/admin/domains">
             <span class="stat-n">{o.domains.filter((d) => d.status === "active").length}</span>
             <span class="stat-l">{t("Domains")}</span>
-            <span class="stat-sub muted">{dnsBad.length ? <span class="warn-text">{dnsBad.length} DNS</span> : t("Passing")}</span>
+            <span class="stat-sub muted">{dnsBad.length ? <span class="warn-text">{t("{n} with DNS problems", { n: dnsBad.length })}</span> : t("Passing")}</span>
           </a>
           {can("billing.read") && o.connection.credit ? (
             <div class="stat">
@@ -63,25 +72,18 @@ export function OverviewPage() {
           </h3>
           {attention === 0 ? <p class="muted">{t("Everything looks good.")}</p> : null}
           {o.connection.lastError ? <div class="notice warn">{o.connection.lastError}</div> : null}
-          {o.unconnected.length ? (
+          {needy.size ? (
             <div class="attn">
-              <b>{t("Mailboxes not connected")}</b>
+              <b>{t("Mailboxes")}</b>
               <ul>
-                {o.unconnected.map((m) => (
-                  <li key={m.id}>
-                    <a href={`/admin/mailboxes/${m.id}`}>{m.address}</a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {o.unassigned.length ? (
-            <div class="attn">
-              <b>{t("Mailboxes without an owner")}</b>
-              <ul>
-                {o.unassigned.map((m) => (
-                  <li key={m.id}>
-                    <a href={`/admin/mailboxes/${m.id}`}>{m.address}</a>
+                {[...needy].map(([id, m]) => (
+                  <li key={id}>
+                    <a href={`/admin/mailboxes/${id}`}>{m.address}</a>{" "}
+                    {m.needs.map((n) => (
+                      <Badge key={n} tone="warn">
+                        {n}
+                      </Badge>
+                    ))}
                   </li>
                 ))}
               </ul>
@@ -119,14 +121,14 @@ export function OverviewPage() {
 const actionLabels: Record<string, string> = {
   "org.create": "created the organisation", "org.update": "renamed the organisation", "org.transfer": "transferred ownership", "connection.set": "connected Purelymail", "connection.sync": "synced with Purelymail",
   "member.create": "added a member", "member.update": "updated a member", "member.status": "changed member status", "member.invite": "created an invite", "member.password": "reset a password", "member.offboard": "offboarded a member", "member.delete": "deleted a member",
-  "mailbox.create": "created a mailbox", "mailbox.bind": "connected a mailbox", "mailbox.credential": "connected a mailbox", "mailbox.rotate": "rotated a mailbox credential", "mailbox.password": "reset a mailbox password", "mailbox.suspend": "suspended a mailbox", "mailbox.reactivate": "reactivated a mailbox", "mailbox.update": "updated a mailbox", "mailbox.delete": "deleted a mailbox", "mailbox.grant": "granted mailbox access", "mailbox.revoke": "revoked mailbox access", "mailbox.forward": "set mailbox forwarding", "mailbox.forward.clear": "cleared mailbox forwarding", "mailbox.handover": "handed over a mailbox", "mailbox.toshared": "converted a mailbox to shared",
+  "mailbox.create": "created a mailbox", "mailbox.bind": "assigned a mailbox", "mailbox.credential": "connected a mailbox", "mailbox.rotate": "rotated a mailbox credential", "mailbox.password": "reset a mailbox password", "mailbox.suspend": "suspended a mailbox", "mailbox.reactivate": "reactivated a mailbox", "mailbox.update": "updated a mailbox", "mailbox.delete": "deleted a mailbox", "mailbox.grant": "granted mailbox access", "mailbox.revoke": "revoked mailbox access", "mailbox.forward": "set mailbox forwarding", "mailbox.forward.clear": "cleared mailbox forwarding", "mailbox.handover": "handed over a mailbox", "mailbox.toshared": "converted a mailbox to shared",
   "address.create": "created an address", "address.update": "updated an address", "address.delete": "deleted an address", "group.create": "created a group", "group.update": "updated a group", "group.delete": "deleted a group", "group.address": "set a group address", "group.address.remove": "removed a group address",
   "domain.add": "added a domain", "domain.update": "updated a domain", "domain.delete": "removed a domain", "role.create": "created a role", "role.update": "updated a role", "role.delete": "deleted a role",
 };
 const zhActions: Record<string, string> = {
   "created the organisation": "创建了组织", "renamed the organisation": "重命名了组织", "transferred ownership": "转让了所有权", "connected Purelymail": "连接了 Purelymail", "synced with Purelymail": "同步了 Purelymail",
   "added a member": "添加了成员", "updated a member": "更新了成员", "changed member status": "更改了成员状态", "created an invite": "创建了邀请", "reset a password": "重置了密码", "offboarded a member": "为成员办理了离职", "deleted a member": "删除了成员",
-  "created a mailbox": "创建了邮箱", "connected a mailbox": "连接了邮箱", "rotated a mailbox credential": "轮换了邮箱凭据", "reset a mailbox password": "重置了邮箱密码", "suspended a mailbox": "挂起了邮箱", "reactivated a mailbox": "重新启用了邮箱", "updated a mailbox": "更新了邮箱", "deleted a mailbox": "删除了邮箱", "granted mailbox access": "授予了邮箱访问权限", "revoked mailbox access": "撤销了邮箱访问权限", "set mailbox forwarding": "设置了邮箱转发", "cleared mailbox forwarding": "取消了邮箱转发", "handed over a mailbox": "移交了邮箱", "converted a mailbox to shared": "将邮箱转为共享",
+  "created a mailbox": "创建了邮箱", "assigned a mailbox": "分配了邮箱", "connected a mailbox": "连接了邮箱", "rotated a mailbox credential": "轮换了邮箱凭据", "reset a mailbox password": "重置了邮箱密码", "suspended a mailbox": "挂起了邮箱", "reactivated a mailbox": "重新启用了邮箱", "updated a mailbox": "更新了邮箱", "deleted a mailbox": "删除了邮箱", "granted mailbox access": "授予了邮箱访问权限", "revoked mailbox access": "撤销了邮箱访问权限", "set mailbox forwarding": "设置了邮箱转发", "cleared mailbox forwarding": "取消了邮箱转发", "handed over a mailbox": "移交了邮箱", "converted a mailbox to shared": "将邮箱转为共享",
   "created an address": "创建了地址", "updated an address": "更新了地址", "deleted an address": "删除了地址", "created a group": "创建了群组", "updated a group": "更新了群组", "deleted a group": "删除了群组", "set a group address": "设置了群组地址", "removed a group address": "移除了群组地址",
   "added a domain": "添加了域名", "updated a domain": "更新了域名", "removed a domain": "移除了域名", "created a role": "创建了角色", "updated a role": "更新了角色", "deleted a role": "删除了角色",
 };

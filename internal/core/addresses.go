@@ -384,7 +384,7 @@ func (s *Service) SetMailboxForwarding(ctx context.Context, orgID, actor, mailbo
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.DB.ExecContext(ctx, `UPDATE addresses SET kind = 'forward', targets_json = ?, pm_rule_id = ?, note = 'Forwarding set on mailbox', updated_at = ? WHERE id = ?`, toJSON(clean), sqlNullInt(ruleID), db.Now(), a.ID); err != nil {
+	if _, err := s.DB.ExecContext(ctx, `UPDATE addresses SET kind = 'forward', targets_json = ?, pm_rule_id = ?, updated_at = ? WHERE id = ?`, toJSON(clean), sqlNullInt(ruleID), db.Now(), a.ID); err != nil {
 		return nil, err
 	}
 	s.audit(ctx, orgID, actor, "mailbox.forward", "mailbox", fmt.Sprint(mailboxID), map[string]any{"address": mb.Address, "targets": clean})

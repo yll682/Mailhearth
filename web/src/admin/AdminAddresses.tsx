@@ -15,7 +15,16 @@ export function AddressesPage() {
   const [q, setQ] = useState("");
   const manage = can("addresses.manage");
   const list = (data?.addresses ?? []).filter((a) => !q || `${a.address} ${a.targets.join(" ")} ${a.note}`.toLowerCase().includes(q.toLowerCase()));
-  const mbName = (id: number | null) => data?.mailboxes.find((m) => m.id === id)?.address ?? "";
+  const mailboxOf = (a: Address) => data?.mailboxes.find((m) => m.id === a.mailboxId || m.address === a.address);
+  const deliversTo = (a: Address) => {
+    const mb = mailboxOf(a);
+    if (a.kind === "primary") return <span class="muted">{mb?.displayName || "—"}</span>;
+    if (a.kind === "alias") return mb?.address || a.targets.join(", ");
+    return a.targets.join(", ");
+  };
+  // A forward sitting on a mailbox's own address diverts mail away from it,
+  // which is worth calling out next to the row.
+  const divertsMailbox = (a: Address) => a.kind === "forward" && data?.mailboxes.some((m) => m.address === a.address);
   return (
     <div class="page">
       <PageHead title={t("Addresses")}>
@@ -31,8 +40,10 @@ export function AddressesPage() {
               <tr key={a.id}>
                 <td class="mono">{a.address}</td>
                 <td><Badge tone={a.kind === "primary" ? "good" : a.kind === "catchall" || a.kind === "prefix" ? "warn" : a.kind === "group" ? "accent" : "neutral"}>{kindLabel(a.kind)}</Badge></td>
-                <td class="small">{a.kind === "primary" ? <span class="muted">{t("Mailbox")}</span> : a.kind === "alias" ? mbName(a.mailboxId) || a.targets.join(", ") : a.targets.join(", ")}</td>
-                <td class="muted small">{a.note}</td>
+                <td class="small">{deliversTo(a)}</td>
+                <td class="muted small">
+                  {divertsMailbox(a) ? <span class="warn-text">{t("New mail skips this mailbox while forwarding is on.")}</span> : a.note}
+                </td>
                 <td class="nowrap">
                   {manage && a.kind !== "primary" && a.kind !== "group" ? (
                     <>

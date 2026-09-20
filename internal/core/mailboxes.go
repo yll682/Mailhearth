@@ -191,8 +191,12 @@ func (s *Service) BindMailbox(ctx context.Context, orgID, actor, mailboxID, owne
 		}
 	}
 	if d := strings.TrimSpace(displayName); d != "" {
-		s.DB.ExecContext(ctx, `UPDATE mailboxes SET display_name = ? WHERE id = ? AND (display_name = '' OR display_name = ?)`, d, mailboxID, SplitLocal(mb.Address))
-		s.DB.ExecContext(ctx, `UPDATE identities SET display_name = ? WHERE mailbox_id = ? AND is_default = 1 AND display_name = ''`, d, mailboxID)
+		// Import names a mailbox and its identity after the local part. Once a
+		// person owns it, their name is what recipients should see, so replace
+		// that placeholder in both places.
+		local := SplitLocal(mb.Address)
+		s.DB.ExecContext(ctx, `UPDATE mailboxes SET display_name = ? WHERE id = ? AND (display_name = '' OR display_name = ?)`, d, mailboxID, local)
+		s.DB.ExecContext(ctx, `UPDATE identities SET display_name = ? WHERE mailbox_id = ? AND is_default = 1 AND (display_name = '' OR display_name = ?)`, d, mailboxID, local)
 	}
 	s.audit(ctx, orgID, actor, "mailbox.bind", "mailbox", fmt.Sprint(mailboxID), map[string]any{"address": mb.Address, "owner": ownerID})
 	return s.Mailbox(ctx, orgID, mailboxID)

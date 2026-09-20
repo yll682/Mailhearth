@@ -1,5 +1,7 @@
 # Security
 
+**English** · [简体中文](security.zh-CN.md)
+
 ## Threat model
 
 Mailhearth sits between staff browsers and Purelymail with an API token that

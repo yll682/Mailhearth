@@ -32,10 +32,11 @@ flowchart LR
 
 | 网页邮箱 | 管理控制台 |
 |---|---|
-| ![收件箱](docs/screenshots/05-mail-inbox.png) | ![概览](docs/screenshots/09-admin-overview.png) |
-| ![阅读邮件](docs/screenshots/06-mail-read.png) | ![添加成员](docs/screenshots/11-admin-add-member.png) |
+| ![收件箱](docs/screenshots/zh-CN/05-mail-inbox.png) | ![概览](docs/screenshots/zh-CN/09-admin-overview.png) |
+| ![阅读邮件](docs/screenshots/zh-CN/06-mail-read.png) | ![添加成员](docs/screenshots/zh-CN/11-admin-add-member.png) |
 
-<sub>截图由 `node scripts/screenshot.mjs` 生成，脚本驱动真实界面在开发栈上运行。</sub>
+<sub>截图由 `node scripts/screenshot.mjs <地址> <输出目录> zh-CN` 生成，脚本驱动
+真实界面在开发环境上运行。</sub>
 
 ## 你会得到什么
 
@@ -107,19 +108,17 @@ make dev        # 或：MAILHEARTH_DEV_STACK=1 go run ./cmd/mailhearth -seed-dem
 
 ## 文档
 
-文档目前只有英文版：
-
-- [架构](docs/architecture.md)：组件、数据模型，以及 Mailhearth 的概念如何映射
-  到 Purelymail。
-- [安全](docs/security.md)：威胁模型与已实施的防护措施。
-- [运维](docs/operations.md)：备份、升级、容量规划、故障排查。
+- [架构](docs/architecture.zh-CN.md)：组件、数据模型，以及 Mailhearth 的概念
+  如何映射到 Purelymail。
+- [安全](docs/security.zh-CN.md)：威胁模型与已实施的防护措施。
+- [运维](docs/operations.zh-CN.md)：备份、升级、容量规划、故障排查。
 
 ## 开发
 
 ```bash
 make test                       # go vet + go test + tsc
 cd web && npm run dev           # Vite 开发服务器，把 /api 代理到 :8080
-node scripts/screenshot.mjs     # 用无头 Chrome 驱动界面
+node scripts/screenshot.mjs http://127.0.0.1:8090 out zh-CN   # 驱动界面
 ```
 
 Go 1.27、Preact + Vite、SQLite（纯 Go 驱动，无 cgo）。全部打包进一个二进制。

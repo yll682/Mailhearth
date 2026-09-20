@@ -444,7 +444,6 @@ func (s *Service) VerifyLogin(ctx context.Context, email, password string) (*mod
 	if status != model.MemberActive {
 		return nil, fmt.Errorf("%w: account is %s", ErrForbidden, status)
 	}
-	s.DB.ExecContext(ctx, `UPDATE members SET last_login_at = ? WHERE id = ?`, db.Now(), id)
 	return s.MemberByID(ctx, id)
 }
 
@@ -469,6 +468,10 @@ func (s *Service) CreateSession(ctx context.Context, memberID int64, ip, ua stri
 	if err != nil {
 		return "", err
 	}
+	// Every route into the product issues a session here, so this is the one
+	// place that knows a member actually signed in. Setup and invite
+	// acceptance never call VerifyLogin.
+	s.DB.ExecContext(ctx, `UPDATE members SET last_login_at = ? WHERE id = ?`, db.Now(), memberID)
 	return token, nil
 }
 

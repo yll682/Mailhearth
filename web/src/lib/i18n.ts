@@ -113,7 +113,7 @@ const zh: Record<string, string> = {
   // Admin
   "Overview": "概览", "Members": "成员", "Addresses": "地址", "Groups": "群组", "Domains": "域名", "Roles": "角色", "Audit log": "审计日志",
   "Connection": "连接", "Organisation": "组织", "People": "人员", "active": "活跃", "invited": "已邀请", "disabled": "已停用", "departed": "已离职",
-  "Needs attention": "需要关注", "Mailboxes not connected": "未连接的邮箱", "Mailboxes without an owner": "无归属的邮箱", "Connect": "连接",
+  "Needs attention": "需要关注", "No owner": "无归属", "{n} with DNS problems": "{n} 个域名 DNS 未通过", "Connect": "连接",
   "Assign": "分配", "Recent activity": "最近操作", "Everything looks good.": "一切正常。", "Purelymail credit": "Purelymail 余额", "Last sync": "上次同步",
   "Sync now": "立即同步", "Syncing…": "同步中…", "Connections": "连接数", "open": "已打开", "idle": "空闲", "watchers": "监听",
   "Add member": "添加成员", "Onboard a new member": "添加新成员", "Title": "职位", "Department": "部门", "Role": "角色", "Login email": "登录邮箱",

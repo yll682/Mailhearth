@@ -36,11 +36,11 @@ any mailbox password.
 
 | Webmail | Admin console |
 |---|---|
-| ![Inbox](docs/screenshots/05-mail-inbox.png) | ![Overview](docs/screenshots/09-admin-overview.png) |
-| ![Reading a message](docs/screenshots/06-mail-read.png) | ![Onboarding a member](docs/screenshots/11-admin-add-member.png) |
+| ![Inbox](docs/screenshots/en/05-mail-inbox.png) | ![Overview](docs/screenshots/en/09-admin-overview.png) |
+| ![Reading a message](docs/screenshots/en/06-mail-read.png) | ![Onboarding a member](docs/screenshots/en/11-admin-add-member.png) |
 
-<sub>Screenshots are produced by `node scripts/screenshot.mjs`, which drives the
-real UI against the development stack.</sub>
+<sub>Produced by `node scripts/screenshot.mjs <url> <out-dir> en`, which drives
+the real UI against the development stack.</sub>
 
 ## What you get
 
@@ -130,7 +130,7 @@ The only ones you normally set are `MAILHEARTH_BASE_URL` and
 ```bash
 make test                       # go vet + go test + tsc
 cd web && npm run dev           # Vite dev server proxying /api to :8080
-node scripts/screenshot.mjs     # drive the UI with headless Chrome
+node scripts/screenshot.mjs http://127.0.0.1:8090 out en   # drive the UI
 ```
 
 Go 1.27, Preact + Vite, SQLite (pure Go driver, no cgo). Everything ships in

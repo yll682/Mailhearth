@@ -1,6 +1,6 @@
 // Drives a headless Chrome over the DevTools protocol to exercise the SPA
 // end-to-end and capture screenshots. Usage:
-//   node scripts/screenshot.mjs http://127.0.0.1:8090 out-dir
+//   node scripts/screenshot.mjs http://127.0.0.1:8090 out-dir [en|zh-CN]
 // Requires Chrome; uses Node's built-in WebSocket (Node >= 22).
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
@@ -8,6 +8,9 @@ import { join } from "node:path";
 
 const base = process.argv[2] ?? "http://127.0.0.1:8090";
 const out = process.argv[3] ?? "screenshots";
+// The app picks its language from localStorage, falling back to the browser
+// locale. Pinning it here keeps a run reproducible on any host.
+const uiLang = process.argv[4] ?? "";
 mkdirSync(out, { recursive: true });
 
 const chromePaths = [
@@ -93,6 +96,12 @@ const api = (method, path, body) =>
 try {
 // 1. Setup wizard as shown to a fresh install.
 await nav(base + "/");
+if (uiLang) {
+  // localStorage is per-origin, so this has to happen after the first load.
+  // The app reads the language once at start-up, hence the second load.
+  await evaluate(`localStorage.setItem("mh.lang", ${JSON.stringify(uiLang)})`);
+  await nav(base + "/");
+}
 await waitFor(".auth-card");
 await shot("01-setup-org");
 
