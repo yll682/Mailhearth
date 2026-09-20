@@ -72,13 +72,22 @@ func roleFromAttrs(attrs []imap.MailboxAttr) string {
 // special folders, then the rest alphabetically.
 func ListFolders(ctx context.Context, conn *imappool.Conn) ([]Folder, error) {
 	caps := conn.C.Caps()
-	opts := &imap.ListOptions{ReturnSubscribed: true}
-	listStatus := caps.Has(imap.CapListStatus) || caps.Has(imap.CapIMAP4rev2)
-	if listStatus {
-		opts.ReturnStatus = &imap.StatusOptions{NumMessages: true, NumUnseen: true}
-	}
-	if caps.Has("SPECIAL-USE") {
-		opts.ReturnSpecialUse = true
+	// Every RETURN clause of LIST belongs to LIST-EXTENDED (RFC 5258), folded
+	// into IMAP4rev2. A plain IMAP4rev1 server answers "BAD LIST failed" to
+	// any of them and drops the connection, so a server that does not
+	// advertise the extension gets a bare LIST and a STATUS per folder.
+	// Purelymail is such a server.
+	listExtended := caps.Has(imap.CapListExtended) || caps.Has(imap.CapIMAP4rev2)
+	listStatus := listExtended && (caps.Has(imap.CapListStatus) || caps.Has(imap.CapIMAP4rev2))
+	var opts *imap.ListOptions
+	if listExtended {
+		opts = &imap.ListOptions{ReturnSubscribed: true}
+		if listStatus {
+			opts.ReturnStatus = &imap.StatusOptions{NumMessages: true, NumUnseen: true}
+		}
+		if caps.Has(imap.CapSpecialUse) {
+			opts.ReturnSpecialUse = true
+		}
 	}
 	var (
 		list []*imap.ListData
@@ -142,12 +151,20 @@ func ListFolders(ctx context.Context, conn *imappool.Conn) ([]Folder, error) {
 			if folders[i].NoSelect || i >= limit {
 				continue
 			}
-			var st *imap.StatusData
+			var (
+				st   *imap.StatusData
+				serr error
+			)
 			conn.Run(ctx, func() {
-				st, err = conn.C.Status(folders[i].Name, &imap.StatusOptions{NumMessages: true, NumUnseen: true}).Wait()
+				st, serr = conn.C.Status(folders[i].Name, &imap.StatusOptions{NumMessages: true, NumUnseen: true}).Wait()
 			})
-			if err != nil {
-				return nil, err
+			if serr != nil {
+				// One folder refusing STATUS must not blank the whole sidebar;
+				// it shows without counts instead.
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				continue
 			}
 			if st.NumMessages != nil {
 				folders[i].Total = *st.NumMessages
