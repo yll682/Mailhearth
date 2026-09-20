@@ -3,7 +3,7 @@ import { route, go } from "@/lib/router";
 import { me, mailboxes, toast, errorToast, refreshMailboxes, logout, isAdmin } from "@/lib/state";
 import { t, lang, setLang } from "@/lib/i18n";
 import { get, post, put, type AccessibleMailbox, type Identity, type SieveRule, type Vacation, type Folder } from "@/lib/api";
-import { Button, Field, Icon, Tabs, Toggle, Avatar, Spinner, Modal } from "@/ui";
+import { Button, Field, Icon, Tabs, Toggle, Avatar, Spinner, Modal, Info } from "@/ui";
 
 export function SettingsPage() {
   const tab = route.value.segments[1] ?? "account";
@@ -149,7 +149,6 @@ function IdentitiesTab() {
   return (
     <div class="stack">
       <MailboxSelect value={mbId} onChange={setMbId} />
-      <p class="muted">{t("Choose which address you send from and the signature that goes with it.")}</p>
       <div class="card-list">
         {mb.identities.map((i) => (
           <div key={i.id} class="card row gap">
@@ -266,7 +265,9 @@ function RulesTab() {
     <div class="stack">
       <MailboxSelect value={mbId} onChange={setMbId} />
       {!available ? <div class="notice warn">{t("Rule management is not available for this server.")}</div> : null}
-      <p class="muted">{t("Rules are stored on the mail server (Sieve) and run before mail reaches your inbox.")} {t("Saving these rules replaces any filters configured in other mail clients for this mailbox.")}</p>
+      <p class="muted">
+        {t("Rules run on the mail server, before mail reaches your inbox.")} <Info text={t("Stored as Sieve. Saving replaces any filters this mailbox has in other mail clients.")} />
+      </p>
 
       <section class="card">
         <h3>{t("Auto-reply")}</h3>
@@ -279,7 +280,7 @@ function RulesTab() {
             <Field label={t("Auto-reply message")}>
               <textarea rows={4} value={vacation.body} onInput={(e) => setVacation({ ...vacation, body: (e.target as HTMLTextAreaElement).value })} />
             </Field>
-            <Field label={t("Reply at most once every {n} days to the same sender", { n: vacation.days })}>
+            <Field label={t("Repeat interval")} info={t("Reply at most once every N days to the same sender.")}>
               <input type="number" min={1} max={30} value={vacation.days} onInput={(e) => setVacation({ ...vacation, days: Number((e.target as HTMLInputElement).value) })} />
             </Field>
           </>

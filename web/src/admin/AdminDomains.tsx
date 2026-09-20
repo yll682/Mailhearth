@@ -70,7 +70,7 @@ export function DomainsPage() {
       </div>
       {adding ? <AddDomainModal onClose={() => setAdding(false)} onDone={reload} /> : null}
       {guideFor ? <DnsGuideModal domain={guideFor} onClose={() => setGuideFor(null)} /> : null}
-      {removing ? <Confirm title={t("Remove domain")} text={t("Removing a domain deletes every mailbox and rule on it from Purelymail. Type the domain name to confirm.")} danger requireText={removing.name} confirmLabel={t("Remove domain")} onClose={() => setRemoving(null)} onConfirm={async () => { await del(`/api/admin/domains/${removing.id}`, { confirm: removing.name }); reload(); }} /> : null}
+      {removing ? <Confirm title={t("Remove domain")} text={t("Deletes every mailbox and rule on this domain.")} danger requireText={removing.name} confirmLabel={t("Remove domain")} onClose={() => setRemoving(null)} onConfirm={async () => { await del(`/api/admin/domains/${removing.id}`, { confirm: removing.name }); reload(); }} /> : null}
     </div>
   );
 }

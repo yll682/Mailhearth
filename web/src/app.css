@@ -95,26 +95,19 @@ select { appearance: none; padding-right: 28px; background-image: url("data:imag
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
 .field-inline { flex-direction: row; align-items: center; gap: 10px; }
 .field-inline select, .field-inline input { width: auto; }
-.field-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
-.field-hint { font-size: 12px; color: var(--text-3); }
-.field-error, .form-error { font-size: 12.5px; color: var(--bad); }
-.form-error { background: var(--bad-soft); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 12px; }
-.fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px 6px; margin: 0 0 12px; }
-.fieldset legend { font-size: 12.5px; font-weight: 600; color: var(--text-2); padding: 0 6px; }
-.radio-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
-.radio-row label { display: flex; align-items: center; cursor: pointer; }
-.check-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; cursor: pointer; }
-.check-list { display: flex; flex-direction: column; }
-.addr-row { margin-bottom: 12px; }
-.addr-row input { flex: 1; }
-.addr-row select { width: auto; flex: 1; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-.toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin: 4px 0; }
-.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-.toggle-track { width: 34px; height: 20px; border-radius: 20px; background: var(--line-2); position: relative; transition: background 0.15s; flex: none; }
-.toggle-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
-.toggle input:checked + .toggle-track { background: var(--accent); }
-.toggle input:checked + .toggle-track::after { transform: translateX(14px); }
+.field-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); display: inline-flex; align-items: center; gap: 4px; }
+
+/* ⓘ popover: keeps long explanations out of the layout. Positioned fixed and
+   measured in JS so modals and scroll panes cannot clip it. */
+.info { position: relative; display: inline-flex; }
+.info-btn { background: none; border: none; padding: 0; margin: 0; color: var(--text-3); cursor: help; display: inline-flex; border-radius: 50%; }
+.info-btn:hover { color: var(--accent); }
+.info-pop { position: fixed; z-index: 70; transform: translate(-50%, -100%);
+  background: var(--text); color: var(--bg); font-size: 12.5px; font-weight: 400; line-height: 1.45; text-align: left;
+  padding: 7px 10px; border-radius: var(--radius-sm); box-shadow: var(--shadow); white-space: normal; pointer-events: none;
+  animation: info-in 0.1s ease-out; }
+.info-pop.below { transform: translate(-50%, 0); }
+@keyframes info-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* Buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 500; border-radius: var(--radius-sm); border: 1px solid transparent; padding: 7px 13px; cursor: pointer; white-space: nowrap; line-height: 1.2; transition: background 0.12s, border-color 0.12s, transform 0.05s; color: var(--text); background: var(--panel); }

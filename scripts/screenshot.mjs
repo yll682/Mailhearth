@@ -139,6 +139,18 @@ await evaluate(`(() => { const el = document.querySelector(".search input"); con
 await sleep(1500);
 await shot("08-mail-search");
 
+// The ⓘ popover must escape modal and scroll-pane clipping, so check it in
+// both a plain pane and inside a modal.
+await evaluate(`(() => { const el = document.querySelector(".search input"); const proto = Object.getPrototypeOf(el); Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ""); el.dispatchEvent(new Event("input", {bubbles: true})); })()`);
+await sleep(900);
+await evaluate(`document.querySelector(".search .info-btn").click()`);
+await sleep(350);
+const popped = await evaluate(`(() => { const e = document.querySelector(".info-pop"); if (!e) return "missing";
+  const r = e.getBoundingClientRect(); return JSON.stringify({ w: Math.round(r.width), onScreen: r.left >= 0 && r.right <= innerWidth && r.top >= 0 }); })()`);
+console.log("info popover:", popped);
+await shot("08b-info-popover");
+await evaluate(`document.querySelector(".search .info-btn").click()`);
+
 // 3. Admin console.
 await nav(base + "/admin");
 await waitFor(".stat-grid", 10000);

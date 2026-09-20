@@ -3,7 +3,7 @@ import { t, kindLabel } from "@/lib/i18n";
 import { get, post, patch, del, type Mailbox, type Domain, type MailboxAccess, type Identity, type Address, type DirectoryEntry } from "@/lib/api";
 import { toast, errorToast, can, refreshMailboxes } from "@/lib/state";
 import { fmtDate, copyText } from "@/lib/format";
-import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, StatusBadge, Badge, Confirm, Menu, Tabs } from "@/ui";
+import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, StatusBadge, Badge, Confirm, Menu, Tabs, Info } from "@/ui";
 import { PageHead } from "./AdminOrg";
 import { IdentityEditor } from "@/settings/Settings";
 import { go } from "@/lib/router";
@@ -128,10 +128,9 @@ export function MailboxDetail({ id }: { id: number }) {
             <dl class="kv">
               <dt>{t("Mailbox")}</dt><dd class="mono">{mb.address}</dd>
               <dt>{t("Owner")}</dt><dd>{mb.ownerMemberId ? <a href={`/admin/members/${mb.ownerMemberId}`}>{mb.ownerName}</a> : <span class="muted">—</span>}</dd>
-              <dt>{t("Credential")}</dt><dd>{mb.hasCredential ? <>{t("Connected")} <span class="muted small">{mb.credentialAt ? fmtDate(mb.credentialAt, "full") : ""}</span></> : <span class="warn-text">{t("Not connected")}</span>}</dd>
+              <dt>{t("Credential")} <Info text={t("Mailhearth opens this mailbox with its own app password. Rotate it if you suspect it leaked.")} /></dt><dd>{mb.hasCredential ? <>{t("Connected")} <span class="muted small">{mb.credentialAt ? fmtDate(mb.credentialAt, "full") : ""}</span></> : <span class="warn-text">{t("Not connected")}</span>}</dd>
               <dt>{t("Forwarding")}</dt><dd>{forwarding.length ? forwarding.join(", ") : <span class="muted">—</span>}</dd>
             </dl>
-            <p class="muted small">{t("Mailhearth opens this mailbox with its own app password. Rotate it if you suspect it leaked.")}</p>
           </section>
 
           <section class="card">
@@ -190,7 +189,7 @@ export function MailboxDetail({ id }: { id: number }) {
           {manage ? (
             <section class="card">
               <h3>{t("Forwarding")}</h3>
-              <p class="muted small">{t("While forwarding is on, new mail skips this mailbox.")}</p>
+              <p class="muted small">{t("New mail skips this mailbox while forwarding is on.")}</p>
               <Field label={t("Forward incoming mail to")} hint={t("Comma-separated addresses")}>
                 <input value={fwd} placeholder={forwarding.join(", ")} onInput={(e) => setFwd((e.target as HTMLInputElement).value)} />
               </Field>
@@ -207,7 +206,7 @@ export function MailboxDetail({ id }: { id: number }) {
       {editIdentity ? <IdentityEditor mailbox={mb} identity={editIdentity} admin onClose={() => { setEditIdentity(null); reload(); }} /> : null}
       {pw ? (
         <Modal title={t("Password for external clients")} onClose={() => setPw(null)} footer={<Button kind="primary" onClick={() => setPw(null)}>{t("Done")}</Button>}>
-          <p class="muted">{t("This sets a new Purelymail password for use in other mail apps. It is shown once.")}</p>
+          <p class="muted">{t("For use in other mail apps. Shown once.")}</p>
           <dl class="kv">
             <dt>{t("Username")}</dt><dd class="mono">{pw.username}</dd>
             <dt>{t("Password")}</dt><dd class="mono row gap">{pw.password} <button class="btn btn-icon" onClick={() => { copyText(pw.password); toast(t("Copied"), "success"); }}><Icon name="copy" size={14} /></button></dd>
@@ -217,8 +216,8 @@ export function MailboxDetail({ id }: { id: number }) {
         </Modal>
       ) : null}
       {confirm === "rotate" ? <Confirm title={t("Rotate credential")} text={mb.address} onClose={() => setConfirm(null)} onConfirm={() => act(() => post(`${base}/rotate`))} /> : null}
-      {confirm === "suspend" ? <Confirm title={t("Suspend mailbox")} text={t("Suspending locks everyone out. Mail keeps arriving and is kept.")} danger onClose={() => setConfirm(null)} onConfirm={() => act(() => post(`${base}/suspend`))} /> : null}
-      {confirm === "delete" ? <Confirm title={t("Delete mailbox")} text={t("Deleting removes the mailbox and all its mail from Purelymail. This cannot be undone.")} danger requireText={mb.address} confirmLabel={t("Delete")} onClose={() => setConfirm(null)} onConfirm={async () => { await del(base, { confirm: mb.address }); refreshMailboxes(); go("/admin/mailboxes"); }} /> : null}
+      {confirm === "suspend" ? <Confirm title={t("Suspend mailbox")} text={t("Everyone loses access. Mail keeps arriving and is kept.")} danger onClose={() => setConfirm(null)} onConfirm={() => act(() => post(`${base}/suspend`))} /> : null}
+      {confirm === "delete" ? <Confirm title={t("Delete mailbox")} text={t("Deletes the mailbox and all its mail. This cannot be undone.")} danger requireText={mb.address} confirmLabel={t("Delete")} onClose={() => setConfirm(null)} onConfirm={async () => { await del(base, { confirm: mb.address }); refreshMailboxes(); go("/admin/mailboxes"); }} /> : null}
     </div>
   );
 }

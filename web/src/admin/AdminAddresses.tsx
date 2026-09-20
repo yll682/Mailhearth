@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { t, kindLabel } from "@/lib/i18n";
 import { get, post, patch, del, type Address, type Domain, type Mailbox, type Group, type DirectoryEntry } from "@/lib/api";
 import { toast, errorToast, can } from "@/lib/state";
-import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, Badge, Confirm } from "@/ui";
+import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, Badge, Confirm, Info } from "@/ui";
 import { PageHead } from "./AdminOrg";
 
 export function AddressesPage() {
@@ -52,6 +52,14 @@ export function AddressesPage() {
   );
 }
 
+// One line of explanation per address kind, shown in the ⓘ next to the picker.
+const kindHelp: Record<string, string> = {
+  alias: "Another address for one mailbox.",
+  forward: "Sends mail on to one or more addresses, inside or outside the organisation.",
+  catchall: "Receives anything at this domain that has no mailbox of its own.",
+  prefix: "Receives every address starting with this prefix.",
+};
+
 function AddressEditor({ address, domains, mailboxes, onClose, onSaved }: { address: Address | null; domains: Domain[]; mailboxes: Mailbox[]; onClose: () => void; onSaved: () => void }) {
   const [kind, setKind] = useState(address?.kind ?? "alias");
   const [domainId, setDomainId] = useState(address?.domainId ?? domains[0]?.id ?? 0);
@@ -64,12 +72,12 @@ function AddressEditor({ address, domains, mailboxes, onClose, onSaved }: { addr
   return (
     <Modal title={address ? t("Edit") : t("Add address")} onClose={onClose} footer={<><Button onClick={onClose}>{t("Cancel")}</Button><Button kind="primary" busy={busy} onClick={async () => { setBusy(true); try { const body = { domainId, localPart: local, kind, mailboxId, targets: targets.split(/[,\s;]+/).filter(Boolean), note }; if (address) await patch(`/api/admin/addresses/${address.id}`, body); else await post("/api/admin/addresses", body); toast(address ? t("Address updated.") : t("Address created."), "success"); onSaved(); onClose(); } catch (e) { errorToast(e); } finally { setBusy(false); } }}>{t("Save")}</Button></>}>
       {!address ? (
-        <Field label={t("Kind")}>
+        <Field label={t("Kind")} info={t(kindHelp[kind] ?? "")}>
           <select value={kind} onChange={(e) => setKind((e.target as HTMLSelectElement).value as Address["kind"])}>
-            <option value="alias">{t("Alias")} — {t("Delivers to mailbox")}</option>
-            <option value="forward">{t("Forward")} — {t("Targets")}</option>
-            <option value="catchall">{t("Catch-all")} — {t("Any address at this domain that has no mailbox")}</option>
-            <option value="prefix">{t("Prefix")} — {t("Everything starting with this prefix")}</option>
+            <option value="alias">{t("Alias")}</option>
+            <option value="forward">{t("Forward")}</option>
+            <option value="catchall">{t("Catch-all")}</option>
+            <option value="prefix">{t("Prefix")}</option>
           </select>
         </Field>
       ) : null}
@@ -163,7 +171,7 @@ function GroupEditor({ group, dir, domains, onClose, onSaved }: { group: Group |
       </div>
       <fieldset class="fieldset">
         <legend>{t("Distribution address")}</legend>
-        <p class="muted small">{t("Mail sent to this address reaches every member.")}</p>
+        <p class="muted small">{t("Mail to this address reaches every member.")}</p>
         <label class="check-row"><input type="checkbox" checked={hasAddr} onChange={(e) => setHasAddr((e.target as HTMLInputElement).checked)} /> {t("Distribution address")}</label>
         {hasAddr ? (
           <div class="row gap addr-row">

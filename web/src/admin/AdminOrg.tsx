@@ -3,7 +3,7 @@ import { t } from "@/lib/i18n";
 import { get, post, put, patch, del, type Overview, type Connection, type Discovery, type ImportResult, type AuditEntry, type Role, type Member } from "@/lib/api";
 import { toast, errorToast, can, me, loadMe } from "@/lib/state";
 import { fmtDate } from "@/lib/format";
-import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, Badge, Confirm, Avatar } from "@/ui";
+import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, Badge, Confirm, Avatar, Info } from "@/ui";
 
 export function PageHead({ title, children }: { title: string; children?: preact.ComponentChildren }) {
   return (
@@ -255,7 +255,9 @@ export function ConnectionPage() {
             <dd>{data.lastSyncAt ? fmtDate(data.lastSyncAt, "full") : t("Never")}</dd>
           </dl>
           {data.lastError ? <div class="notice warn">{data.lastError}</div> : null}
-          <p class="muted">{t("Sync imports domains, mailboxes and routing rules that were changed outside Mailhearth.")}</p>
+          <p class="muted">
+            {t("Imports changes made outside Mailhearth.")} <Info text={t("Re-reads domains, mailboxes and routing rules from Purelymail and updates the organisation model.")} />
+          </p>
           <Button
             icon="refresh"
             busy={syncing}

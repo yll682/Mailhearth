@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { t } from "@/lib/i18n";
 import { post, type SetupStatus, type Discovery, type ImportResult } from "@/lib/api";
-import { Button, Field, Icon } from "@/ui";
+import { Button, Field, Icon, Info } from "@/ui";
 import { LangSwitch } from "./Login";
 import { go } from "@/lib/router";
 import { me } from "@/lib/state";
@@ -74,7 +74,7 @@ export function Setup({ status, onDone }: { status: SetupStatus; onDone: () => P
             <Field label={t("Administrator name")}>
               <input required value={org.adminName} onInput={(e) => { const v = (e.target as HTMLInputElement).value; setOrg((o) => ({ ...o, adminName: v })); }} />
             </Field>
-            <Field label={t("Administrator email")} hint={t("This is your sign-in address; it can be an address on your domain.")}>
+            <Field label={t("Administrator email")} info={t("Your sign-in address. It can be an address on your own domain.")}>
               <input type="email" required value={org.adminEmail} onInput={(e) => { const v = (e.target as HTMLInputElement).value; setOrg((o) => ({ ...o, adminEmail: v })); }} />
             </Field>
             <Field label={t("Password")} hint={t("At least 10 characters.")}>
@@ -98,7 +98,7 @@ export function Setup({ status, onDone }: { status: SetupStatus; onDone: () => P
               });
             }}
           >
-            <Field label={t("Purelymail API token")} hint={t("Create an API token in the Purelymail account portal (Account → API). It is stored encrypted on this server and never sent to browsers.")}>
+            <Field label={t("Purelymail API token")} info={t("Create it in the Purelymail portal under Account → API. Stored encrypted on this server and never sent to browsers.")}>
               <input required value={token} onInput={(e) => setToken((e.target as HTMLInputElement).value)} autoFocus placeholder={status.devStack ? "dev-token" : ""} />
             </Field>
             {error ? <div class="form-error">{error}</div> : null}
@@ -134,8 +134,10 @@ export function Setup({ status, onDone }: { status: SetupStatus; onDone: () => P
                     </span>
                   ))}
                 </div>
-                <p class="muted">{t("Importing builds the organisation model from what already exists. Nothing on Purelymail is changed.")}</p>
-                <Field label={t("Connect my own mailbox")} hint={t("Choose the mailbox you use so you can read mail right away.")}>
+                <p class="muted">
+                  {t("Nothing on Purelymail is changed.")} <Info text={t("Importing reads your domains, mailboxes and routing rules, and builds the organisation model from them.")} />
+                </p>
+                <Field label={t("Connect my own mailbox")} info={t("Pick the mailbox you use yourself, so you can read mail as soon as setup finishes.")}>
                   <select value={bind} onChange={(e) => setBind((e.target as HTMLSelectElement).value)}>
                     <option value="">{t("None for now")}</option>
                     {disc.users.map((u) => (

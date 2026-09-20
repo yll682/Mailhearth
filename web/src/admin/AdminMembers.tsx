@@ -354,7 +354,7 @@ function OffboardModal({ member, mailboxes, onClose, onDone }: { member: Member;
   const upd = (i: number, p: Partial<Plan>) => setPlans(plans.map((x, j) => (j === i ? { ...x, ...p } : x)));
   return (
     <Modal title={t("Offboard {name}", { name: member.displayName })} wide onClose={onClose} footer={<><Button onClick={onClose}>{t("Cancel")}</Button><Button kind="danger" busy={busy} onClick={async () => { setBusy(true); try { const r = await post<{ warnings: string[] }>(`/api/admin/members/${member.id}/offboard`, { plans: plans.map((p) => ({ ...p, forwardTo: p.forwardTo.split(/[,\s;]+/).filter(Boolean) })), removeFromGroups: removeGroups, revokeShared }); toast(t("Offboarding complete."), "success"); r.warnings?.forEach((w) => toast(w, "error", undefined, 9000)); refreshMailboxes(); onDone(); onClose(); } catch (e) { errorToast(e); } finally { setBusy(false); } }}>{t("Complete offboarding")}</Button></>}>
-      <p class="muted">{t("Decide what happens to each mailbox. Access for {name} ends immediately and all credentials are rotated.", { name: member.displayName })}</p>
+      <p class="muted">{t("Access ends immediately and every credential is rotated.")}</p>
       {mailboxes.length === 0 ? <p class="muted">{t("No mailboxes")}</p> : null}
       {mailboxes.map((b, i) => {
         const p = plans[i];

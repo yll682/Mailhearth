@@ -85,11 +85,93 @@ export function Spinner({ size = 18 }: { size?: number }) {
   return <span class="spinner" style={{ width: size, height: size }} aria-label={t("Loading…")} />;
 }
 
+// Info is an ⓘ affordance: the short label stays visible, the long
+// explanation lives in a popover so copy never overflows its container.
+//
+// The popover is positioned fixed and measured on open, because modals and
+// scrollable panes would otherwise clip an absolutely-positioned child.
+export function Info({ text }: { text: string }) {
+  const [box, setBox] = useState<{ top: number; left: number; below: boolean } | null>(null);
+  const [pinned, setPinned] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  const place = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    // The popover shrinks to its content, so centre it with translateX(-50%)
+    // rather than guessing a width here. Clamp against the widest it can get
+    // so it stays on screen near the viewport edges.
+    const half = Math.min(260, window.innerWidth - 24) / 2;
+    const below = r.top < 130; // not enough room above: flip under the icon
+    setBox({
+      top: below ? r.bottom + 6 : r.top - 6,
+      left: Math.min(Math.max(r.left + r.width / 2, half + 12), window.innerWidth - half - 12),
+      below,
+    });
+  };
+  const hide = () => {
+    if (!pinned) setBox(null);
+  };
+
+  useEffect(() => {
+    if (!pinned) return;
+    const close = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) {
+        setPinned(false);
+        setBox(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [pinned]);
+
+  return (
+    <span class="info" ref={ref} onMouseEnter={place} onMouseLeave={hide}>
+      <button
+        type="button"
+        class="info-btn"
+        aria-label={text}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (pinned) {
+            setPinned(false);
+            setBox(null);
+          } else {
+            place();
+            setPinned(true);
+          }
+        }}
+      >
+        <Icon name="info" size={14} />
+      </button>
+      {box ? (
+        <span
+          class={"info-pop" + (box.below ? " below" : "")}
+          role="tooltip"
+          style={{ top: box.top, left: box.left, maxWidth: Math.min(260, window.innerWidth - 24) }}
+        >
+          {text}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 // --- Forms ---
-export function Field({ label, hint, error, children, inline }: { label?: string; hint?: string; error?: string; children: ComponentChildren; inline?: boolean }) {
+export function Field({ label, hint, info, error, children, inline }: { label?: string; hint?: string; info?: string; error?: string; children: ComponentChildren; inline?: boolean }) {
   return (
     <label class={"field" + (inline ? " field-inline" : "")}>
-      {label ? <span class="field-label">{label}</span> : null}
+      {label ? (
+        <span class="field-label">
+          {label}
+          {info ? <Info text={info} /> : null}
+        </span>
+      ) : null}
       {children}
       {error ? <span class="field-error">{error}</span> : hint ? <span class="field-hint">{hint}</span> : null}
     </label>

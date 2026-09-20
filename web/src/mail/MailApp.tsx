@@ -4,7 +4,7 @@ import { route, go, mailPath } from "@/lib/router";
 import { me, mailboxes, toast, errorToast, logout, isAdmin, refreshMailboxes } from "@/lib/state";
 import { t, folderLabel } from "@/lib/i18n";
 import { get, post, del, patch, type Folder, type Page, type Summary, type AccessibleMailbox, type TeamState } from "@/lib/api";
-import { Button, Icon, Avatar, Empty, Spinner, Modal, Field, Confirm, Menu, ErrorBox } from "@/ui";
+import { Button, Icon, Avatar, Empty, Spinner, Modal, Field, Confirm, Menu, ErrorBox, Info } from "@/ui";
 import { MessageList } from "./MessageList";
 import { MessageView } from "./MessageView";
 import { Composer, type ComposeInit } from "./Composer";
@@ -271,7 +271,7 @@ export function MailApp() {
           <div class="search">
             <Icon name="search" size={16} />
             <input
-              placeholder={t("Search mail… try from:, subject:, is:unread, has:attachment")}
+              placeholder={t("Search mail")}
               value={query}
               onInput={(e) => {
                 const v = (e.target as HTMLInputElement).value;
@@ -285,7 +285,9 @@ export function MailApp() {
               <button class="btn btn-icon" onClick={() => setQuery("")} aria-label={t("Clear")}>
                 <Icon name="x" size={14} />
               </button>
-            ) : null}
+            ) : (
+              <Info text={t("from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M")} />
+            )}
           </div>
           <button class="btn btn-icon" onClick={() => loadList(0, false)} aria-label={t("Refresh")}>
             <Icon name="refresh" size={16} />
