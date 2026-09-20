@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all web build run dev test lint docker clean
+.PHONY: all web build run dev test test-integration lint docker clean
 
 all: build
 
@@ -18,6 +18,12 @@ dev:
 test:
 	go vet ./... && go test ./...
 	cd web && npm run typecheck
+
+# Verify a release against a real Purelymail account. Skips unless
+# MAILHEARTH_IT_TOKEN and MAILHEARTH_IT_DOMAIN are set; it creates and deletes
+# real mailboxes on that domain. See docs/integration-testing.md.
+test-integration:
+	go test -count=1 -timeout 60m -v ./internal/integration/...
 
 docker:
 	docker build --build-arg VERSION=$(VERSION) -t mailhearth:$(VERSION) .

@@ -112,11 +112,14 @@ make dev        # 或：MAILHEARTH_DEV_STACK=1 go run ./cmd/mailhearth -seed-dem
   如何映射到 Purelymail。
 - [安全](docs/security.zh-CN.md)：威胁模型与已实施的防护措施。
 - [运维](docs/operations.zh-CN.md)：备份、升级、容量规划、故障排查。
+- [集成测试](docs/integration-testing.zh-CN.md)：如何对真实 Purelymail 账户
+  跑验证套件。
 
 ## 开发
 
 ```bash
 make test                       # go vet + go test + tsc
+make test-integration           # 对真实 Purelymail 账户跑验证套件
 cd web && npm run dev           # Vite 开发服务器，把 /api 代理到 :8080
 node scripts/screenshot.mjs http://127.0.0.1:8090 out zh-CN   # 驱动界面
 ```

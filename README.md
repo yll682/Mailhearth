@@ -124,11 +124,14 @@ The only ones you normally set are `MAILHEARTH_BASE_URL` and
   maps its concepts onto Purelymail.
 - [Security](docs/security.md): threat model and the controls in place.
 - [Operations](docs/operations.md): backups, upgrades, sizing, troubleshooting.
+- [Integration testing](docs/integration-testing.md): verifying a release
+  against a real Purelymail account.
 
 ## Development
 
 ```bash
 make test                       # go vet + go test + tsc
+make test-integration           # against a real Purelymail account, see docs
 cd web && npm run dev           # Vite dev server proxying /api to :8080
 node scripts/screenshot.mjs http://127.0.0.1:8090 out en   # drive the UI
 ```
