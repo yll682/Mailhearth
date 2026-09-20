@@ -24,25 +24,23 @@ Constraints that shaped the design:
 
 ## Components
 
-```
-cmd/mailhearth            main: config, master key, DB, pool, HTTP server
-internal/config           environment configuration
-internal/db               SQLite (modernc, no cgo), embedded migrations
-internal/secrets          AES-256-GCM box (HKDF from master key), argon2id, tokens
-internal/purelymail       typed API client; fake/ is an in-memory Purelymail
-internal/model            organisation model types shared by core and API
-internal/core             services: setup/import, members, roles, domains,
-                          mailboxes, addresses, groups, offboarding, team state
-internal/mailproto/
-  imappool                bounded IMAP connection pool + IDLE watchers
-  mailops                 folders, listing, rendering, actions, compose, SMTP
-  mimeutil                HTML sanitiser, text/HTML conversion, decoding
-  sieve                   rule model → Sieve compiler; ManageSieve client
-internal/httpapi          JSON API, sessions, CSRF, uploads, SSE, sandboxed view
-internal/web              embedded SPA with gzip and immutable caching
-internal/devstack         fake Purelymail + IMAP + SMTP for dev and tests
-web/                      Preact + Vite single-page app (mail, admin, settings)
-```
+| Package | Responsibility |
+|---|---|
+| `cmd/mailhearth` | Entry point: config, master key, database, IMAP pool, HTTP server |
+| `internal/config` | Environment configuration |
+| `internal/db` | SQLite (modernc, no cgo) and embedded migrations |
+| `internal/secrets` | AES-256-GCM box (HKDF from the master key), argon2id, tokens |
+| `internal/purelymail` | Typed API client; `fake/` is an in-memory Purelymail |
+| `internal/model` | Organisation types shared by the services and the API |
+| `internal/core` | Services: setup/import, members, roles, domains, mailboxes, addresses, groups, offboarding, team state |
+| `internal/mailproto/imappool` | Bounded IMAP connection pool and IDLE watchers |
+| `internal/mailproto/mailops` | Folders, listing, rendering, actions, compose, SMTP |
+| `internal/mailproto/mimeutil` | HTML sanitiser, text/HTML conversion, decoding |
+| `internal/mailproto/sieve` | Rule model to Sieve compiler; ManageSieve client |
+| `internal/httpapi` | JSON API, sessions, CSRF, uploads, SSE, sandboxed message view |
+| `internal/web` | Embedded SPA with gzip and immutable caching |
+| `internal/devstack` | Fake Purelymail, IMAP and SMTP for development and tests |
+| `web/` | Preact + Vite single-page app (mail, admin, settings) |
 
 ## Organisation model
 

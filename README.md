@@ -1,5 +1,7 @@
 # Mailhearth
 
+**English** · [简体中文](README.zh-CN.md)
+
 **Mailhearth** is a self-hosted business email platform for small teams
 (1–50 people): startups, one-person companies, studios and small
 organisations. It turns a [Purelymail](https://purelymail.com) account into a
@@ -11,15 +13,26 @@ Purelymail does the mail: SMTP, delivery, spam filtering, storage, DKIM and
 DMARC. Mailhearth does the organisation, permissions, administration and
 user experience. Nothing is re-implemented that Purelymail already does well.
 
+```mermaid
+flowchart LR
+    subgraph browser["Staff browser"]
+        SPA["Webmail<br/>Admin console"]
+    end
+    subgraph host["Your server"]
+        APP["mailhearth<br/>single binary + SQLite"]
+    end
+    subgraph pm["Purelymail"]
+        API["Management API<br/>domains · users · routing rules"]
+        MAIL["IMAP · SMTP · ManageSieve<br/>mailboxes · sending · filters"]
+    end
+
+    SPA <-->|"JSON + SSE over HTTPS<br/>session cookie only"| APP
+    APP -->|"API token"| API
+    APP -->|"per-mailbox app password"| MAIL
 ```
-┌────────────────────┐        HTTPS         ┌──────────────────────────────┐
-│  Browser (SPA)     │ ◄──────────────────► │  mailhearth (single binary)  │
-│  webmail + admin   │   JSON API + SSE     │  SQLite · IMAP pool · Sieve  │
-└────────────────────┘                      └──────┬───────────┬───────────┘
-                                                   │ API token │ app passwords
-                                       Purelymail API      IMAP / SMTP / ManageSieve
-                                   (domains, users, rules)   (mailboxes, sending, filters)
-```
+
+Credentials stop at your server: the browser never receives the API token or
+any mailbox password.
 
 | Webmail | Admin console |
 |---|---|
@@ -50,9 +63,9 @@ real UI against the development stack.</sub>
 **For everyone**
 
 - A quick, responsive webmail client: folders, paging, server-side search,
-  threads of replies, flags, drag-free bulk actions, attachments, drafts with
-  autosave, signatures and multiple sending identities, desktop notifications
-  via IMAP IDLE, keyboard shortcuts, light and dark mode, English and Chinese.
+  flags, bulk actions, attachments, drafts with autosave, signatures and
+  multiple sending identities, desktop notifications via IMAP IDLE, keyboard
+  shortcuts, light and dark mode, English and Chinese.
 - Shared mailbox teamwork: see who replied, assign a message, mark it
   resolved, leave internal notes.
 - Mail rules and auto-reply compiled to Sieve and installed on the server, so
@@ -122,6 +135,10 @@ node scripts/screenshot.mjs     # drive the UI with headless Chrome
 
 Go 1.27, Preact + Vite, SQLite (pure Go driver, no cgo). Everything ships in
 one binary.
+
+The interface ships in English and Simplified Chinese. Strings live in
+[`web/src/lib/i18n.ts`](web/src/lib/i18n.ts): English is the source, and a
+new language is one dictionary plus an entry in the language switcher.
 
 ## License
 

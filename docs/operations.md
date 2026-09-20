@@ -22,12 +22,12 @@ is no reason to hold more than needed.
 
 The whole state is the data directory:
 
-```
-/data/mailhearth.db      SQLite database (WAL mode)
-/data/mailhearth.db-wal  write-ahead log (copy together with the db)
-/data/master.key         encryption key for stored credentials
-/data/uploads/           composer attachments awaiting send (transient)
-```
+| Path | Contents |
+|---|---|
+| `/data/mailhearth.db` | SQLite database (WAL mode) |
+| `/data/mailhearth.db-wal` | Write-ahead log; copy it together with the database |
+| `/data/master.key` | Encryption key for stored credentials |
+| `/data/uploads/` | Composer attachments awaiting send (transient) |
 
 Back up with the container stopped, or use `sqlite3 mailhearth.db ".backup
 out.db"` for a consistent online copy. Keep `master.key` in a separate secure
@@ -43,7 +43,7 @@ supported; restore a backup instead.
 
 Caddy:
 
-```
+```caddyfile
 mail.example.com {
     reverse_proxy 127.0.0.1:8080 {
         flush_interval -1      # required for Server-Sent Events
