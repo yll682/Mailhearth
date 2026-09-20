@@ -114,6 +114,7 @@ make dev        # 或：MAILHEARTH_DEV_STACK=1 go run ./cmd/mailhearth -seed-dem
 - [运维](docs/operations.zh-CN.md)：备份、升级、容量规划、故障排查。
 - [集成测试](docs/integration-testing.zh-CN.md)：如何对真实 Purelymail 账户
   跑验证套件。
+- [更新日志](CHANGELOG.zh-CN.md)：每个版本改了哪些内容。
 
 ## 开发
 
@@ -132,4 +133,4 @@ Go 1.27、Preact + Vite、SQLite（纯 Go 驱动，无 cgo）。全部打包进�
 
 ## 许可证
 
-MIT
+MIT，完整文本见 [LICENSE](LICENSE)。

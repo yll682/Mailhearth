@@ -126,6 +126,7 @@ The only ones you normally set are `MAILHEARTH_BASE_URL` and
 - [Operations](docs/operations.md): backups, upgrades, sizing, troubleshooting.
 - [Integration testing](docs/integration-testing.md): verifying a release
   against a real Purelymail account.
+- [Changelog](CHANGELOG.md): what changed in every release.
 
 ## Development
 
@@ -145,4 +146,4 @@ new language is one dictionary plus an entry in the language switcher.
 
 ## License
 
-MIT
+MIT. The full text is in [LICENSE](LICENSE).
