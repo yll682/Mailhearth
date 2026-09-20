@@ -1,0 +1,11 @@
+/data/
+/dist/
+/mailhearth
+/mailhearth.exe
+/web/node_modules/
+# Vite output, embedded into the binary at build time.
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
+*.log
+.env
+.DS_Store

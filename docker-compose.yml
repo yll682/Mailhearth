@@ -1,0 +1,25 @@
+# Mailhearth: single container, single volume. Put a reverse proxy with TLS
+# (Caddy, nginx, Traefik) in front of it and set MAILHEARTH_BASE_URL.
+services:
+  mailhearth:
+    image: ghcr.io/yll682/mailhearth:latest
+    build: .
+    container_name: mailhearth
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      MAILHEARTH_BASE_URL: "https://mail.example.com"   # public URL, used for invite links and secure cookies
+      MAILHEARTH_TRUST_PROXY: "true"                     # trust X-Forwarded-* from the reverse proxy
+      # MAILHEARTH_MASTER_KEY: ""                        # optional: 32 bytes base64; otherwise generated into /data/master.key
+      # MAILHEARTH_IMAP_MAX_CONNS: "24"                  # lower on very small hosts
+      # GOMEMLIMIT: "160MiB"
+    volumes:
+      - mailhearth-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  mailhearth-data:
