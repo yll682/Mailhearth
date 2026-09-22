@@ -1,6 +1,6 @@
 # Changelog
 
-**English** · [简体中文](CHANGELOG.zh-CN.md)
+**English** · [简体中文](CHANGELOG.zh-CN.md) · [繁體中文](CHANGELOG.zh-TW.md) · [日本語](CHANGELOG.ja.md) · [Español](CHANGELOG.es.md)
 
 All notable changes to Mailhearth are documented in this file.
 
@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+
+- Interface translations for Traditional Chinese (Taiwan), Japanese and
+  Spanish, selectable from the sign-in screen and from Settings.
 
 ## [0.1.0] - 2026-09-20
 

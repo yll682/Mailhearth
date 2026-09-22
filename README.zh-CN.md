@@ -1,6 +1,6 @@
 # Mailhearth
 
-[English](README.md) · **简体中文**
+[English](README.md) · **简体中文** · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [Español](README.es.md)
 
 **Mailhearth** 是面向小团队（1–50 人）的自托管商务邮箱平台，适合初创公司、一人
 公司、工作室和小型组织。它把一个 [Purelymail](https://purelymail.com) 账户变成
@@ -58,7 +58,7 @@ flowchart LR
 
 - 快速、响应式的网页邮箱：文件夹、分页、服务端搜索、星标、批量操作、附件、
   自动保存的草稿、签名与多发件身份、基于 IMAP IDLE 的桌面通知、键盘快捷键、
-  浅色与深色模式、中英文界面。
+  浅色与深色模式、五种界面语言。
 - 共享邮箱协作：看到谁已回复、把邮件分配给某人、标记为已处理、留内部备注。
 - 邮件规则和自动回复会编译成 Sieve 并安装到服务器，即使没人登录也照常生效。
 
@@ -127,7 +127,7 @@ node scripts/screenshot.mjs http://127.0.0.1:8090 out zh-CN   # 驱动界面
 
 Go 1.27、Preact + Vite、SQLite（纯 Go 驱动，无 cgo）。全部打包进一个二进制。
 
-界面提供英文和简体中文。文案在
+界面提供英文、简体中文、繁体中文（台湾）、日语和西班牙语。文案在
 [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts)：英文是源语言，新增一种语言只需
 加一份词典，再在语言切换器里加一项。
 

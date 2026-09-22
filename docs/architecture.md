@@ -1,6 +1,6 @@
 # Architecture
 
-**English** · [简体中文](architecture.zh-CN.md)
+**English** · [简体中文](architecture.zh-CN.md) · [繁體中文](architecture.zh-TW.md) · [日本語](architecture.ja.md) · [Español](architecture.es.md)
 
 ## Goals and non-goals
 

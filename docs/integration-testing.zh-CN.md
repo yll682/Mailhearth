@@ -1,6 +1,6 @@
 # 对真实 Purelymail 账户的集成测试
 
-[English](integration-testing.md) · **简体中文**
+[English](integration-testing.md) · **简体中文** · [繁體中文](integration-testing.zh-TW.md) · [日本語](integration-testing.ja.md) · [Español](integration-testing.es.md)
 
 单元测试跑在内存中的 Purelymail API 假实现上。假实现能证明 Mailhearth 自身逻辑一致，却无法证明它与线上服务相符：假实现和客户端出自同一份对 API 的理解。只有真实账户才能发现写错的字段名、Purelymail 实际解释方式与我们假设不同的规则、没有真正被吊销的应用密码，或者根本没投递到的邮件。
 

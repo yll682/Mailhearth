@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { t, lang, setLang } from "@/lib/i18n";
+import { t, lang, setLang, LANGS } from "@/lib/i18n";
 import { post, get, ApiError } from "@/lib/api";
 import { Button, Field, Icon, Spinner } from "@/ui";
 import { go } from "@/lib/router";
@@ -16,12 +16,11 @@ function Brand() {
 export function LangSwitch() {
   return (
     <div class="lang-switch">
-      <button class={lang.value === "zh-CN" ? "active" : ""} onClick={() => setLang("zh-CN")}>
-        中文
-      </button>
-      <button class={lang.value === "en" ? "active" : ""} onClick={() => setLang("en")}>
-        EN
-      </button>
+      {LANGS.map((l) => (
+        <button key={l.id} class={lang.value === l.id ? "active" : ""} onClick={() => setLang(l.id)}>
+          {l.label}
+        </button>
+      ))}
     </div>
   );
 }

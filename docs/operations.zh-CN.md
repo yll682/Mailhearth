@@ -1,6 +1,6 @@
 # 运维
 
-[English](operations.md) · **简体中文**
+[English](operations.md) · **简体中文** · [繁體中文](operations.zh-TW.md) · [日本語](operations.ja.md) · [Español](operations.es.md)
 
 ## 容量规划
 

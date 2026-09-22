@@ -1,6 +1,6 @@
 # 更新日志
 
-[English](CHANGELOG.md) · **简体中文**
+[English](CHANGELOG.md) · **简体中文** · [繁體中文](CHANGELOG.zh-TW.md) · [日本語](CHANGELOG.ja.md) · [Español](CHANGELOG.es.md)
 
 本文件记录 Mailhearth 的所有重要改动。
 
@@ -8,6 +8,10 @@
 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
 ## [未发布]
+
+### 新增
+
+- 繁体中文（台湾）、日语和西班牙语界面翻译，可在登录页和设置页切换。
 
 ## [0.1.0] - 2026-09-20
 

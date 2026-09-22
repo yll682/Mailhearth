@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { route, go } from "@/lib/router";
 import { me, mailboxes, toast, errorToast, refreshMailboxes, logout, isAdmin } from "@/lib/state";
-import { t, lang, setLang } from "@/lib/i18n";
+import { t, lang, setLang, LANGS } from "@/lib/i18n";
 import { get, post, put, type AccessibleMailbox, type Identity, type SieveRule, type Vacation, type Folder } from "@/lib/api";
 import { Button, Field, Icon, Tabs, Toggle, Avatar, Spinner, Modal, Info } from "@/ui";
 
@@ -56,9 +56,12 @@ function AccountTab() {
       </section>
       <section class="card">
         <h3>{t("Language")}</h3>
-        <div class="row gap">
-          <Button kind={lang.value === "zh-CN" ? "primary" : "secondary"} size="sm" onClick={() => setLang("zh-CN")}>中文</Button>
-          <Button kind={lang.value === "en" ? "primary" : "secondary"} size="sm" onClick={() => setLang("en")}>English</Button>
+        <div class="row gap wrap">
+          {LANGS.map((l) => (
+            <Button key={l.id} kind={lang.value === l.id ? "primary" : "secondary"} size="sm" onClick={() => setLang(l.id)}>
+              {l.label}
+            </Button>
+          ))}
         </div>
       </section>
       <section class="card">

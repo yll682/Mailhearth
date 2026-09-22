@@ -1,6 +1,6 @@
 # 架构
 
-[English](architecture.md) · **简体中文**
+[English](architecture.md) · **简体中文** · [繁體中文](architecture.zh-TW.md) · [日本語](architecture.ja.md) · [Español](architecture.es.md)
 
 ## 目标与范围
 

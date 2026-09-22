@@ -1,11 +1,11 @@
-import { lang, t } from "./i18n";
+import { lang, localeFor, t } from "./i18n";
 import type { Addr } from "./api";
 
 export function fmtDate(iso: string, style: "list" | "full" = "list"): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  const loc = lang.value === "zh-CN" ? "zh-CN" : "en-GB";
+  const loc = localeFor(lang.value);
   if (style === "full") return d.toLocaleString(loc, { dateStyle: "medium", timeStyle: "short" });
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
@@ -52,7 +52,7 @@ export function hueFor(s: string): number {
 }
 
 export function stripSubjectPrefix(s: string): string {
-  return s.replace(/^\s*((re|fwd?|aw|wg|回复|转发)\s*[:：]\s*)+/i, "").trim();
+  return s.replace(/^\s*((re|fwd?|aw|wg|rv|回复|回覆|回信|轉寄|轉發|转发|転送|返信)\s*[:：]\s*)+/i, "").trim();
 }
 
 export function escapeHtml(s: string): string {

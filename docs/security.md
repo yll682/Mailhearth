@@ -1,6 +1,6 @@
 # Security
 
-**English** · [简体中文](security.zh-CN.md)
+**English** · [简体中文](security.zh-CN.md) · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md) · [Español](security.es.md)
 
 ## Threat model
 

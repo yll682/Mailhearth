@@ -1,6 +1,6 @@
 # 安全
 
-[English](security.md) · **简体中文**
+[English](security.md) · **简体中文** · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md) · [Español](security.es.md)
 
 ## 威胁模型
 

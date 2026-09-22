@@ -1,6 +1,6 @@
 # Operations
 
-**English** · [简体中文](operations.zh-CN.md)
+**English** · [简体中文](operations.zh-CN.md) · [繁體中文](operations.zh-TW.md) · [日本語](operations.ja.md) · [Español](operations.es.md)
 
 ## Sizing
 

@@ -1,6 +1,6 @@
 # Mailhearth
 
-**English** · [简体中文](README.zh-CN.md)
+**English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [Español](README.es.md)
 
 **Mailhearth** is a self-hosted business email platform for small teams
 (1–50 people): startups, one-person companies, studios and small
@@ -65,7 +65,7 @@ the real UI against the development stack.</sub>
 - A quick, responsive webmail client: folders, paging, server-side search,
   flags, bulk actions, attachments, drafts with autosave, signatures and
   multiple sending identities, desktop notifications via IMAP IDLE, keyboard
-  shortcuts, light and dark mode, English and Chinese.
+  shortcuts, light and dark mode, and a five-language interface.
 - Shared mailbox teamwork: see who replied, assign a message, mark it
   resolved, leave internal notes.
 - Mail rules and auto-reply compiled to Sieve and installed on the server, so
@@ -140,7 +140,8 @@ node scripts/screenshot.mjs http://127.0.0.1:8090 out en   # drive the UI
 Go 1.27, Preact + Vite, SQLite (pure Go driver, no cgo). Everything ships in
 one binary.
 
-The interface ships in English and Simplified Chinese. Strings live in
+The interface ships in English, Simplified Chinese, Traditional Chinese
+(Taiwan), Japanese and Spanish. Strings live in
 [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts): English is the source, and a
 new language is one dictionary plus an entry in the language switcher.
 

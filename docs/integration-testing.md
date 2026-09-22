@@ -1,6 +1,6 @@
 # Integration testing against a real Purelymail account
 
-**English** · [简体中文](integration-testing.zh-CN.md)
+**English** · [简体中文](integration-testing.zh-CN.md) · [繁體中文](integration-testing.zh-TW.md) · [日本語](integration-testing.ja.md) · [Español](integration-testing.es.md)
 
 The unit tests run against an in-memory fake of the Purelymail API. That fake
 proves Mailhearth is self-consistent, but it cannot prove that Mailhearth
