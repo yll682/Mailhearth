@@ -36,10 +36,10 @@ external-client passwords have an explicit, authorized one-time claim flow.
 | Webmail | Admin console |
 |---|---|
 | ![Inbox](docs/screenshots/en/05-mail-inbox.png) | ![Overview](docs/screenshots/en/09-admin-overview.png) |
-| ![Reading a message](docs/screenshots/en/06-mail-read.png) | ![Onboarding a member](docs/screenshots/en/11-admin-add-member.png) |
+| ![Reading a message](docs/screenshots/en/06-mail-read.png) | ![Members](docs/screenshots/en/10-admin-members.png) |
 
-<sub>Produced by `node scripts/screenshot.mjs <url> <out-dir> en`, which drives
-the real UI against the development stack.</sub>
+<sub>Captured manually from the local documentation demo. Demo data does not
+represent verification against real mail providers.</sub>
 
 ## What you get
 

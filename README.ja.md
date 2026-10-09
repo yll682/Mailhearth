@@ -36,10 +36,9 @@ flowchart LR
 | ウェブメール | 管理コンソール |
 |---|---|
 | ![受信トレイ](docs/screenshots/en/05-mail-inbox.png) | ![概要](docs/screenshots/en/09-admin-overview.png) |
-| ![メッセージの閲覧](docs/screenshots/en/06-mail-read.png) | ![メンバーの追加](docs/screenshots/en/11-admin-add-member.png) |
+| ![メッセージの閲覧](docs/screenshots/en/06-mail-read.png) | ![メンバー](docs/screenshots/en/10-admin-members.png) |
 
-<sub>`node scripts/screenshot.mjs <url> <out-dir> en` で生成しています。この
-コマンドは開発スタックに対して実際の UI を操作します。</sub>
+<sub>ローカルのドキュメント用デモ環境で手動撮影した画像です。デモデータは実際のメールプロバイダーでの検証結果を示すものではありません。</sub>
 
 ## できること
 

@@ -36,10 +36,10 @@ Las contraseñas nuevas para clientes externos tienen un flujo autorizado de rec
 | Webmail | Consola de administración |
 |---|---|
 | ![Bandeja de entrada](docs/screenshots/en/05-mail-inbox.png) | ![Resumen](docs/screenshots/en/09-admin-overview.png) |
-| ![Lectura de un mensaje](docs/screenshots/en/06-mail-read.png) | ![Alta de un miembro](docs/screenshots/en/11-admin-add-member.png) |
+| ![Lectura de un mensaje](docs/screenshots/en/06-mail-read.png) | ![Miembros](docs/screenshots/en/10-admin-members.png) |
 
-<sub>Generado por `node scripts/screenshot.mjs <url> <out-dir> en`, que maneja la
-interfaz real contra el entorno de desarrollo.</sub>
+<sub>Capturas manuales del entorno local de demostración. Los datos de demostración
+no representan una verificación con proveedores de correo reales.</sub>
 
 ## Qué obtienes
 

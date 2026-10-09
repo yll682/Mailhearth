@@ -217,7 +217,7 @@ export function MailApp() {
           <button class="btn btn-icon hide-desktop" onClick={() => setDrawer(false)} aria-label={t("Close")}>
             <Icon name="x" />
           </button>
-          <Button kind="primary" icon="compose" class="compose-btn" onClick={() => openCompose({ mailboxId: mailbox.id })} disabled={!canWrite}>
+          <Button kind="primary" icon="compose" class="compose-btn" onClick={() => { setDrawer(false); openCompose({ mailboxId: mailbox.id }); }} disabled={!canWrite}>
             {t("Compose")}
           </Button>
         </div>

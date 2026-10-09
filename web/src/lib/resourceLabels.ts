@@ -16,3 +16,9 @@ export function resourceLabel(item: DiscoveryResource): string {
 export function canImportResource(item: DiscoveryResource): boolean {
   return ["domain", "mailbox", "routing_rule", "alias", "external_rule", "identity", "forwarding"].includes(item.resource.resourceType);
 }
+
+export function resourceDescription(item: DiscoveryResource): string {
+  if (item.forwarding) return `${item.forwarding.localPart}@${item.forwarding.domain} → ${item.forwarding.targets.join(", ")}`;
+  const description = item.summary.address ?? item.summary.name ?? item.resource.remoteKey;
+  return item.summary.mailboxAddress ? `${item.summary.mailboxAddress} → ${description}` : description;
+}

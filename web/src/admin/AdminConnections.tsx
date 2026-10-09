@@ -5,7 +5,7 @@ import { Button, Field, Modal, Spinner, ErrorBox, useAsync, Badge } from "@/ui";
 import { errorToast, toast } from "@/lib/state";
 import { PageHead } from "./AdminOrg";
 import { useOperationRequests } from "@/lib/useOperationRequests";
-import { canImportResource, resourceLabel, statusLabel } from "@/lib/resourceLabels";
+import { canImportResource, resourceDescription, resourceLabel, statusLabel } from "@/lib/resourceLabels";
 
 const protocolNames = ["imap", "smtp", "managesieve"] as const;
 function presets(kind: ProviderKind): ProtocolTemplates {
@@ -159,7 +159,7 @@ export function ConnectionsPage() {
     {discovery && <Modal title={t("Select resources to import")} onClose={() => setDiscovery(null)}>
       {discovery.resources.map((item) => { const key = `${item.resource.resourceType}/${item.resource.remoteKey}`; return <label class="check-row" key={key}>
         <input type="checkbox" checked={selected.has(key)} disabled={busy !== null || !canImportResource(item)} onChange={(event) => { const next = new Set(selected); event.currentTarget.checked ? next.add(key) : next.delete(key); setSelected(next); }} />
-        {resourceLabel(item)} · {item.summary.mailboxAddress ? `${item.summary.mailboxAddress} → ` : ""}{item.summary.address ?? item.summary.name ?? item.resource.remoteKey}{item.summary.status ? ` · ${statusLabel(item.summary.status)}` : ""}{item.forwarding ? ` · ${statusLabel(item.forwarding.deliveryMode)}` : ""}
+        {resourceLabel(item)} · {resourceDescription(item)}{item.summary.status ? ` · ${statusLabel(item.summary.status)}` : ""}{item.forwarding ? ` · ${statusLabel(item.forwarding.deliveryMode)}` : ""}
       </label>; })}
       <p>{t("Select each mailbox and its domain. Configure login credentials after import.")}</p>
       <p>{t("Select the source mailbox and domain for forwarding. Delivery modes remain unverified until delivery is tested.")}</p>

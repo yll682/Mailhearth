@@ -185,6 +185,23 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("初始化登记了未选择的邮箱")
 	}
 	var operation core.OperationView
+	c.do("POST", "/api/admin/domain-bindings", core.DomainBindingInput{RequestID: uuid.NewString(), ConnectionID: connection.ID, DomainName: "example.org", Mode: "register"}, 202, &operation)
+	operation = c.await(operation.ID)
+	if operation.Status != "succeeded" {
+		t.Fatal("域名关联登记失败")
+	}
+	var bindings []map[string]json.RawMessage
+	c.do("GET", "/api/admin/domain-bindings", nil, 200, &bindings)
+	if len(bindings) != 1 {
+		t.Fatal("域名关联列表数量不正确")
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(bindings[0]["providerSettings"], &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings == nil {
+		t.Fatal("域名关联必须返回 providerSettings 对象")
+	}
 	c.do("POST", "/api/admin/members", map[string]any{"requestId": uuid.NewString(), "displayName": "受邀成员", "loginEmail": "member@example.org", "mailboxAction": "none", "sendInvite": true}, 202, &operation)
 	operation = c.await(operation.ID)
 	var created struct {

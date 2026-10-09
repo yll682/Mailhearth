@@ -17,7 +17,7 @@ export function SettingsPage() {
     { key: "submissions", label: t("Sending requests") },
   ];
   return (
-    <div class="page">
+    <div class="page settings-page">
       <header class="page-head">
         <a href="/mail" class="btn btn-ghost btn-sm">
           <Icon name="chevron" size={16} class="flip" /> {t("Mail")}

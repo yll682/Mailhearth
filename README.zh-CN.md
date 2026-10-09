@@ -33,10 +33,9 @@ flowchart LR
 | 网页邮箱 | 管理控制台 |
 |---|---|
 | ![收件箱](docs/screenshots/zh-CN/05-mail-inbox.png) | ![概览](docs/screenshots/zh-CN/09-admin-overview.png) |
-| ![阅读邮件](docs/screenshots/zh-CN/06-mail-read.png) | ![添加成员](docs/screenshots/zh-CN/11-admin-add-member.png) |
+| ![阅读邮件](docs/screenshots/zh-CN/06-mail-read.png) | ![成员](docs/screenshots/zh-CN/10-admin-members.png) |
 
-<sub>截图由 `node scripts/screenshot.mjs <地址> <输出目录> zh-CN` 生成，脚本驱动
-真实界面在开发环境上运行。</sub>
+<sub>截图由用户在本地文档演示环境中手动截取。演示数据不代表真实邮件服务商的验证结果。</sub>
 
 ## 你会得到什么
 

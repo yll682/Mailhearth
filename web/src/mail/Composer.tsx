@@ -236,6 +236,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
       </header>
       {!minimized ? (
         <>
+          <div class="composer-body">
           <fieldset disabled={locked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <div class="composer-fields">
             <div class="crow">
@@ -312,6 +313,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
               {totalSize ? <span class="muted small">{fmtSize(totalSize)}</span> : null}
             </div>
           ) : null}
+          </div>
           <footer class="composer-foot">
             <Button kind="primary" icon="send" busy={busy} onClick={send} disabled={uploading > 0}>
               {busy ? t("Sending…") : t("Send")}

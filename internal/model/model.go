@@ -148,7 +148,7 @@ type DomainBinding struct {
 	ConnectionLabel  string            `json:"connectionLabel"`
 	ManagementMode   string            `json:"managementMode"`
 	RemoteState      string            `json:"remoteState"`
-	ProviderSettings map[string]any    `json:"providerSettings,omitempty"`
+	ProviderSettings map[string]any    `json:"providerSettings"`
 	DNSStatus        map[string]string `json:"dnsStatus"`
 	DNSCheckedAt     *string           `json:"dnsCheckedAt"`
 	Revision         int64             `json:"revision"`

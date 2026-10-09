@@ -33,10 +33,9 @@ flowchart LR
 | 網頁信箱 | 管理主控台 |
 |---|---|
 | ![收件匣](docs/screenshots/en/05-mail-inbox.png) | ![總覽](docs/screenshots/en/09-admin-overview.png) |
-| ![閱讀郵件](docs/screenshots/en/06-mail-read.png) | ![新增成員](docs/screenshots/en/11-admin-add-member.png) |
+| ![閱讀郵件](docs/screenshots/en/06-mail-read.png) | ![成員](docs/screenshots/en/10-admin-members.png) |
 
-<sub>由 `node scripts/screenshot.mjs <url> <out-dir> en` 產生，這個指令會驅動真實
-介面在開發環境上運作。</sub>
+<sub>截圖由使用者在本機文件示範環境中手動擷取。示範資料不代表真實郵件服務商的驗證結果。</sub>
 
 ## 你會得到什麼
 
