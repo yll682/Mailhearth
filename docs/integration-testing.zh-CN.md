@@ -23,27 +23,15 @@ npm --prefix web run build
 git diff --check
 ```
 
-全部包的编译检查使用 `-run '^$'`。指定测试使用真实 SQLite、应用 HTTP server 和
-纯算法，检查关联归属、授权、操作、路由、转发导入与观察、发送状态和 Sieve。
-前端测试使用 TypeScript parser 检查 requestId 稳定性、翻译覆盖和插值参数。这些
-检查没有执行外部投递或浏览器交互。并发与转发检查可以使用 `-count=20` 重复执行；
-race 检查需要 C 编译器和 cgo。
+全部包的编译检查使用 `-run '^$'`。指定测试使用真实 SQLite、应用 HTTP server 和纯算法，检查关联归属、授权、操作、路由、转发导入与观察、发送状态和 Sieve。前端测试使用 TypeScript parser 检查 requestId 稳定性、翻译覆盖和插值参数。这些检查没有执行外部投递或浏览器交互。并发与转发检查可以使用 `-count=20` 重复执行；race 检查需要 C 编译器和 cgo。
 
-完整 Go 测试还检查组织初始化、邀请、登录、角色、共享邮箱协作和附件上传。
-HTTP 测试运行应用的实际服务，数据库和上传文件保存在独立的 `data/` 子目录。
-CI 执行 Go 格式检查、全部 Go 测试、前端测试及生产构建；格式检查要求没有输出。
+完整 Go 测试还检查组织初始化、邀请、登录、角色、共享邮箱协作和附件上传。HTTP 测试运行应用的实际服务，数据库和上传文件保存在独立的 `data/` 子目录。CI 执行 Go 格式检查、全部 Go 测试、前端测试及生产构建；格式检查要求没有输出。
 
 ## 真实环境与安全
 
-`internal/integration/multiprovider` 使用真实 API 和协议连接。关闭
-`MAILHEARTH_DEV_STACK`；未设置配置路径时明确跳过，已提供的配置无效时失败。使用专用测试账户、域名及没有重要
-邮件的邮箱。协议测试发送真实邮件，并修改独立本地测试部署的 endpoint 设置。
-执行前阅读所选测试；当前认证前提和协议检查不重置已有外部邮箱密码。后续生命周期
-验收可能创建、删除资源、撤销凭据和修改规则，需要使用专用资源。
+`internal/integration/multiprovider` 使用真实 API 和协议连接。关闭 `MAILHEARTH_DEV_STACK`；未设置配置路径时明确跳过，已提供的配置无效时失败。使用专用测试账户、域名及没有重要邮件的邮箱。协议测试发送真实邮件，并修改独立本地测试部署的 endpoint 设置。执行前阅读所选测试；当前认证前提和协议检查不重置已有外部邮箱密码。后续生命周期验收可能创建、删除资源、撤销凭据和修改规则，需要使用专用资源。
 
-配置只保存在 `data/integration/multi-provider/`，程序解析路径并检查所属目录。
-凭据不提交到 Git，也不发送到聊天或日志。每次运行在该目录下保存独立数据库、主密钥、
-测试数据和报告。妥善保护这些文件，完成检查后按需要清理。
+配置只保存在 `data/integration/multi-provider/`，程序解析路径并检查所属目录。凭据不提交到 Git，也不发送到聊天或日志。每次运行在该目录下保存独立数据库、主密钥、测试数据和报告。妥善保护这些文件，完成检查后按需要清理。
 
 ## 配置
 
@@ -60,10 +48,7 @@ JSON 读取拒绝未知字段和额外 JSON 值。以下环境全部需要配置
 | 停用的手动 endpoint | `networkMode: disabled` |
 | `deliveryTimeoutSeconds` | 正整数，默认 180 |
 
-`independentSmtp` 的 IMAP 和 SMTP 必须使用不同 username 和 secret。私有 CA 检查
-需要测试部署能够读取的 CA 及对应 `caBundleId`。`MAILHEARTH_CA_BUNDLES_FILE` 指向
-将正整数 CA ID 映射到 PEM 文件路径的 JSON 文件。`noSieveMailbox` 停用 ManageSieve，
-保留可用的 IMAP/SMTP。服务商管理认证不提供邮箱协议密码。
+`independentSmtp` 的 IMAP 和 SMTP 必须使用不同 username 和 secret。私有 CA 检查需要测试部署能够读取的 CA 及对应 `caBundleId`。`MAILHEARTH_CA_BUNDLES_FILE` 指向将正整数 CA ID 映射到 PEM 文件路径的 JSON 文件。`noSieveMailbox` 停用 ManageSieve，保留可用的 IMAP/SMTP。服务商管理认证不提供邮箱协议密码。
 
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
@@ -73,28 +58,13 @@ go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 
 
 ## 覆盖与结果
 
-- `TestRealMultiProviderPrerequisites`：真实 Purelymail/Migadu 管理认证及手动协议
-  凭据。成功后写入 `prerequisites.json`。
-- `TestRealMultiProviderTransactions`：连接隔离、相同地址登记、候选认证拒绝、revision
-  冲突、requestId 与内容检查及安全查询字段。对应部分 T01、T03、T08、T17–T19、
-  T40，成功后写入 `transactions.json`。
-- `TestRealMultiProviderProtocols`：独立凭据与实际投递（T04）、SMTP 停用后的读取
-  （T05）、ManageSieve 停用后的读取与投递（T06）、endpoint 版本及旧连接关闭
-  （T37），成功后写入 `protocols.json`。
-- `TestClientAgainstRealPurelymail`：余额、域名、用户、app password、密码更新及
-  routing rule，通过真实 API 和 IMAP 检查认证与撤销；只处理本次创建的独立资源。
-- `TestMailOpsAgainstRealProtocols`：真实文件夹、分页、搜索、flags、COPY、MOVE、
-  删除、MIME、附件、SMTP 投递与 IDLE；使用独立文件夹和唯一邮件标识进行清理。
-- `TestListFoldersOnRev1Server`：真实 IMAP4rev1 的 LIST、STATUS 与特殊文件夹。
-  此项要求 `manual.primaryMailbox` 使用没有 LIST-EXTENDED、LIST-STATUS、
-  SPECIAL-USE 和 IMAP4rev2 扩展的服务器；执行其他协议测试时可按测试名称选择。
+- `TestRealMultiProviderPrerequisites`：真实 Purelymail/Migadu 管理认证及手动协议凭据。成功后写入 `prerequisites.json`。
+- `TestRealMultiProviderTransactions`：连接隔离、相同地址登记、候选认证拒绝、revision 冲突、requestId 与内容检查及安全查询字段。对应部分 T01、T03、T08、T17–T19、T40，成功后写入 `transactions.json`。
+- `TestRealMultiProviderProtocols`：独立凭据与实际投递（T04）、SMTP 停用后的读取（T05）、ManageSieve 停用后的读取与投递（T06）、endpoint 版本及旧连接关闭（T37），成功后写入 `protocols.json`。
+- `TestClientAgainstRealPurelymail`：余额、域名、用户、app password、密码更新及 routing rule，通过真实 API 和 IMAP 检查认证与撤销；只处理本次创建的独立资源。
+- `TestMailOpsAgainstRealProtocols`：真实文件夹、分页、搜索、flags、COPY、MOVE、删除、MIME、附件、SMTP 投递与 IDLE；使用独立文件夹和唯一邮件标识进行清理。
+- `TestListFoldersOnRev1Server`：真实 IMAP4rev1 的 LIST、STATUS 与特殊文件夹。此项要求 `manual.primaryMailbox` 使用没有 LIST-EXTENDED、LIST-STATUS、SPECIAL-USE 和 IMAP4rev2 扩展的服务器；执行其他协议测试时可按测试名称选择。
 
-报告保存 `acceptanceComplete=false`。完整 T01–T40 和 V01–V07 仍需要补充测试并
-实际执行；`internal/integration` 的旧 Purelymail 套件仍需要迁移到当前接口。
-本地测试通过或导入成功不表示真实服务商验收完成。Migadu 转发方式在 V03 通过前
-保持 `unverified`。
+报告保存 `acceptanceComplete=false`。完整 T01–T40 和 V01–V07 仍需要补充测试并实际执行；`internal/integration` 的旧 Purelymail 套件仍需要迁移到当前接口。本地测试通过或导入成功不表示真实服务商验收完成。Migadu 转发方式在 V03 通过前保持 `unverified`。
 
-投递失败时检查 MX/SPF、凭据、启用协议、目标确认状态、Junk 等文件夹及 Message-ID。
-网络错误不证明凭据已经撤销或资源已经删除。保留 operationId/submissionId 并核查
-未知结果，不自动重新发送。普通 CI 不使用真实凭据；服务商、SMTP/IMAP、migration
-或 Sieve 变更后及发布前执行专用验收。
+投递失败时检查 MX/SPF、凭据、启用协议、目标确认状态、Junk 等文件夹及 Message-ID。网络错误不证明凭据已经撤销或资源已经删除。保留 operationId/submissionId 并核查未知结果，不自动重新发送。普通 CI 不使用真实凭据；服务商、SMTP/IMAP、migration 或 Sieve 变更后及发布前执行专用验收。

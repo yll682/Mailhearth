@@ -23,27 +23,13 @@ npm --prefix web run build
 git diff --check
 ```
 
-La compilación de todos los paquetes usa `-run '^$'`. Las pruebas seleccionadas usan
-SQLite real, el HTTP server de la aplicación y algoritmos puros para pertenencia,
-autorización, operaciones, rutas, importación/observación de reenvíos, estado de envío
-y Sieve. Las pruebas web usan TypeScript parser para estabilidad de requestId, cobertura
-de traducciones e interpolación. No comprueban entrega externa ni interacción del navegador.
-La concurrencia y reenvíos pueden repetirse con `-count=20`; race requiere compilador C y cgo.
+La compilación de todos los paquetes usa `-run '^$'`. Las pruebas seleccionadas usan SQLite real, el HTTP server de la aplicación y algoritmos puros para pertenencia, autorización, operaciones, rutas, importación/observación de reenvíos, estado de envío y Sieve. Las pruebas web usan TypeScript parser para estabilidad de requestId, cobertura de traducciones e interpolación. No comprueban entrega externa ni interacción del navegador. La concurrencia y reenvíos pueden repetirse con `-count=20`; race requiere compilador C y cgo.
 
 ## Entornos reales y seguridad
 
-`internal/integration/multiprovider` utiliza API y protocolos reales. Deshabilita
-`MAILHEARTH_DEV_STACK`; las pruebas se omiten explícitamente si no se indica la ruta de configuración y fallan si la configuración indicada es inválida. Usa cuentas,
-dominios y buzones de prueba sin mensajes importantes. Las pruebas de protocolos envían
-correo real y modifican endpoint en una instalación local aislada. Lee las pruebas antes
-de ejecutarlas; las comprobaciones actuales de requisitos y protocolos no restablecen
-contraseñas externas existentes. La futura aceptación del ciclo de vida puede crear/eliminar
-recursos, revocar credenciales y cambiar reglas; necesita recursos dedicados.
+`internal/integration/multiprovider` utiliza API y protocolos reales. Deshabilita `MAILHEARTH_DEV_STACK`; las pruebas se omiten explícitamente si no se indica la ruta de configuración y fallan si la configuración indicada es inválida. Usa cuentas, dominios y buzones de prueba sin mensajes importantes. Las pruebas de protocolos envían correo real y modifican endpoint en una instalación local aislada. Lee las pruebas antes de ejecutarlas; las comprobaciones actuales de requisitos y protocolos no restablecen contraseñas externas existentes. La futura aceptación del ciclo de vida puede crear/eliminar recursos, revocar credenciales y cambiar reglas; necesita recursos dedicados.
 
-Guarda la configuración únicamente en `data/integration/multi-provider/`; el lector resuelve
-y valida la pertenencia de la ruta. No guardes credenciales en Git, chat ni registros.
-Cada ejecución conserva ahí su base de datos, clave maestra, datos y resultados aislados.
-Protege los archivos y realiza su limpieza según corresponda.
+Guarda la configuración únicamente en `data/integration/multi-provider/`; el lector resuelve y valida la pertenencia de la ruta. No guardes credenciales en Git, chat ni registros. Cada ejecución conserva ahí su base de datos, clave maestra, datos y resultados aislados. Protege los archivos y realiza su limpieza según corresponda.
 
 ## Configuración
 
@@ -60,11 +46,7 @@ El lector JSON rechaza campos desconocidos y valores JSON adicionales. Configura
 | Endpoint manual deshabilitado | `networkMode: disabled` |
 | `deliveryTimeoutSeconds` | Entero positivo; predeterminado 180 |
 
-IMAP y SMTP de `independentSmtp` deben usar username y secret distintos. La CA privada debe
-estar disponible en la instalación de prueba y tener su `caBundleId`. `MAILHEARTH_CA_BUNDLES_FILE`
-apunta al JSON que asocia ID de CA positivos a rutas PEM. `noSieveMailbox`
-deshabilita ManageSieve y conserva IMAP/SMTP utilizables. La autenticación de administración
-del proveedor no proporciona contraseñas de protocolos del buzón.
+IMAP y SMTP de `independentSmtp` deben usar username y secret distintos. La CA privada debe estar disponible en la instalación de prueba y tener su `caBundleId`. `MAILHEARTH_CA_BUNDLES_FILE` apunta al JSON que asocia ID de CA positivos a rutas PEM. `noSieveMailbox` deshabilita ManageSieve y conserva IMAP/SMTP utilizables. La autenticación de administración del proveedor no proporciona contraseñas de protocolos del buzón.
 
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
@@ -74,29 +56,13 @@ go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 
 
 ## Cobertura y resultados
 
-- `TestRealMultiProviderPrerequisites`: autenticación real de administración Purelymail/Migadu
-  y credenciales manuales. Escribe `prerequisites.json` al completarse.
-- `TestRealMultiProviderTransactions`: aislamiento, registro de la misma dirección, candidatos
-  rechazados, conflictos revision, requestId/contenido y campos públicos seguros. Corresponde a
-  partes de T01, T03, T08, T17–T19 y T40; escribe `transactions.json`.
-- `TestRealMultiProviderProtocols`: credenciales independientes y entrega real (T04), lectura
-  sin SMTP (T05), lectura/entrega sin ManageSieve (T06), revisión de endpoint y cierre de conexiones
-  antiguas (T37). Escribe `protocols.json`.
-- `TestClientAgainstRealPurelymail`: consultas reales de cuenta, operaciones de usuarios,
-  contraseñas y routing rules; verifica autenticación y revocación por IMAP de recursos propios.
-- `TestMailOpsAgainstRealProtocols`: carpetas, paginación, búsqueda, flags, COPY/MOVE/eliminación,
-  MIME, adjuntos, entrega SMTP e IDLE, con carpetas aisladas e identificadores únicos.
-- `TestListFoldersOnRev1Server`: LIST/STATUS y carpetas especiales de IMAP4rev1 real. Requiere
-  `manual.primaryMailbox` sin IMAP4rev2, LIST-EXTENDED, LIST-STATUS ni SPECIAL-USE;
-  selecciona las otras pruebas por nombre al utilizar un servidor diferente.
+- `TestRealMultiProviderPrerequisites`: autenticación real de administración Purelymail/Migadu y credenciales manuales. Escribe `prerequisites.json` al completarse.
+- `TestRealMultiProviderTransactions`: aislamiento, registro de la misma dirección, candidatos rechazados, conflictos revision, requestId/contenido y campos públicos seguros. Corresponde a partes de T01, T03, T08, T17–T19 y T40; escribe `transactions.json`.
+- `TestRealMultiProviderProtocols`: credenciales independientes y entrega real (T04), lectura sin SMTP (T05), lectura/entrega sin ManageSieve (T06), revisión de endpoint y cierre de conexiones antiguas (T37). Escribe `protocols.json`.
+- `TestClientAgainstRealPurelymail`: consultas reales de cuenta, operaciones de usuarios, contraseñas y routing rules; verifica autenticación y revocación por IMAP de recursos propios.
+- `TestMailOpsAgainstRealProtocols`: carpetas, paginación, búsqueda, flags, COPY/MOVE/eliminación, MIME, adjuntos, entrega SMTP e IDLE, con carpetas aisladas e identificadores únicos.
+- `TestListFoldersOnRev1Server`: LIST/STATUS y carpetas especiales de IMAP4rev1 real. Requiere `manual.primaryMailbox` sin IMAP4rev2, LIST-EXTENDED, LIST-STATUS ni SPECIAL-USE; selecciona las otras pruebas por nombre al utilizar un servidor diferente.
 
-Los informes conservan `acceptanceComplete=false`. La matriz T01–T40 y V01–V07 completa necesita
-pruebas adicionales y ejecución real. La suite Purelymail de `internal/integration` todavía necesita
-migración a las interfaces actuales. Una prueba local o importación satisfactoria no completa
-aceptación real. Los modos de reenvío Migadu permanecen `unverified` hasta superar V03.
+Los informes conservan `acceptanceComplete=false`. La matriz T01–T40 y V01–V07 completa necesita pruebas adicionales y ejecución real. La suite Purelymail de `internal/integration` todavía necesita migración a las interfaces actuales. Una prueba local o importación satisfactoria no completa aceptación real. Los modos de reenvío Migadu permanecen `unverified` hasta superar V03.
 
-Si falla entrega, comprueba MX/SPF, credenciales, protocolos, confirmación de destinos, carpetas
-incluido Junk y Message-ID. Un error de red no demuestra revocación ni eliminación. Conserva
-operationId/submissionId y comprueba resultados desconocidos sin reenviar automáticamente.
-Mantén las credenciales reales fuera del CI habitual; realiza aceptación dedicada tras cambios
-de proveedor, SMTP/IMAP, migration o Sieve y antes de publicar una versión.
+Si falla entrega, comprueba MX/SPF, credenciales, protocolos, confirmación de destinos, carpetas incluido Junk y Message-ID. Un error de red no demuestra revocación ni eliminación. Conserva operationId/submissionId y comprueba resultados desconocidos sin reenviar automáticamente. Mantén las credenciales reales fuera del CI habitual; realiza aceptación dedicada tras cambios de proveedor, SMTP/IMAP, migration o Sieve y antes de publicar una versión.

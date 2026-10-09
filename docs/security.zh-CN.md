@@ -1,99 +1,53 @@
 # 安全
 
-[English](security.md) · **简体中文** · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md) · [Español](security.es.md)
+[English](https://github.com/yll682/Mailhearth/blob/main/docs/security.md) · **简体中文** · [繁體中文](https://github.com/yll682/Mailhearth/blob/main/docs/security.zh-TW.md) · [日本語](https://github.com/yll682/Mailhearth/blob/main/docs/security.ja.md) · [Español](https://github.com/yll682/Mailhearth/blob/main/docs/security.es.md)
 
 ## 威胁模型
 
-Mailhearth 位于员工浏览器与 Purelymail、Migadu 或手动配置的邮件服务器之间。
-管理凭据可以操作账户资源，协议凭据访问各个邮箱。需要保护的资产包括：
+Mailhearth 位于员工浏览器与 Purelymail、Migadu 或手动配置的邮件服务器之间。管理凭据可以操作账户资源，协议凭据访问各个邮箱。需要保护的资产包括：
 
 1. 各连接的管理 API 凭据。
 2. 用于 IMAP/SMTP/ManageSieve 的独立邮箱密码。
 3. 邮件内容和组织通讯录。
 4. 成员的会话。
 
-考虑的攻击者包括：互联网上的攻击者、恶意邮件或钓鱼邮件、已离职的员工，以及试图
-读取未获授权邮箱的成员。主机本身被攻陷不在防护范围内，只做影响范围的限制——机密
-数据加密存储，因此仅仅拿到数据库副本没有用处。
+考虑的攻击者包括：互联网上的攻击者、恶意邮件或钓鱼邮件、已离职的员工，以及试图读取未获授权邮箱的成员。主机本身被攻陷不在防护范围内，只做影响范围的限制——机密数据加密存储，因此仅仅拿到数据库副本没有用处。
 
 ## 防护措施
 
-**静态加密。** `secrets.Box` 用 AES-256-GCM 加密，密钥由本次部署的 master key 经
-HKDF-SHA256 派生。master key 来自 `MAILHEARTH_MASTER_KEY`，或首次启动时生成的
-`<data>/master.key`（权限 0600）。不同用途使用不同的派生密钥。已保存的 API 和协议
-凭据仅返回掩码信息。新生成的外部客户端密码允许授权管理员在期限内明确领取一次；
-领取响应使用 `Cache-Control: no-store`，并移除可领取的秘密。
+**静态加密。** `secrets.Box` 用 AES-256-GCM 加密，密钥由本次部署的 master key 经 HKDF-SHA256 派生。master key 来自 `MAILHEARTH_MASTER_KEY`，或首次启动时生成的 `<data>/master.key`（权限 0600）。不同用途使用不同的派生密钥。已保存的 API 和协议凭据仅返回掩码信息。新生成的外部客户端密码允许授权管理员在期限内明确领取一次；领取响应使用 `Cache-Control: no-store`，并移除可领取的秘密。
 
-**身份认证。** 成员密码使用 argon2id（19 MiB，t=2）。会话是 256 位随机 token，
-以 SHA-256 哈希后存储；cookie 带 `HttpOnly`、`SameSite=Lax`，在 base URL 为 HTTPS
-时带 `Secure`，有效期 30 天并随访问延长。登录和接受邀请按 IP 限流。停用或办理离职
-会立即注销该成员的全部会话。
+**身份认证。** 成员密码使用 argon2id（19 MiB，t=2）。会话是 256 位随机 token，以 SHA-256 哈希后存储；cookie 带 `HttpOnly`、`SameSite=Lax`，在 base URL 为 HTTPS 时带 `Secure`，有效期 30 天并随访问延长。登录和接受邀请按 IP 限流。停用或办理离职会立即注销该成员的全部会话。
 
-**权限校验。** 每个管理接口都检查成员角色中的对应权限；所有者专属的操作（转让）
-要求 `org.owner`。邮件接口通过 `core.ResolveMailbox` 解析邮箱，要求成员拥有该邮箱
-或持有显式授权，并按授权级别限制操作（`read` 不能加星标也不能发信，`send` 不能
-删除或移动）。管理权限永远不蕴含邮件访问权。
+**权限校验。** 每个管理接口都检查成员角色中的对应权限；所有者专属的操作（转让）要求 `org.owner`。邮件接口通过 `core.ResolveMailbox` 解析邮箱，要求成员拥有该邮箱或持有显式授权，并按授权级别限制操作（`read` 不能加星标也不能发信，`send` 不能删除或移动）。管理权限永远不蕴含邮件访问权。
 
-**CSRF。** 会改变状态的 `/api` 请求必须携带 `X-Requested-With: Mailhearth`
-（浏览器在没有 CORS 的情况下无法跨源添加该头），并且在存在 `Origin` 头时该头必须
-与主机匹配。
+**CSRF。** 会改变状态的 `/api` 请求必须携带 `X-Requested-With: Mailhearth`（浏览器在没有 CORS 的情况下无法跨源添加该头），并且在存在 `Origin` 头时该头必须与主机匹配。
 
 **不可信的邮件内容。**
-- HTML 在服务端用白名单（bluemonday）消毒，再经过一次 DOM 处理：去掉危险 CSS
-  （`expression`、`url()`、`position:fixed`），把 `cid:` 图片改写成带认证的分段
-  URL，在未经请求时拦截远程图片，并给链接强制加上
-  `target=_blank rel=noopener noreferrer`。
-- 消毒后的文档从独立 URL 提供，带
-  `Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src
-  'unsafe-inline'; script-src 'none'; form-action 'none'`，并在
-  `<iframe sandbox="allow-same-origin allow-popups …">` 中显示，不含
-  `allow-scripts`。保留 `allow-same-origin` 只是为了让父页面测量高度；无论如何
-  CSP 都保证里面不可能执行脚本。
-- iframe 通过一个短期 HMAC view token 认证，该 token 绑定成员、邮箱、文件夹和
-  UID，因此不需要 cookie。
-- 附件一律以 `Content-Disposition: attachment` 提供，除非类型属于可安全内联的
-  范围（位图、PDF、音频视频、text/plain）；HTML、SVG 和 XML 从不内联渲染。所有
-  响应都带 `X-Content-Type-Options: nosniff`。
-- 撰写的 HTML 和签名在发送前经过同一套消毒流程，因此即使浏览器会话被攻陷也无法
-  把脚本注入邮件。
-- 邮件和附件大小有上限（`MAILHEARTH_MAX_UPLOAD_MB`、`MAILHEARTH_MAX_MESSAGE_MB`）；
-  超过 2 MB 的文本分段在显示时截断。
+- HTML 在服务端用白名单（bluemonday）消毒，再经过一次 DOM 处理：去掉危险 CSS（`expression`、`url()`、`position:fixed`），把 `cid:` 图片改写成带认证的分段 URL，在未经请求时拦截远程图片，并给链接强制加上 `target=_blank rel=noopener noreferrer`。
+- 消毒后的文档从独立 URL 提供，带 `Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; form-action 'none'`，并在 `<iframe sandbox="allow-same-origin allow-popups …">` 中显示，不含 `allow-scripts`。保留 `allow-same-origin` 只是为了让父页面测量高度；无论如何 CSP 都保证里面不可能执行脚本。
+- iframe 通过一个短期 HMAC view token 认证，该 token 绑定成员、邮箱、文件夹和 UID，因此不需要 cookie。
+- 附件一律以 `Content-Disposition: attachment` 提供，除非类型属于可安全内联的范围（位图、PDF、音频视频、text/plain）；HTML、SVG 和 XML 从不内联渲染。所有响应都带 `X-Content-Type-Options: nosniff`。
+- 撰写的 HTML 和签名在发送前经过同一套消毒流程，因此即使浏览器会话被攻陷也无法把脚本注入邮件。
+- 邮件和附件大小有上限（`MAILHEARTH_MAX_UPLOAD_MB`、`MAILHEARTH_MAX_MESSAGE_MB`）；超过 2 MB 的文本分段在显示时截断。
 
-**应用层响应头。** `X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、
-针对 SPA 的 CSP（`script-src 'self'`）、只对带哈希的静态资源使用不可变缓存、
-API 响应一律 `no-store`。
+**应用层响应头。** `X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、针对 SPA 的 CSP（`script-src 'self'`）、只对带哈希的静态资源使用不可变缓存、API 响应一律 `no-store`。
 
-**连接与凭据。** 管理认证和协议认证分别配置。候选配置通过全部启用 endpoint 的认证
-之后提交。连接、endpoint、凭据和访问版本使旧连接及请求失效。暂停立即撤销本地
-访问并保留凭据。managed 轮换分别记录创建、验证、提交和撤销；entered 凭据及外部
-客户端需要明确的服务商侧处理。远程撤销只有通过相应核验才能确认；管理员报告保存
-`systemVerified=false`。凭据创建响应丢失且没有远程 ID 时需要清理报告，不会自动
-再次创建凭据。
+**连接与凭据。** 管理认证和协议认证分别配置。候选配置通过全部启用 endpoint 的认证之后提交。连接、endpoint、凭据和访问版本使旧连接及请求失效。暂停立即撤销本地访问并保留凭据。managed 轮换分别记录创建、验证、提交和撤销；entered 凭据及外部客户端需要明确的服务商侧处理。远程撤销只有通过相应核验才能确认；管理员报告保存 `systemVerified=false`。凭据创建响应丢失且没有远程 ID 时需要清理报告，不会自动再次创建凭据。
 
-**关联与并发。** 数据库约束检查组织、连接、邮箱和凭据归属。requestId、资源占用及
-expectedRevision 保护管理操作；排队、执行及操作控制检查权限。删除会影响发送或
-协作历史的邮箱保留归档。domain scope 控制管理与发现，邮件访问另行检查。
+**关联与并发。** 数据库约束检查组织、连接、邮箱和凭据归属。requestId、资源占用及 expectedRevision 保护管理操作；排队、执行及操作控制检查权限。删除会影响发送或协作历史的邮箱保留归档。domain scope 控制管理与发现，邮件访问另行检查。
 
-**TLS 与授权。** 每项启用协议验证 hostname 和证书，使用系统证书或明确配置的私有
-CA。协议没有忽略证书验证选项。Identity 显示设置与发件授权分别处理；别名、导入
-及转发登记不授予 SMTP From 权限。
+**TLS 与授权。** 每项启用协议验证 hostname 和证书，使用系统证书或明确配置的私有 CA。协议没有忽略证书验证选项。Identity 显示设置与发件授权分别处理；别名、导入及转发登记不授予 SMTP From 权限。
 
-**发送与远程观察。** Submission 加密 envelope 并保留固定标识。SMTP 与 Sent 分别
-保存；未知发送结果需要核查，重新发送需要明确的新请求。转发导入保留确认状态及
-未经验证的投递方式。API 资源存在和外部报告均不确认实际投递。
+**发送与远程观察。** Submission 加密 envelope 并保留固定标识。SMTP 与 Sent 分别保存；未知发送结果需要核查，重新发送需要明确的新请求。转发导入保留确认状态及未经验证的投递方式。API 资源存在和外部报告均不确认实际投递。
 
-**Sieve。** 规则由结构化模型编译而来，编译时校验邮件头名称、大小、地址和标记；
-用户无法提交原始 Sieve 脚本。ManageSieve 检查扩展、active script hash、独立候选
-脚本的读取和启用结果。接管需要确认，已有脚本保留。未明确的认证拒绝保持尚未验证。
+**Sieve。** 规则由结构化模型编译而来，编译时校验邮件头名称、大小、地址和标记；用户无法提交原始 Sieve 脚本。ManageSieve 检查扩展、active script hash、独立候选脚本的读取和启用结果。接管需要确认，已有脚本保留。未明确的认证拒绝保持尚未验证。
 
 **审计。** 每一次管理操作都记录操作者、对象和详情，写入 `audit_log`。
 
 ## 部署建议
 
-- 在反向代理上终止 TLS，并把 `MAILHEARTH_BASE_URL` 设成 HTTPS 地址，这样 cookie
-  才会带 `Secure`。只有在代理确实设置了 `X-Forwarded-For` 时才开启
-  `MAILHEARTH_TRUST_PROXY=true`。
-- 把 `master.key` 与数据库分开备份，存进你的密码管理器。没有它，所有已保存的
-  凭据需要通过适用的 entered 或 managed 流程重新配置并验证。
+- 在反向代理上终止 TLS，并把 `MAILHEARTH_BASE_URL` 设成 HTTPS 地址，这样 cookie 才会带 `Secure`。只有在代理确实设置了 `X-Forwarded-For` 时才开启 `MAILHEARTH_TRUST_PROXY=true`。
+- 把 `master.key` 与数据库分开备份，存进你的密码管理器。没有它，所有已保存的凭据需要通过适用的 entered 或 managed 流程重新配置并验证。
 - 为 Mailhearth 配置专用管理 API 凭据，以便可以独立撤销。
 - 在服务商账户本身开启两步验证；API 凭据可以独立访问账户，因此需要专门保护。
