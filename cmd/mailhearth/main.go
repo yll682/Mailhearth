@@ -127,10 +127,14 @@ func run(seedDemo bool) error {
 	svc := core.New(database, cfg, box, pool, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err:=svc.StartOperations(ctx);err!=nil{return err}
-	defer func(){stop();svc.WaitOperations()}()
-	if err:=svc.StartSubmissions(ctx);err!=nil{return err}
-	defer func(){stop();svc.WaitSubmissions()}()
+	if err := svc.StartOperations(ctx); err != nil {
+		return err
+	}
+	defer func() { stop(); svc.WaitOperations() }()
+	if err := svc.StartSubmissions(ctx); err != nil {
+		return err
+	}
+	defer func() { stop(); svc.WaitSubmissions() }()
 	api := httpapi.New(cfg, svc, pool, web.Handler(), signKey, log)
 
 	srv := &http.Server{
@@ -151,11 +155,17 @@ func run(seedDemo bool) error {
 	}()
 
 	var workerErr error
-	select{case <-ctx.Done():case workerErr=<-svc.OperationErrors():stop()}
+	select {
+	case <-ctx.Done():
+	case workerErr = <-svc.OperationErrors():
+		stop()
+	}
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err:=srv.Shutdown(shutdownCtx);err!=nil{return err}
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
 	return workerErr
 }
 

@@ -13,11 +13,19 @@ import (
 func requireManagementPermission(ctx context.Context, q managementQuery, orgID, actor int64, required string) error {
 	var body string
 	err := q.QueryRowContext(ctx, `SELECT r.permissions_json FROM members m JOIN roles r ON r.id=m.role_id AND r.org_id=m.org_id WHERE m.org_id=? AND m.id=? AND m.status=?`, orgID, actor, model.MemberActive).Scan(&body)
-	if db.IsNotFound(err) { return ErrForbidden }
-	if err != nil { return err }
+	if db.IsNotFound(err) {
+		return ErrForbidden
+	}
+	if err != nil {
+		return err
+	}
 	var permissions []string
-	if err := json.Unmarshal([]byte(body), &permissions); err != nil { return err }
-	if !HasPermission(permissions, required) { return ErrForbidden }
+	if err := json.Unmarshal([]byte(body), &permissions); err != nil {
+		return err
+	}
+	if !HasPermission(permissions, required) {
+		return ErrForbidden
+	}
 	return nil
 }
 

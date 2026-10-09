@@ -1,15 +1,10 @@
-// Package integration exercises Mailhearth against a real Purelymail
-// account: the management API, IMAP, SMTP submission and ManageSieve. The
-// in-memory fake used by the unit tests can only prove that Mailhearth is
-// self-consistent; these tests prove that it matches the live service.
+// Package integration 使用真实 Purelymail 账户检查管理 API、IMAP、SMTP 和 ManageSieve。
 //
-// Every test skips unless MAILHEARTH_IT_TOKEN and MAILHEARTH_IT_DOMAIN are
-// set. See docs/integration-testing.md.
+// 未设置 MAILHEARTH_IT_TOKEN 与 MAILHEARTH_IT_DOMAIN 时跳过测试。
+// 执行方法见 docs/integration-testing.md。
 //
-// Safety: the suite only ever creates, modifies or deletes objects whose
-// local part starts with the configured prefix (default "mh-it"). Anything
-// else is refused by guardOwned, so pointing the suite at a domain that also
-// holds real mailboxes cannot damage them.
+// 测试只创建、修改和删除地址 local part 使用指定前缀的资源（默认 mh-it）。
+// guardOwned 检查资源前缀；需要使用专用测试账户与域名。
 package integration
 
 import (

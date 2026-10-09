@@ -10,7 +10,11 @@
 $env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
 $env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
 New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+$env:TEMP=$env:GOTMPDIR
+$env:TMP=$env:GOTMPDIR
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
 go vet ./...
 npm --prefix web run typecheck
@@ -28,7 +32,7 @@ race 檢查需要 C 編譯器及 cgo。
 ## 真實環境與安全
 
 `internal/integration/multiprovider` 使用真實 API 和協定連線。關閉
-`MAILHEARTH_DEV_STACK`；缺少設定時明確失敗。使用專用測試帳戶、網域及沒有重要
+`MAILHEARTH_DEV_STACK`；未設定配置路徑時明確跳過，已提供的配置無效時失敗。使用專用測試帳戶、網域及沒有重要
 郵件的信箱。協定測試寄送真實郵件，並修改獨立本地測試部署的 endpoint 設定。
 執行前閱讀所選測試；目前驗證前提和協定檢查不重設既有外部信箱密碼。後續生命週期
 驗收可能建立、刪除資源、撤銷憑證和修改規則，需要使用專用資源。
@@ -60,6 +64,7 @@ JSON 讀取拒絕未知欄位和額外 JSON 值。以下環境全部需要設定
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
 go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 40m
 ```
 
 ## 覆蓋與結果
@@ -72,6 +77,13 @@ go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
 - `TestRealMultiProviderProtocols`：獨立憑證與實際投遞（T04）、SMTP 停用後的讀取
   （T05）、ManageSieve 停用後的讀取與投遞（T06）、endpoint 版本及舊連線關閉
   （T37），成功後寫入 `protocols.json`。
+- `TestClientAgainstRealPurelymail`：真實帳戶查詢、使用者、密碼及 routing rule 操作，
+  透過 IMAP 檢查本次建立資源的認證與撤銷。
+- `TestMailOpsAgainstRealProtocols`：資料夾、分頁、搜尋、flags、COPY/MOVE/刪除、
+  MIME、附件、SMTP 投遞和 IDLE；使用獨立資料夾及唯一郵件識別碼。
+- `TestListFoldersOnRev1Server`：真實 IMAP4rev1 的 LIST、STATUS 與特殊資料夾。
+  此項要求 `manual.primaryMailbox` 沒有 IMAP4rev2、LIST-EXTENDED、LIST-STATUS
+  和 SPECIAL-USE；其他協定檢查可按測試名稱選擇。
 
 報告保存 `acceptanceComplete=false`。完整 T01–T40 和 V01–V07 仍需要補充測試並
 實際執行；`internal/integration` 的舊 Purelymail 套件仍需要遷移至目前介面。

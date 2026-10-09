@@ -56,27 +56,27 @@ func upstream(op string, err error) error {
 
 // Service is the application service.
 type Service struct {
-	DB    *db.DB
-	Cfg   *config.Config
-	Box   *secrets.Box
-	Log   *slog.Logger
-	Pool  *imappool.Pool
-	requestMu sync.Mutex
-	requests map[string]accessRequest
-	operationWake chan struct{}
-	operationWG sync.WaitGroup
-	operationErrors chan error
-	submissionWake chan struct{}
-	submissionWG sync.WaitGroup
-	submissionMu sync.Mutex
-	submissionActive map[int64]bool
-	operationsStarted atomic.Bool
+	DB                 *db.DB
+	Cfg                *config.Config
+	Box                *secrets.Box
+	Log                *slog.Logger
+	Pool               *imappool.Pool
+	requestMu          sync.Mutex
+	requests           map[string]accessRequest
+	operationWake      chan struct{}
+	operationWG        sync.WaitGroup
+	operationErrors    chan error
+	submissionWake     chan struct{}
+	submissionWG       sync.WaitGroup
+	submissionMu       sync.Mutex
+	submissionActive   map[int64]bool
+	operationsStarted  atomic.Bool
 	submissionsStarted atomic.Bool
 }
 
 // New wires a service.
 func New(database *db.DB, cfg *config.Config, box *secrets.Box, pool *imappool.Pool, log *slog.Logger) *Service {
-	s := &Service{DB: database, Cfg: cfg, Box: box, Pool: pool, Log: log,requests:map[string]accessRequest{},operationWake:make(chan struct{},1),operationErrors:make(chan error,1),submissionWake:make(chan struct{},1),submissionActive:map[int64]bool{}}
+	s := &Service{DB: database, Cfg: cfg, Box: box, Pool: pool, Log: log, requests: map[string]accessRequest{}, operationWake: make(chan struct{}, 1), operationErrors: make(chan error, 1), submissionWake: make(chan struct{}, 1), submissionActive: map[int64]bool{}}
 	return s
 }
 

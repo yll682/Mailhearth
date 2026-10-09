@@ -24,9 +24,14 @@ jobs:
           cd web
           npm ci --no-audit --no-fund
           npm run typecheck
+          npm run test
           npm run build
       - name: Go
+        env:
+          GOTMPDIR: ${{ github.workspace }}/data/integration/go-work
+          TMPDIR: ${{ github.workspace }}/data/integration/go-work
         run: |
+          mkdir -p "$GOTMPDIR"
           gofmt -l ./internal ./cmd | tee /dev/stderr | test -z "$(cat)"
           go vet ./...
           go test ./...

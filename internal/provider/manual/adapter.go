@@ -17,9 +17,13 @@ func external() error {
 }
 
 func (a *Adapter) ValidateConnection(ctx context.Context, req provider.ValidateConnectionRequest) (provider.ValidateConnectionResult, error) {
-	if req.APIKey!="" || req.APIBaseURL!="" || req.Username!="" { return provider.ValidateConnectionResult{}, provider.Errorf("invalid","手动连接不能包含 API 认证") }
-	if err:=provider.ValidateProtocolTemplates(req.Protocols);err!=nil { return provider.ValidateConnectionResult{},err }
-	return provider.ValidateConnectionResult{OK:true},nil
+	if req.APIKey != "" || req.APIBaseURL != "" || req.Username != "" {
+		return provider.ValidateConnectionResult{}, provider.Errorf("invalid", "手动连接不能包含 API 认证")
+	}
+	if err := provider.ValidateProtocolTemplates(req.Protocols); err != nil {
+		return provider.ValidateConnectionResult{}, err
+	}
+	return provider.ValidateConnectionResult{OK: true}, nil
 }
 
 func (a *Adapter) Discover(ctx context.Context, req provider.DiscoverRequest) (provider.DiscoverResult, error) {
@@ -66,7 +70,9 @@ func (a *Adapter) UpdateMailbox(ctx context.Context, req provider.UpdateMailboxR
 	return provider.MailboxInfo{}, external()
 }
 
-func (a *Adapter) DeleteMailbox(ctx context.Context, req provider.DeleteMailboxRequest) error { return external() }
+func (a *Adapter) DeleteMailbox(ctx context.Context, req provider.DeleteMailboxRequest) error {
+	return external()
+}
 
 func (a *Adapter) ResetMailboxPassword(ctx context.Context, req provider.UpdateMailboxRequest) (provider.CredentialInfo, error) {
 	return provider.CredentialInfo{}, external()
@@ -76,7 +82,9 @@ func (a *Adapter) CreateCredential(ctx context.Context, req provider.CreateCrede
 	return provider.CredentialInfo{}, external()
 }
 
-func (a *Adapter) RevokeCredential(ctx context.Context, req provider.RevokeCredentialRequest) error { return external() }
+func (a *Adapter) RevokeCredential(ctx context.Context, req provider.RevokeCredentialRequest) error {
+	return external()
+}
 
 func (a *Adapter) GetAddressRule(ctx context.Context, req provider.AddressRuleRequest) (provider.AddressRuleInfo, error) {
 	return provider.AddressRuleInfo{}, external()
@@ -90,7 +98,9 @@ func (a *Adapter) UpdateAddressRule(ctx context.Context, req provider.AddressRul
 	return provider.AddressRuleInfo{}, external()
 }
 
-func (a *Adapter) DeleteAddressRule(ctx context.Context, req provider.AddressRuleRequest) error { return external() }
+func (a *Adapter) DeleteAddressRule(ctx context.Context, req provider.AddressRuleRequest) error {
+	return external()
+}
 
 func (a *Adapter) GetForwarding(ctx context.Context, req provider.GetMailboxRequest) (provider.ForwardingInfo, error) {
 	return provider.ForwardingInfo{}, external()
@@ -100,7 +110,9 @@ func (a *Adapter) SetForwarding(ctx context.Context, req provider.ForwardingRequ
 	return provider.ForwardingInfo{}, external()
 }
 
-func (a *Adapter) DeleteForwarding(ctx context.Context, req provider.GetMailboxRequest) error { return external() }
+func (a *Adapter) DeleteForwarding(ctx context.Context, req provider.GetMailboxRequest) error {
+	return external()
+}
 
 func (a *Adapter) ListSenderIdentities(ctx context.Context, req provider.GetMailboxRequest) ([]provider.SenderIdentityInfo, error) {
 	return nil, external()

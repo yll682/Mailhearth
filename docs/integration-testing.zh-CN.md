@@ -10,7 +10,11 @@
 $env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
 $env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
 New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+$env:TEMP=$env:GOTMPDIR
+$env:TMP=$env:GOTMPDIR
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
 go vet ./...
 npm --prefix web run typecheck
@@ -25,10 +29,14 @@ git diff --check
 检查没有执行外部投递或浏览器交互。并发与转发检查可以使用 `-count=20` 重复执行；
 race 检查需要 C 编译器和 cgo。
 
+完整 Go 测试还检查组织初始化、邀请、登录、角色、共享邮箱协作和附件上传。
+HTTP 测试运行应用的实际服务，数据库和上传文件保存在独立的 `data/` 子目录。
+CI 执行 Go 格式检查、全部 Go 测试、前端测试及生产构建；格式检查要求没有输出。
+
 ## 真实环境与安全
 
 `internal/integration/multiprovider` 使用真实 API 和协议连接。关闭
-`MAILHEARTH_DEV_STACK`；缺少配置时明确失败。使用专用测试账户、域名及没有重要
+`MAILHEARTH_DEV_STACK`；未设置配置路径时明确跳过，已提供的配置无效时失败。使用专用测试账户、域名及没有重要
 邮件的邮箱。协议测试发送真实邮件，并修改独立本地测试部署的 endpoint 设置。
 执行前阅读所选测试；当前认证前提和协议检查不重置已有外部邮箱密码。后续生命周期
 验收可能创建、删除资源、撤销凭据和修改规则，需要使用专用资源。
@@ -60,6 +68,7 @@ JSON 读取拒绝未知字段和额外 JSON 值。以下环境全部需要配置
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
 go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 40m
 ```
 
 ## 覆盖与结果
@@ -72,6 +81,13 @@ go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
 - `TestRealMultiProviderProtocols`：独立凭据与实际投递（T04）、SMTP 停用后的读取
   （T05）、ManageSieve 停用后的读取与投递（T06）、endpoint 版本及旧连接关闭
   （T37），成功后写入 `protocols.json`。
+- `TestClientAgainstRealPurelymail`：余额、域名、用户、app password、密码更新及
+  routing rule，通过真实 API 和 IMAP 检查认证与撤销；只处理本次创建的独立资源。
+- `TestMailOpsAgainstRealProtocols`：真实文件夹、分页、搜索、flags、COPY、MOVE、
+  删除、MIME、附件、SMTP 投递与 IDLE；使用独立文件夹和唯一邮件标识进行清理。
+- `TestListFoldersOnRev1Server`：真实 IMAP4rev1 的 LIST、STATUS 与特殊文件夹。
+  此项要求 `manual.primaryMailbox` 使用没有 LIST-EXTENDED、LIST-STATUS、
+  SPECIAL-USE 和 IMAP4rev2 扩展的服务器；执行其他协议测试时可按测试名称选择。
 
 报告保存 `acceptanceComplete=false`。完整 T01–T40 和 V01–V07 仍需要补充测试并
 实际执行；`internal/integration` 的旧 Purelymail 套件仍需要迁移到当前接口。

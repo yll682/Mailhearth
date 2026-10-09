@@ -3,8 +3,8 @@ package purelymail
 import (
 	"context"
 	"errors"
-	"sort"
 	"fmt"
+	"sort"
 	"strings"
 
 	"mailhearth/internal/provider"
@@ -35,9 +35,14 @@ func (a *Adapter) ValidateConnection(ctx context.Context, req provider.ValidateC
 		client = purelymailclient.New(req.APIBaseURL, req.APIKey)
 	}
 	if _, err := client.CheckAccountCredit(ctx); err != nil {
-		code:="upstream_failed";var remote *purelymailclient.Error
-		if purelymailclient.IsInvalidToken(err) || (errors.As(err,&remote) && (remote.Status==401 || remote.Status==403)){code="provider_auth_failed"}else if errors.As(err,&remote) && remote.Status==429{code="upstream_rate_limited"}
-		return provider.ValidateConnectionResult{OK:false,Code:code,Message:"Purelymail 管理认证未通过"},provider.Errorf(code,"Purelymail 管理认证未通过")
+		code := "upstream_failed"
+		var remote *purelymailclient.Error
+		if purelymailclient.IsInvalidToken(err) || (errors.As(err, &remote) && (remote.Status == 401 || remote.Status == 403)) {
+			code = "provider_auth_failed"
+		} else if errors.As(err, &remote) && remote.Status == 429 {
+			code = "upstream_rate_limited"
+		}
+		return provider.ValidateConnectionResult{OK: false, Code: code, Message: "Purelymail 管理认证未通过"}, provider.Errorf(code, "Purelymail 管理认证未通过")
 	}
 	return provider.ValidateConnectionResult{OK: true}, nil
 }
@@ -60,7 +65,7 @@ func (a *Adapter) Discover(ctx context.Context, req provider.DiscoverRequest) (p
 		if !scopeContains(req.Scope, d.Name) {
 			continue
 		}
-		info:=domainInfo(d)
+		info := domainInfo(d)
 		resources = append(resources, provider.DiscoverySnapshotResource{
 			Resource: provider.Resource{
 				ResourceType: "domain", RemoteKey: strings.ToLower(d.Name),
@@ -68,7 +73,7 @@ func (a *Adapter) Discover(ctx context.Context, req provider.DiscoverRequest) (p
 				Purpose:       provider.PurposeDomain, State: provider.ResourcePresent,
 			},
 			Summary: map[string]string{"name": d.Name},
-			Domain:&info,
+			Domain:  &info,
 		})
 	}
 	for _, u := range users {
@@ -92,15 +97,28 @@ func (a *Adapter) Discover(ctx context.Context, req provider.DiscoverRequest) (p
 		resources = append(resources, provider.DiscoverySnapshotResource{
 			Resource: provider.Resource{
 				ResourceType: "routing_rule", RemoteKey: fmt.Sprintf("%d", r.ID),
-				RemoteLocator: map[string]string{"domain": r.DomainName, "localPart": r.MatchUser,"prefix":fmt.Sprint(r.Prefix),"catchall":fmt.Sprint(r.Catchall)},
+				RemoteLocator: map[string]string{"domain": r.DomainName, "localPart": r.MatchUser, "prefix": fmt.Sprint(r.Prefix), "catchall": fmt.Sprint(r.Catchall)},
 				Purpose:       provider.PurposeRouting, State: provider.ResourcePresent,
 			},
-			Summary: map[string]string{"address": ruleAddress(r)},
-			AddressRule:&provider.AddressRuleInfo{RemoteKey:fmt.Sprint(r.ID),RemoteLocator:map[string]string{"domain":r.DomainName,"localPart":r.MatchUser,"prefix":fmt.Sprint(r.Prefix),"catchall":fmt.Sprint(r.Catchall)},Domain:r.DomainName,LocalPart:r.MatchUser,Prefix:r.Prefix,Catchall:r.Catchall,Targets:append([]string{},r.TargetAddresses...)},
+			Summary:     map[string]string{"address": ruleAddress(r)},
+			AddressRule: &provider.AddressRuleInfo{RemoteKey: fmt.Sprint(r.ID), RemoteLocator: map[string]string{"domain": r.DomainName, "localPart": r.MatchUser, "prefix": fmt.Sprint(r.Prefix), "catchall": fmt.Sprint(r.Catchall)}, Domain: r.DomainName, LocalPart: r.MatchUser, Prefix: r.Prefix, Catchall: r.Catchall, Targets: append([]string{}, r.TargetAddresses...)},
 		})
 	}
-	mailboxAddresses:=map[string]bool{};for _,address:=range users{mailboxAddresses[strings.ToLower(address)]=true}
-	for i:=range resources{item:=&resources[i];rule:=item.AddressRule;if rule==nil || rule.Prefix || rule.Catchall || !mailboxAddresses[strings.ToLower(rule.LocalPart+"@"+rule.Domain)]{continue};item.Resource.Purpose=provider.PurposeForwarding;item.Forwarding=ruleForwardingInfo(*rule);item.Summary["mailboxAddress"]=rule.LocalPart+"@"+rule.Domain;item.Summary["deliveryMode"]="unverified"}
+	mailboxAddresses := map[string]bool{}
+	for _, address := range users {
+		mailboxAddresses[strings.ToLower(address)] = true
+	}
+	for i := range resources {
+		item := &resources[i]
+		rule := item.AddressRule
+		if rule == nil || rule.Prefix || rule.Catchall || !mailboxAddresses[strings.ToLower(rule.LocalPart+"@"+rule.Domain)] {
+			continue
+		}
+		item.Resource.Purpose = provider.PurposeForwarding
+		item.Forwarding = ruleForwardingInfo(*rule)
+		item.Summary["mailboxAddress"] = rule.LocalPart + "@" + rule.Domain
+		item.Summary["deliveryMode"] = "unverified"
+	}
 	sort.Slice(resources, func(i, j int) bool {
 		if resources[i].Resource.ResourceType != resources[j].Resource.ResourceType {
 			return resources[i].Resource.ResourceType < resources[j].Resource.ResourceType
@@ -227,18 +245,27 @@ func (a *Adapter) ActivateDomain(ctx context.Context, req provider.ActivateDomai
 
 func (a *Adapter) GetMailbox(ctx context.Context, req provider.GetMailboxRequest) (provider.MailboxInfo, error) {
 	want := strings.ToLower(req.LocalPart + "@" + req.Domain)
-	_, err := a.api.GetUser(ctx,want)
+	_, err := a.api.GetUser(ctx, want)
 	if err != nil {
 		var remote *purelymailclient.Error
-		if errors.As(err,&remote){if remote.Status==404{return provider.MailboxInfo{},provider.Errorf("not_found","远程邮箱不存在")};if remote.Status==401 || remote.Status==403{return provider.MailboxInfo{},provider.Errorf("provider_auth_failed","远程邮箱不可访问")}}
-		return provider.MailboxInfo{}, provider.Errorf("upstream_failed","远程邮箱读取失败")
+		if errors.As(err, &remote) {
+			if remote.Status == 404 {
+				return provider.MailboxInfo{}, provider.Errorf("not_found", "远程邮箱不存在")
+			}
+			if remote.Status == 401 || remote.Status == 403 {
+				return provider.MailboxInfo{}, provider.Errorf("provider_auth_failed", "远程邮箱不可访问")
+			}
+		}
+		return provider.MailboxInfo{}, provider.Errorf("upstream_failed", "远程邮箱读取失败")
 	}
-	return provider.MailboxInfo{Domain:req.Domain,LocalPart:req.LocalPart,Address:want},nil
+	return provider.MailboxInfo{Domain: req.Domain, LocalPart: req.LocalPart, Address: want}, nil
 }
 
 func (a *Adapter) CreateMailbox(ctx context.Context, req provider.CreateMailboxRequest) (provider.MailboxInfo, error) {
 	password := req.Password
-	if password==""{return provider.MailboxInfo{},provider.Errorf("invalid","邮箱创建需要已保存的候选密码")}
+	if password == "" {
+		return provider.MailboxInfo{}, provider.Errorf("invalid", "邮箱创建需要已保存的候选密码")
+	}
 	if err := a.api.CreateUser(ctx, purelymailclient.CreateUserRequest{
 		UserName: req.LocalPart, DomainName: req.Domain, Password: password,
 		EnablePasswordReset: false, EnableSearchIndexing: true, SendWelcomeEmail: false,
@@ -259,12 +286,14 @@ func (a *Adapter) UpdateMailbox(ctx context.Context, req provider.UpdateMailboxR
 }
 
 func (a *Adapter) DeleteMailbox(ctx context.Context, req provider.DeleteMailboxRequest) error {
-	return a.api.DeleteUser(ctx, req.LocalPart + "@" + req.Domain)
+	return a.api.DeleteUser(ctx, req.LocalPart+"@"+req.Domain)
 }
 
 func (a *Adapter) ResetMailboxPassword(ctx context.Context, req provider.UpdateMailboxRequest) (provider.CredentialInfo, error) {
 	password := req.NewPassword
-	if password==""{return provider.CredentialInfo{},provider.Errorf("invalid","密码重置需要已保存的候选密码")}
+	if password == "" {
+		return provider.CredentialInfo{}, provider.Errorf("invalid", "密码重置需要已保存的候选密码")
+	}
 	p := password
 	if err := a.api.ModifyUser(ctx, purelymailclient.ModifyUserRequest{UserName: req.LocalPart + "@" + req.Domain, NewPassword: &p}); err != nil {
 		return provider.CredentialInfo{}, err
@@ -281,8 +310,10 @@ func (a *Adapter) CreateCredential(ctx context.Context, req provider.CreateCrede
 }
 
 func (a *Adapter) RevokeCredential(ctx context.Context, req provider.RevokeCredentialRequest) error {
-	if req.Secret==""{return provider.Errorf("invalid","撤销凭据需要明确的应用密码")}
-	return a.api.DeleteAppPassword(ctx,req.LocalPart+"@"+req.Domain,req.Secret)
+	if req.Secret == "" {
+		return provider.Errorf("invalid", "撤销凭据需要明确的应用密码")
+	}
+	return a.api.DeleteAppPassword(ctx, req.LocalPart+"@"+req.Domain, req.Secret)
 }
 
 func (a *Adapter) GetAddressRule(ctx context.Context, req provider.AddressRuleRequest) (provider.AddressRuleInfo, error) {
@@ -293,7 +324,7 @@ func (a *Adapter) GetAddressRule(ctx context.Context, req provider.AddressRuleRe
 	for _, r := range rules {
 		if strings.EqualFold(r.DomainName, req.Domain) && strings.EqualFold(r.MatchUser, req.LocalPart) && r.Prefix == req.Prefix && r.Catchall == req.Catchall {
 			return provider.AddressRuleInfo{
-				RemoteKey: fmt.Sprint(r.ID), RemoteLocator: map[string]string{"domain":r.DomainName,"localPart":r.MatchUser},
+				RemoteKey: fmt.Sprint(r.ID), RemoteLocator: map[string]string{"domain": r.DomainName, "localPart": r.MatchUser},
 				Domain: r.DomainName, LocalPart: r.MatchUser, Prefix: r.Prefix, Catchall: r.Catchall, Targets: normalizedTargets(r.TargetAddresses),
 			}, nil
 		}
@@ -307,7 +338,11 @@ func (a *Adapter) CreateAddressRule(ctx context.Context, req provider.AddressRul
 	}); err != nil {
 		return provider.AddressRuleInfo{}, err
 	}
-	info,err:=a.GetAddressRule(ctx,req);if err!=nil{return provider.AddressRuleInfo{},provider.Errorf("remote_result_unknown","远程规则写入后的读取需要核查")};return info,nil
+	info, err := a.GetAddressRule(ctx, req)
+	if err != nil {
+		return provider.AddressRuleInfo{}, provider.Errorf("remote_result_unknown", "远程规则写入后的读取需要核查")
+	}
+	return info, nil
 }
 
 func (a *Adapter) UpdateAddressRule(ctx context.Context, req provider.AddressRuleRequest) (provider.AddressRuleInfo, error) {

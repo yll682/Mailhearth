@@ -36,7 +36,12 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/overview", perm(model.PermMembersManage, func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
 		v, err := s.Svc.Overview(r.Context(), p.OrgID)
-		if v!=nil && !p.can(model.PermOrgManage){for i:=range v.Connections{v.Connections[i].LastAPICheckStatus=nil;v.Connections[i].LastAPIErrorCode=nil}}
+		if v != nil && !p.can(model.PermOrgManage) {
+			for i := range v.Connections {
+				v.Connections[i].LastAPICheckStatus = nil
+				v.Connections[i].LastAPIErrorCode = nil
+			}
+		}
 		respond(w, r, v, err)
 	}))
 	mux.HandleFunc("PATCH /api/admin/org", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
@@ -77,16 +82,16 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 
 	// 管理连接需要明确的 connectionId。
 	mux.HandleFunc("GET /api/admin/connection", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w,http.StatusGone,apiError{Error:"请使用 /api/admin/connections",Code:"api_replaced"})
+		writeJSON(w, http.StatusGone, apiError{Error: "请使用 /api/admin/connections", Code: "api_replaced"})
 	}))
 	mux.HandleFunc("PUT /api/admin/connection", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w,http.StatusGone,apiError{Error:"请使用 /api/admin/connections",Code:"api_replaced"})
+		writeJSON(w, http.StatusGone, apiError{Error: "请使用 /api/admin/connections", Code: "api_replaced"})
 	}))
 	mux.HandleFunc("POST /api/admin/connection/sync", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w,http.StatusGone,apiError{Error:"请通过 connectionId 执行同步",Code:"api_replaced"})
+		writeJSON(w, http.StatusGone, apiError{Error: "请通过 connectionId 执行同步", Code: "api_replaced"})
 	}))
 	mux.HandleFunc("GET /api/admin/connection/discover", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w,http.StatusGone,apiError{Error:"请通过 connectionId 发现资源",Code:"api_replaced"})
+		writeJSON(w, http.StatusGone, apiError{Error: "请通过 connectionId 发现资源", Code: "api_replaced"})
 	}))
 
 	// Roles
@@ -147,7 +152,7 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"member.create",MemberCreate:&in},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "member.create", MemberCreate: &in}, nil)
 	}))
 	mux.HandleFunc("GET /api/admin/members/{id}", perm(model.PermMembersManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		m, err := s.Svc.Member(r.Context(), p.OrgID, id)
@@ -189,7 +194,7 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"member.status",MemberID:id,MemberStatus:&in},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "member.status", MemberID: id, MemberStatus: &in}, nil)
 	})))
 	mux.HandleFunc("POST /api/admin/members/{id}/password", perm(model.PermMembersManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		var in struct {
@@ -212,11 +217,21 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			return
 		}
 		v, err := s.Svc.Offboard(r.Context(), p.OrgID, p.Member.ID, id, in)
-		if err!=nil{s.fail(w,r,err);return};writeJSON(w,http.StatusAccepted,v.Operation)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, v.Operation)
 	})))
 	mux.HandleFunc("DELETE /api/admin/members/{id}", perm(model.PermMembersManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
-		var in struct{ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return}
-		if err := s.Svc.DeleteMember(r.Context(), p.OrgID, p.Member.ID, id,in.ExpectedRevision); err != nil {
+		var in struct {
+			ExpectedRevision int64 `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if err := s.Svc.DeleteMember(r.Context(), p.OrgID, p.Member.ID, id, in.ExpectedRevision); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -228,8 +243,10 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		v, err := s.Svc.Domains(r.Context(), principalFrom(r).OrgID)
 		respond(w, r, v, err)
 	}))
-	for _,route:=range []string{"GET /api/admin/domains/dns-guide","POST /api/admin/domains","POST /api/admin/domains/{id}/recheck","PATCH /api/admin/domains/{id}","DELETE /api/admin/domains/{id}"}{
-		mux.HandleFunc(route,perm(model.PermDomainsManage,func(w http.ResponseWriter,r *http.Request){s.fail(w,r,provider.Errorf("api_replaced","请通过 domain-bindings 指定邮件连接与域名关联"))}))
+	for _, route := range []string{"GET /api/admin/domains/dns-guide", "POST /api/admin/domains", "POST /api/admin/domains/{id}/recheck", "PATCH /api/admin/domains/{id}", "DELETE /api/admin/domains/{id}"} {
+		mux.HandleFunc(route, perm(model.PermDomainsManage, func(w http.ResponseWriter, r *http.Request) {
+			s.fail(w, r, provider.Errorf("api_replaced", "请通过 domain-bindings 指定邮件连接与域名关联"))
+		}))
 	}
 
 	// Mailboxes
@@ -240,13 +257,21 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		return model.PermMailboxesManage
 	}
 	mux.HandleFunc("GET /api/admin/mailboxes", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		p:=principalFrom(r);if !p.can(model.PermMembersManage) && !p.can(model.PermAddressesManage) && !p.can(model.PermGroupsManage) && !p.can(model.PermMailboxesManage) && !p.can(model.PermSharedManage){s.fail(w,r,core.ErrForbidden);return}
+		p := principalFrom(r)
+		if !p.can(model.PermMembersManage) && !p.can(model.PermAddressesManage) && !p.can(model.PermGroupsManage) && !p.can(model.PermMailboxesManage) && !p.can(model.PermSharedManage) {
+			s.fail(w, r, core.ErrForbidden)
+			return
+		}
 		v, err := s.Svc.Mailboxes(r.Context(), principalFrom(r).OrgID)
 		respond(w, r, v, err)
 	}))
 	mux.HandleFunc("POST /api/admin/mailboxes", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
-		var in struct{core.AttachMailboxInput;DomainBindingID int64 `json:"domainBindingId"`;LocalPart string `json:"localPart"`}
+		var in struct {
+			core.AttachMailboxInput
+			DomainBindingID int64  `json:"domainBindingId"`
+			LocalPart       string `json:"localPart"`
+		}
 		if err := readJSON(r, &in); err != nil {
 			s.fail(w, r, err)
 			return
@@ -255,10 +280,22 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			writeJSON(w, http.StatusForbidden, apiError{Error: "you do not have permission to create this mailbox", Code: "forbidden"})
 			return
 		}
-		requestID:=in.RequestID;in.RequestID=""
-		if in.Mode=="create"{if in.Address!=""{s.fail(w,r,&core.ValidationError{Msg:"创建邮箱的地址由域名关联和 localPart 生成"});return};create:=core.ManagedMailboxCreateInput{Mode:in.Mode,ConnectionID:in.ConnectionID,DomainBindingID:in.DomainBindingID,LocalPart:in.LocalPart,Kind:in.Kind,DisplayName:in.DisplayName,OwnerMemberID:in.OwnerMemberID,CredentialMode:in.CredentialMode,SentCopyMode:in.SentCopyMode,Credentials:in.Credentials,Endpoints:in.Endpoints,FolderMapping:in.FolderMapping};s.acceptOperation(w,r,requestID,core.OperationPayload{Kind:"mailbox.create",Create:&create},nil);return}
-		if in.DomainBindingID!=0 || in.LocalPart!=""{s.fail(w,r,&core.ValidationError{Msg:"attach 请求不能包含创建字段"});return}
-		s.acceptOperation(w,r,requestID,core.OperationPayload{Kind:"mailbox.attach",ConnectionID:in.ConnectionID,Attach:&in.AttachMailboxInput},[]string{"connection:"+fmt.Sprint(in.ConnectionID),"mailbox-address:"+fmt.Sprint(in.ConnectionID)+":"+in.Address})
+		requestID := in.RequestID
+		in.RequestID = ""
+		if in.Mode == "create" {
+			if in.Address != "" {
+				s.fail(w, r, &core.ValidationError{Msg: "创建邮箱的地址由域名关联和 localPart 生成"})
+				return
+			}
+			create := core.ManagedMailboxCreateInput{Mode: in.Mode, ConnectionID: in.ConnectionID, DomainBindingID: in.DomainBindingID, LocalPart: in.LocalPart, Kind: in.Kind, DisplayName: in.DisplayName, OwnerMemberID: in.OwnerMemberID, CredentialMode: in.CredentialMode, SentCopyMode: in.SentCopyMode, Credentials: in.Credentials, Endpoints: in.Endpoints, FolderMapping: in.FolderMapping}
+			s.acceptOperation(w, r, requestID, core.OperationPayload{Kind: "mailbox.create", Create: &create}, nil)
+			return
+		}
+		if in.DomainBindingID != 0 || in.LocalPart != "" {
+			s.fail(w, r, &core.ValidationError{Msg: "attach 请求不能包含创建字段"})
+			return
+		}
+		s.acceptOperation(w, r, requestID, core.OperationPayload{Kind: "mailbox.attach", ConnectionID: in.ConnectionID, Attach: &in.AttachMailboxInput}, []string{"connection:" + fmt.Sprint(in.ConnectionID), "mailbox-address:" + fmt.Sprint(in.ConnectionID) + ":" + in.Address})
 	}))
 	mux.HandleFunc("GET /api/admin/mailboxes/{id}", s.requireAuth(withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		mb, err := s.Svc.Mailbox(r.Context(), p.OrgID, id)
@@ -266,13 +303,30 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		if !p.can(model.PermMembersManage) && !p.can(mailboxPerm(mb.Kind)){s.fail(w,r,core.ErrForbidden);return}
-		access, err := s.Svc.AccessList(r.Context(), p.OrgID, id);if err!=nil{s.fail(w,r,err);return}
-		ids, err := s.Svc.Identities(r.Context(), id);if err!=nil{s.fail(w,r,err);return}
-		addrs, err := s.Svc.Addresses(r.Context(), p.OrgID);if err!=nil{s.fail(w,r,err);return}
+		if !p.can(model.PermMembersManage) && !p.can(mailboxPerm(mb.Kind)) {
+			s.fail(w, r, core.ErrForbidden)
+			return
+		}
+		access, err := s.Svc.AccessList(r.Context(), p.OrgID, id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		ids, err := s.Svc.Identities(r.Context(), id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		addrs, err := s.Svc.Addresses(r.Context(), p.OrgID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
 		var related []model.Address
 		for _, a := range addrs {
-			if a.ConnectionID!=mb.ConnectionID{continue}
+			if a.ConnectionID != mb.ConnectionID {
+				continue
+			}
 			if (a.MailboxID != nil && *a.MailboxID == id) || strings.EqualFold(a.Address, mb.Address) {
 				related = append(related, a)
 				continue
@@ -287,8 +341,12 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		if related == nil {
 			related = []model.Address{}
 		}
-		forwarding,err:=s.Svc.MailboxForwarding(r.Context(),p.OrgID,id);if err!=nil{s.fail(w,r,err);return}
-		writeJSON(w, http.StatusOK, map[string]any{"mailbox": mb, "access": access, "identities": ids, "addresses": related,"forwarding":forwarding})
+		forwarding, err := s.Svc.MailboxForwarding(r.Context(), p.OrgID, id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"mailbox": mb, "access": access, "identities": ids, "addresses": related, "forwarding": forwarding})
 	})))
 	mailboxAction := func(action string, fn func(r *http.Request, p *principal, mb *model.Mailbox) (any, error)) http.HandlerFunc {
 		return withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
@@ -307,47 +365,139 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 				return
 			}
 			if v == nil {
-				if r.Method==http.MethodDelete && action=="delete"{w.WriteHeader(http.StatusNoContent);return}
+				if r.Method == http.MethodDelete && action == "delete" {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
 				v = map[string]bool{"ok": true}
 			}
 			writeJSON(w, http.StatusOK, v)
 		})
 	}
-	mux.HandleFunc("PATCH /api/admin/mailboxes/{id}", s.requireAuth(func(w http.ResponseWriter,r *http.Request){
-		id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return}
+	mux.HandleFunc("PATCH /api/admin/mailboxes/{id}", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		id, err := pathInt(r, "id")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
 		var in core.UpdateMailboxInput
 		if err := readJSON(r, &in); err != nil {
-			s.fail(w,r,err);return
+			s.fail(w, r, err)
+			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"mailbox.update",MailboxID:id,MailboxEdit:&in},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.update", MailboxID: id, MailboxEdit: &in}, nil)
 	}))
-	for _,action:=range []struct{path,kind string}{{"connect","mailbox.connect"},{"rotate","mailbox.rotate"},{"reset-password","mailbox.resetPassword"},{"delete-remote","mailbox.deleteRemote"},{"revoke-remote-access","mailbox.revokeRemoteAccess"}}{
-		mux.HandleFunc("POST /api/admin/mailboxes/{id}/"+action.path,s.requireAuth(func(w http.ResponseWriter,r *http.Request){id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return};var in core.RemoteMailboxInput;if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return}
-			if action.kind=="mailbox.connect" && in.CredentialMode=="entered"{endpoints:=core.UpdateEndpointsInput{ExpectedRevision:in.ExpectedRevision,Credentials:in.Credentials,Endpoints:in.Endpoints};s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"mailbox.endpoints",MailboxID:id,Endpoints:&endpoints},nil);return}
-			if len(in.Credentials)>0 || in.Endpoints.IMAP!=nil || in.Endpoints.SMTP!=nil || in.Endpoints.ManageSieve!=nil{s.fail(w,r,&core.ValidationError{Msg:"此操作不接受输入协议凭据"});return}
-			s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:action.kind,MailboxID:id,RemoteMailbox:&in},nil)}))
+	for _, action := range []struct{ path, kind string }{{"connect", "mailbox.connect"}, {"rotate", "mailbox.rotate"}, {"reset-password", "mailbox.resetPassword"}, {"delete-remote", "mailbox.deleteRemote"}, {"revoke-remote-access", "mailbox.revokeRemoteAccess"}} {
+		mux.HandleFunc("POST /api/admin/mailboxes/{id}/"+action.path, s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			id, err := pathInt(r, "id")
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			var in core.RemoteMailboxInput
+			if err := readJSON(r, &in); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if action.kind == "mailbox.connect" && in.CredentialMode == "entered" {
+				endpoints := core.UpdateEndpointsInput{ExpectedRevision: in.ExpectedRevision, Credentials: in.Credentials, Endpoints: in.Endpoints}
+				s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.endpoints", MailboxID: id, Endpoints: &endpoints}, nil)
+				return
+			}
+			if len(in.Credentials) > 0 || in.Endpoints.IMAP != nil || in.Endpoints.SMTP != nil || in.Endpoints.ManageSieve != nil {
+				s.fail(w, r, &core.ValidationError{Msg: "此操作不接受输入协议凭据"})
+				return
+			}
+			s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: action.kind, MailboxID: id, RemoteMailbox: &in}, nil)
+		}))
 	}
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/suspend", s.requireAuth(func(w http.ResponseWriter,r *http.Request){
-		id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return};var in struct{RequestID string `json:"requestId"`;ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return};s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"mailbox.suspend",MailboxID:id,ExpectedRevision:in.ExpectedRevision},nil)
+	mux.HandleFunc("POST /api/admin/mailboxes/{id}/suspend", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		id, err := pathInt(r, "id")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		var in struct {
+			RequestID        string `json:"requestId"`
+			ExpectedRevision int64  `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.suspend", MailboxID: id, ExpectedRevision: in.ExpectedRevision}, nil)
 	}))
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/reactivate",s.requireAuth(func(w http.ResponseWriter,r *http.Request){
-		p:=principalFrom(r);id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return};mb,err:=s.Svc.Mailbox(r.Context(),p.OrgID,id);if err!=nil{s.fail(w,r,err);return};if !p.can(mailboxPerm(mb.Kind)){s.fail(w,r,core.ErrForbidden);return}
-		var in struct{RequestID string `json:"requestId"`;ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"mailbox.reactivate",MailboxID:id,ExpectedRevision:in.ExpectedRevision},[]string{"mailbox:"+fmt.Sprint(id)})
+	mux.HandleFunc("POST /api/admin/mailboxes/{id}/reactivate", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		p := principalFrom(r)
+		id, err := pathInt(r, "id")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		mb, err := s.Svc.Mailbox(r.Context(), p.OrgID, id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if !p.can(mailboxPerm(mb.Kind)) {
+			s.fail(w, r, core.ErrForbidden)
+			return
+		}
+		var in struct {
+			RequestID        string `json:"requestId"`
+			ExpectedRevision int64  `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.reactivate", MailboxID: id, ExpectedRevision: in.ExpectedRevision}, []string{"mailbox:" + fmt.Sprint(id)})
 	}))
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/forwarding",s.requireAuth(func(w http.ResponseWriter,r *http.Request){writeJSON(w,http.StatusGone,apiError{Code:"api_replaced",Error:"使用 PUT 或 DELETE 邮箱转发接口"})}))
-	for _,method:=range []string{"PUT","DELETE"}{kind:="mailbox.forwarding.set";if method=="DELETE"{kind="mailbox.forwarding.delete"};mux.HandleFunc(method+" /api/admin/mailboxes/{id}/forwarding",s.requireAuth(withID("id",func(w http.ResponseWriter,r *http.Request,p *principal,id int64){var in core.ForwardingInput;if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return};s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:kind,MailboxID:id,Forwarding:&in},nil)})))}
+	mux.HandleFunc("POST /api/admin/mailboxes/{id}/forwarding", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusGone, apiError{Code: "api_replaced", Error: "使用 PUT 或 DELETE 邮箱转发接口"})
+	}))
+	for _, method := range []string{"PUT", "DELETE"} {
+		kind := "mailbox.forwarding.set"
+		if method == "DELETE" {
+			kind = "mailbox.forwarding.delete"
+		}
+		mux.HandleFunc(method+" /api/admin/mailboxes/{id}/forwarding", s.requireAuth(withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
+			var in core.ForwardingInput
+			if err := readJSON(r, &in); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: kind, MailboxID: id, Forwarding: &in}, nil)
+		})))
+	}
 	mux.HandleFunc("DELETE /api/admin/mailboxes/{id}", s.requireAuth(mailboxAction("delete", func(r *http.Request, p *principal, mb *model.Mailbox) (any, error) {
 		var in struct {
-			ConfirmAddress string `json:"confirmAddress"`
-			ExpectedRevision int64 `json:"expectedRevision"`
+			ConfirmAddress   string `json:"confirmAddress"`
+			ExpectedRevision int64  `json:"expectedRevision"`
 		}
-		if err:=readJSON(r,&in);err!=nil{return nil,err}
-		return nil, s.Svc.DeleteMailbox(r.Context(), p.OrgID, p.Member.ID, mb.ID, in.ConfirmAddress,in.ExpectedRevision)
+		if err := readJSON(r, &in); err != nil {
+			return nil, err
+		}
+		return nil, s.Svc.DeleteMailbox(r.Context(), p.OrgID, p.Member.ID, mb.ID, in.ConfirmAddress, in.ExpectedRevision)
 	})))
-	mux.HandleFunc("GET /api/admin/mailboxes/{id}/retirement-credentials",s.requireAuth(mailboxAction("retirement",func(r *http.Request,p *principal,mb *model.Mailbox)(any,error){return s.Svc.MailboxRetirementCredentials(r.Context(),p.OrgID,mb.ID)})))
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/archive",s.requireAuth(func(w http.ResponseWriter,r *http.Request){
-		id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return};var in struct{RequestID string `json:"requestId"`;ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return};s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"mailbox.archive",MailboxID:id,ExpectedRevision:in.ExpectedRevision},nil)
+	mux.HandleFunc("GET /api/admin/mailboxes/{id}/retirement-credentials", s.requireAuth(mailboxAction("retirement", func(r *http.Request, p *principal, mb *model.Mailbox) (any, error) {
+		return s.Svc.MailboxRetirementCredentials(r.Context(), p.OrgID, mb.ID)
+	})))
+	mux.HandleFunc("POST /api/admin/mailboxes/{id}/archive", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		id, err := pathInt(r, "id")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		var in struct {
+			RequestID        string `json:"requestId"`
+			ExpectedRevision int64  `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.archive", MailboxID: id, ExpectedRevision: in.ExpectedRevision}, nil)
 	}))
 	mux.HandleFunc("GET /api/admin/mailboxes/{id}/access", perm(model.PermMembersManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		v, err := s.Svc.AccessList(r.Context(), p.OrgID, id)
@@ -393,17 +543,39 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		if err != nil {
 			return nil, err
 		}
-		var in struct{ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{return nil,err}
-		return nil, s.Svc.DeleteIdentity(r.Context(), p.OrgID, p.Member.ID, mb.ID, iid,in.ExpectedRevision)
+		var in struct {
+			ExpectedRevision int64 `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			return nil, err
+		}
+		return nil, s.Svc.DeleteIdentity(r.Context(), p.OrgID, p.Member.ID, mb.ID, iid, in.ExpectedRevision)
 	})))
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/identities/{identityId}/authorization",s.requireAuth(mailboxAction("identity",func(r *http.Request,p *principal,mb *model.Mailbox)(any,error){
-		iid,err:=pathInt(r,"identityId");if err!=nil{return nil,err};var in struct{ExpectedRevision int64 `json:"expectedRevision"`;Allowed *bool `json:"allowed"`};if err:=readJSON(r,&in);err!=nil{return nil,err};if in.Allowed==nil{return nil,&core.ValidationError{Msg:"需要 allowed"}}
-		return s.Svc.AuthorizeIdentity(r.Context(),p.OrgID,p.Member.ID,mb.ID,iid,in.ExpectedRevision,*in.Allowed)
+	mux.HandleFunc("POST /api/admin/mailboxes/{id}/identities/{identityId}/authorization", s.requireAuth(mailboxAction("identity", func(r *http.Request, p *principal, mb *model.Mailbox) (any, error) {
+		iid, err := pathInt(r, "identityId")
+		if err != nil {
+			return nil, err
+		}
+		var in struct {
+			ExpectedRevision int64 `json:"expectedRevision"`
+			Allowed          *bool `json:"allowed"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			return nil, err
+		}
+		if in.Allowed == nil {
+			return nil, &core.ValidationError{Msg: "需要 allowed"}
+		}
+		return s.Svc.AuthorizeIdentity(r.Context(), p.OrgID, p.Member.ID, mb.ID, iid, in.ExpectedRevision, *in.Allowed)
 	})))
 
 	// Addresses
 	mux.HandleFunc("GET /api/admin/addresses", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		p:=principalFrom(r);if !p.can(model.PermMembersManage) && !p.can(model.PermAddressesManage) && !p.can(model.PermGroupsManage) && !p.can(model.PermMailboxesManage) && !p.can(model.PermSharedManage){s.fail(w,r,core.ErrForbidden);return}
+		p := principalFrom(r)
+		if !p.can(model.PermMembersManage) && !p.can(model.PermAddressesManage) && !p.can(model.PermGroupsManage) && !p.can(model.PermMailboxesManage) && !p.can(model.PermSharedManage) {
+			s.fail(w, r, core.ErrForbidden)
+			return
+		}
 		v, err := s.Svc.Addresses(r.Context(), principalFrom(r).OrgID)
 		respond(w, r, v, err)
 	}))
@@ -413,7 +585,7 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"address.create",Routing:&core.RoutingOperationInput{Address:&in}},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "address.create", Routing: &core.RoutingOperationInput{Address: &in}}, nil)
 	}))
 	mux.HandleFunc("PATCH /api/admin/addresses/{id}", perm(model.PermAddressesManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		var in core.AddressInput
@@ -421,11 +593,18 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"address.update",Routing:&core.RoutingOperationInput{AddressID:id,Address:&in}},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "address.update", Routing: &core.RoutingOperationInput{AddressID: id, Address: &in}}, nil)
 	})))
 	mux.HandleFunc("DELETE /api/admin/addresses/{id}", perm(model.PermAddressesManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
-		var in struct{RequestID string `json:"requestId"`;ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"address.delete",Routing:&core.RoutingOperationInput{AddressID:id,ExpectedRevision:in.ExpectedRevision}},nil)
+		var in struct {
+			RequestID        string `json:"requestId"`
+			ExpectedRevision int64  `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "address.delete", Routing: &core.RoutingOperationInput{AddressID: id, ExpectedRevision: in.ExpectedRevision}}, nil)
 	})))
 
 	// Groups
@@ -439,7 +618,7 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"group.create",Routing:&core.RoutingOperationInput{Group:&in}},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "group.create", Routing: &core.RoutingOperationInput{Group: &in}}, nil)
 	}))
 	mux.HandleFunc("PATCH /api/admin/groups/{id}", perm(model.PermGroupsManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
 		var in core.GroupInput
@@ -447,10 +626,17 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"group.update",Routing:&core.RoutingOperationInput{GroupID:id,Group:&in}},nil)
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "group.update", Routing: &core.RoutingOperationInput{GroupID: id, Group: &in}}, nil)
 	})))
 	mux.HandleFunc("DELETE /api/admin/groups/{id}", perm(model.PermGroupsManage, withID("id", func(w http.ResponseWriter, r *http.Request, p *principal, id int64) {
-		var in struct{RequestID string `json:"requestId"`;ExpectedRevision int64 `json:"expectedRevision"`};if err:=readJSON(r,&in);err!=nil{s.fail(w,r,err);return}
-		s.acceptOperation(w,r,in.RequestID,core.OperationPayload{Kind:"group.delete",Routing:&core.RoutingOperationInput{GroupID:id,ExpectedRevision:in.ExpectedRevision}},nil)
+		var in struct {
+			RequestID        string `json:"requestId"`
+			ExpectedRevision int64  `json:"expectedRevision"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "group.delete", Routing: &core.RoutingOperationInput{GroupID: id, ExpectedRevision: in.ExpectedRevision}}, nil)
 	})))
 }

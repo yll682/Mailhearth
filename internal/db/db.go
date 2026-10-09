@@ -31,14 +31,14 @@ type DB struct {
 
 // MigrationInputs carries the old installation inputs needed by version 2.
 type MigrationInputs struct {
-	PurelymailAPIURL string
-	IMAPAddr         string
-	IMAPTLS          string
-	SMTPAddr         string
-	SMTPTLS          string
-	SieveAddr        string
-	SieveTLS         string
-	CredentialsBox   *secrets.Box
+	PurelymailAPIURL          string
+	IMAPAddr                  string
+	IMAPTLS                   string
+	SMTPAddr                  string
+	SMTPTLS                   string
+	SieveAddr                 string
+	SieveTLS                  string
+	CredentialsBox            *secrets.Box
 	AllowDevelopmentPlaintext bool
 }
 
@@ -101,8 +101,10 @@ func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
 			}
 			continue
 		}
-		if name=="0009_restrict_management_references.sql" || name=="0013_forwarding_observations.sql"{
-			if err:=d.migrateStructural(ctx,name,string(body));err!=nil{return fmt.Errorf("migration %s: %w",name,err)}
+		if name == "0009_restrict_management_references.sql" || name == "0013_forwarding_observations.sql" {
+			if err := d.migrateStructural(ctx, name, string(body)); err != nil {
+				return fmt.Errorf("migration %s: %w", name, err)
+			}
 			continue
 		}
 		tx, err := d.BeginTx(ctx, nil)
@@ -113,12 +115,23 @@ func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
 			tx.Rollback()
 			return fmt.Errorf("migration %s: %w", name, err)
 		}
-		if name=="0005_association_scopes.sql"{if err:=validateAssociationScopes(ctx,tx);err!=nil{tx.Rollback();return fmt.Errorf("migration %s: %w",name,err)}}
-		if name=="0006_resource_ownership.sql"{
-			var kind,id,related string
-			err:=tx.QueryRowContext(ctx,`SELECT object_type,object_id,COALESCE(related_id,0) FROM additional_scope_errors ORDER BY object_type,object_id LIMIT 1`).Scan(&kind,&id,&related)
-			if err!=nil && !IsNotFound(err){tx.Rollback();return err}
-			if err==nil{tx.Rollback();return fmt.Errorf("migration %s: association_scope_conflict: %s id=%s relatedId=%s",name,kind,id,related)}
+		if name == "0005_association_scopes.sql" {
+			if err := validateAssociationScopes(ctx, tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %s: %w", name, err)
+			}
+		}
+		if name == "0006_resource_ownership.sql" {
+			var kind, id, related string
+			err := tx.QueryRowContext(ctx, `SELECT object_type,object_id,COALESCE(related_id,0) FROM additional_scope_errors ORDER BY object_type,object_id LIMIT 1`).Scan(&kind, &id, &related)
+			if err != nil && !IsNotFound(err) {
+				tx.Rollback()
+				return err
+			}
+			if err == nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %s: association_scope_conflict: %s id=%s relatedId=%s", name, kind, id, related)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)`, name, Now()); err != nil {
 			tx.Rollback()

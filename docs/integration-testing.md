@@ -10,7 +10,11 @@ Run from the repository root. Keep caches and intermediate files under ignored `
 $env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
 $env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
 New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+$env:TEMP=$env:GOTMPDIR
+$env:TMP=$env:GOTMPDIR
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
 go vet ./...
 npm --prefix web run typecheck
@@ -29,7 +33,7 @@ Repeated concurrency/forwarding checks can use `-count=20`; race testing require
 ## Real environments and safety
 
 `internal/integration/multiprovider` uses real API and protocol connections. Disable
-`MAILHEARTH_DEV_STACK`. Missing configuration fails explicitly. Use dedicated test
+`MAILHEARTH_DEV_STACK`. Tests explicitly skip when the configuration path is unset; an invalid supplied configuration fails. Use dedicated test
 accounts/domains and mailboxes containing no important messages. Protocol tests send
 real mail and change endpoint settings in their isolated local installation. Inspect
 the selected tests before execution; existing external mailbox passwords are not reset
@@ -65,6 +69,7 @@ Provider management authentication does not provide mailbox protocol passwords.
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
 go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 40m
 ```
 
 ## Coverage and results
@@ -77,6 +82,13 @@ go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
 - `TestRealMultiProviderProtocols`: independent credentials and actual delivery (T04),
   SMTP-disabled reading (T05), ManageSieve-disabled reading/delivery (T06), endpoint
   revision and old-connection closure (T37). Writes `protocols.json`.
+- `TestClientAgainstRealPurelymail`: real account queries, user/password and routing-rule
+  operations, with IMAP checks for authentication and revocation of resources created by the test.
+- `TestMailOpsAgainstRealProtocols`: folders, pagination, search, flags, COPY/MOVE/deletion,
+  MIME, attachments, SMTP delivery and IDLE, using isolated folders and unique message identifiers.
+- `TestListFoldersOnRev1Server`: real IMAP4rev1 LIST/STATUS and special folders. This test
+  requires `manual.primaryMailbox` without IMAP4rev2, LIST-EXTENDED, LIST-STATUS or SPECIAL-USE;
+  select individual test names when using a different server for the other protocol checks.
 
 Reports retain `acceptanceComplete=false`. The complete T01–T40 and V01–V07 matrix
 still requires test implementation and real execution; the legacy Purelymail suite

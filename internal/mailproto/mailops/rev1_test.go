@@ -1,239 +1,108 @@
 package mailops_test
 
 import (
-	"bufio"
-	"context"
-	"fmt"
-	"io"
-	"log/slog"
-	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"mailhearth/internal/mailproto/imappool"
+	"github.com/emersion/go-imap/v2"
 	"mailhearth/internal/mailproto/mailops"
+	"mailhearth/internal/provider"
 )
 
-// rev1Server is a scripted IMAP server that behaves like Purelymail: it
-// advertises IMAP4rev1 only, and answers "BAD LIST failed" to any LIST
-// carrying a RETURN clause, because every RETURN option belongs to
-// LIST-EXTENDED (RFC 5258).
-//
-// The in-memory server used by the other tests advertises IMAP4rev2 and
-// tolerates RETURN clauses regardless of what it advertises, so it cannot
-// catch a client that asks for an extension the server never offered. This
-// one can.
-type rev1Server struct {
-	ln net.Listener
-
-	mu       sync.Mutex
-	listCmds []string // every LIST command line the client sent
-	rejected int      // how many were refused for carrying RETURN
-}
-
-var rev1Folders = []struct {
-	attrs    string
-	name     string
-	messages int
-	unseen   int
-}{
-	{`\HasNoChildren`, "INBOX", 3, 1},
-	{`\Drafts \HasNoChildren`, "Drafts", 0, 0},
-	{`\Sent \HasNoChildren`, "Sent", 2, 0},
-	{`\Archive \HasNoChildren`, "Archive", 0, 0},
-	{`\Junk \HasNoChildren`, "Junk", 5, 5},
-	{`\Trash \HasNoChildren`, "Trash", 1, 0},
-}
-
-func startRev1Server(t *testing.T) *rev1Server {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := &rev1Server{ln: ln}
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go s.serve(conn)
-		}
-	}()
-	t.Cleanup(func() { ln.Close() })
-	return s
-}
-
-func (s *rev1Server) addr() string { return s.ln.Addr().String() }
-
-func (s *rev1Server) commands() ([]string, int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.listCmds...), s.rejected
-}
-
-func (s *rev1Server) serve(conn net.Conn) {
-	defer conn.Close()
-	r := bufio.NewReader(conn)
-	w := bufio.NewWriter(conn)
-	send := func(format string, args ...any) error {
-		if _, err := fmt.Fprintf(w, format+"\r\n", args...); err != nil {
-			return err
-		}
-		return w.Flush()
-	}
-
-	// Purelymail's capability set, trimmed to what matters here: rev1 with no
-	// LIST-EXTENDED, no LIST-STATUS and no SPECIAL-USE.
-	if send("* OK [CAPABILITY IMAP4rev1 LITERAL+ SASL-IR AUTH=PLAIN CHILDREN MOVE UIDPLUS IDLE UNSELECT] rev1 test server ready") != nil {
-		return
-	}
-
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return
-		}
-		line = strings.TrimRight(line, "\r\n")
-		tag, rest, _ := strings.Cut(line, " ")
-		verb, args, _ := strings.Cut(rest, " ")
-
-		switch strings.ToUpper(verb) {
-		case "CAPABILITY":
-			send("* CAPABILITY IMAP4rev1 LITERAL+ SASL-IR AUTH=PLAIN CHILDREN MOVE UIDPLUS IDLE UNSELECT")
-			send("%s OK CAPABILITY completed", tag)
-
-		case "LOGIN":
-			send("%s OK LOGIN completed", tag)
-
-		case "LIST":
-			s.mu.Lock()
-			s.listCmds = append(s.listCmds, rest)
-			carriesReturn := strings.Contains(strings.ToUpper(args), "RETURN")
-			if carriesReturn {
-				s.rejected++
-			}
-			s.mu.Unlock()
-			if carriesReturn {
-				// Exactly what Purelymail answers, down to the wording.
-				send("%s BAD LIST failed. Illegal arguments.", tag)
-				continue
-			}
-			for _, f := range rev1Folders {
-				send(`* LIST (%s) "." %s`, f.attrs, f.name)
-			}
-			send("%s OK LIST completed", tag)
-
-		case "STATUS":
-			name := strings.TrimSpace(args)
-			if i := strings.Index(name, " ("); i >= 0 {
-				name = name[:i]
-			}
-			name = strings.Trim(name, `"`)
-			found := false
-			for _, f := range rev1Folders {
-				if strings.EqualFold(f.name, name) {
-					send("* STATUS %s (MESSAGES %d UNSEEN %d)", f.name, f.messages, f.unseen)
-					found = true
-					break
-				}
-			}
-			if !found {
-				send("%s NO STATUS no such mailbox", tag)
-				continue
-			}
-			send("%s OK STATUS completed", tag)
-
-		case "LOGOUT":
-			send("* BYE logging out")
-			send("%s OK LOGOUT completed", tag)
-			return
-
-		case "NOOP":
-			send("%s OK NOOP completed", tag)
-
-		default:
-			send("%s BAD unsupported command %q", tag, verb)
-		}
-	}
-}
-
-// TestListFoldersOnRev1Server pins the fix for a bug that only a real server
-// exposed: ListFolders used to send RETURN (SUBSCRIBED) unconditionally, which
-// an IMAP4rev1-only server rejects outright, leaving the sidebar empty with an
-// internal error while the message list loaded fine.
 func TestListFoldersOnRev1Server(t *testing.T) {
-	srv := startRev1Server(t)
-	pool := imappool.New(imappool.Config{
-		Addr: srv.addr(), TLSMode: imappool.TLSNone, MaxConns: 2,
-		IdleTimeout: time.Minute,
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-	defer pool.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	conn, err := pool.Get(ctx, imappool.Cred{User: "alice@acme.test", Pass: "pw"})
+	env := newRealMailEnvironment(t)
+	mailbox := env.attach(t, env.input.Manual.PrimaryMailbox)
+	endpoint := env.endpoint(t, mailbox.ID, provider.ProtocolIMAP)
+	conn := env.connect(t, endpoint)
+	defer env.svc.Pool.Put(conn)
+	caps := conn.C.Caps()
+	if !caps.Has(imap.CapIMAP4rev1) || caps.Has(imap.CapIMAP4rev2) || caps.Has(imap.CapListExtended) || caps.Has(imap.CapListStatus) || caps.Has(imap.CapSpecialUse) {
+		t.Fatal("IMAP4rev1 测试要求 primaryMailbox 使用未提供 LIST-EXTENDED、LIST-STATUS 和 SPECIAL-USE 的真实服务器")
+	}
+	source := env.createFolder(t, conn, endpoint, "rev1-source")
+	junk := env.createFolder(t, conn, endpoint, "rev1-junk")
+	for _, item := range []struct {
+		folder string
+		count  int
+		seen   int
+	}{{*source, 3, 2}, {*junk, 5, 0}} {
+		for i := 0; i < item.count; i++ {
+			raw, err := mailops.Build(&mailops.Draft{From: mailops.Recipient{Address: mailbox.Address}, To: []mailops.Recipient{{Address: mailbox.Address}}, Subject: "IMAP4rev1 folder counts", Text: "真实 STATUS 数量检查", MessageID: mailops.NewMessageID("mailhearth.invalid")})
+			if err != nil {
+				t.Fatal("无法生成 IMAP4rev1 测试邮件")
+			}
+			var flags []string
+			if i < item.seen {
+				flags = []string{`\Seen`}
+			}
+			if _, err := mailops.Append(env.ctx, conn, item.folder, flags, time.Now(), raw); err != nil {
+				t.Fatal("真实 IMAP4rev1 APPEND 失败")
+			}
+		}
+	}
+	folders, err := mailops.ListFolders(env.ctx, conn)
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatal("真实 IMAP4rev1 LIST 或逐文件夹 STATUS 失败")
 	}
-	defer pool.Put(conn)
-
-	folders, err := mailops.ListFolders(ctx, conn)
+	if len(folders) == 0 || folders[0].Role != mailops.RoleInbox || !strings.EqualFold(folders[0].Name, "INBOX") {
+		t.Fatal("真实 IMAP4rev1 文件夹列表没有优先返回 INBOX")
+	}
+	byName := map[string]mailops.Folder{}
+	for _, folder := range folders {
+		if _, exists := byName[folder.Name]; exists {
+			t.Fatal("真实 IMAP4rev1 文件夹列表包含重复名称")
+		}
+		byName[folder.Name] = folder
+	}
+	if byName[*source].Total != 3 || byName[*source].Unseen != 1 || byName[*junk].Total != 5 || byName[*junk].Unseen != 5 {
+		t.Fatal("真实 IMAP4rev1 逐文件夹 STATUS 数量无效")
+	}
+	var list []*imap.ListData
+	conn.Run(env.ctx, func() { list, err = conn.C.List("", "*", nil).Collect() })
 	if err != nil {
-		t.Fatalf("ListFolders on an IMAP4rev1-only server: %v", err)
+		t.Fatal("真实 IMAP4rev1 普通 LIST 验证失败")
 	}
-
-	cmds, rejected := srv.commands()
-	if rejected != 0 {
-		t.Fatalf("sent %d LIST command(s) with a RETURN clause to a server without LIST-EXTENDED: %v", rejected, cmds)
+	listed := map[string]bool{}
+	for _, entry := range list {
+		listed[entry.Mailbox] = true
+		folder, exists := byName[entry.Mailbox]
+		if !exists {
+			t.Fatal("真实 IMAP4rev1 文件夹查询遗漏 LIST 结果")
+		}
+		for _, attr := range entry.Attrs {
+			role := map[imap.MailboxAttr]string{
+				imap.MailboxAttrDrafts:  mailops.RoleDrafts,
+				imap.MailboxAttrSent:    mailops.RoleSent,
+				imap.MailboxAttrArchive: mailops.RoleArchive,
+				imap.MailboxAttrAll:     mailops.RoleArchive,
+				imap.MailboxAttrJunk:    mailops.RoleJunk,
+				imap.MailboxAttrTrash:   mailops.RoleTrash,
+			}[attr]
+			if role != "" && folder.SpecialUse != role {
+				t.Fatal("真实 IMAP4rev1 LIST 特殊用途属性未保留")
+			}
+		}
 	}
-	if len(cmds) != 1 {
-		t.Fatalf("expected exactly one LIST, got %v", cmds)
+	if len(listed) != len(byName) {
+		t.Fatal("真实 IMAP4rev1 文件夹查询与普通 LIST 数量不一致")
 	}
-
-	// Counts have to come from the per-folder STATUS fallback, since the
-	// server cannot return them inline.
-	if len(folders) != len(rev1Folders) {
-		t.Fatalf("got %d folders, want %d: %+v", len(folders), len(rev1Folders), folders)
-	}
-	if folders[0].Role != mailops.RoleInbox {
-		t.Fatalf("first folder should be the inbox: %+v", folders[0])
-	}
-	if folders[0].Total != 3 || folders[0].Unseen != 1 {
-		t.Fatalf("inbox counts should come from STATUS, got total=%d unseen=%d", folders[0].Total, folders[0].Unseen)
-	}
-
-	// Special-use attributes still arrive on the LIST responses themselves,
-	// so roles must be detected even without the SPECIAL-USE return option.
 	special := mailops.SpecialFolders(folders)
-	for role, want := range map[string]string{
-		mailops.RoleInbox:   "INBOX",
-		mailops.RoleDrafts:  "Drafts",
-		mailops.RoleSent:    "Sent",
-		mailops.RoleArchive: "Archive",
-		mailops.RoleJunk:    "Junk",
-		mailops.RoleTrash:   "Trash",
-	} {
-		if special[role] != want {
-			t.Errorf("role %s mapped to %q, want %q", role, special[role], want)
+	if special[mailops.RoleInbox] != "INBOX" {
+		t.Fatal("真实 IMAP4rev1 INBOX 映射无效")
+	}
+	for _, folder := range folders {
+		if folder.SpecialUse == "" || folder.NoSelect {
+			continue
 		}
-	}
-
-	var junk *mailops.Folder
-	for i := range folders {
-		if folders[i].Name == "Junk" {
-			junk = &folders[i]
+		count := 0
+		for _, candidate := range folders {
+			if !candidate.NoSelect && candidate.SpecialUse == folder.SpecialUse {
+				count++
+			}
 		}
-	}
-	if junk == nil {
-		t.Fatal("Junk folder missing")
-	}
-	if junk.Total != 5 || junk.Unseen != 5 {
-		t.Errorf("junk counts should come from STATUS, got total=%d unseen=%d", junk.Total, junk.Unseen)
+		if count == 1 && special[folder.SpecialUse] != folder.Name {
+			t.Fatal("真实 IMAP4rev1 唯一特殊用途文件夹映射无效")
+		}
 	}
 }

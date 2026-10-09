@@ -126,7 +126,7 @@ func ListFolders(ctx context.Context, conn *imappool.Conn) ([]Folder, error) {
 			}
 		}
 		f.Role = roleFromAttrs(ld.Attrs)
-		f.SpecialUse=f.Role
+		f.SpecialUse = f.Role
 		display := ld.Mailbox
 		if f.Delim != "" {
 			parts := strings.Split(ld.Mailbox, f.Delim)
@@ -161,7 +161,7 @@ func ListFolders(ctx context.Context, conn *imappool.Conn) ([]Folder, error) {
 				st, serr = conn.C.Status(folders[i].Name, &imap.StatusOptions{NumMessages: true, NumUnseen: true}).Wait()
 			})
 			if serr != nil {
-				return nil,serr
+				return nil, serr
 			}
 			if st.NumMessages != nil {
 				folders[i].Total = *st.NumMessages
@@ -188,31 +188,49 @@ func ListFolders(ctx context.Context, conn *imappool.Conn) ([]Folder, error) {
 // SpecialFolders maps roles to folder names.
 func SpecialFolders(folders []Folder) map[string]string {
 	m := map[string]string{}
-	for _,role:=range []string{RoleInbox,RoleSent,RoleDrafts,RoleTrash,RoleJunk,RoleArchive}{
-		if name,err:=ResolveSpecialFolder(folders,role,nil);err==nil{m[role]=name}
+	for _, role := range []string{RoleInbox, RoleSent, RoleDrafts, RoleTrash, RoleJunk, RoleArchive} {
+		if name, err := ResolveSpecialFolder(folders, role, nil); err == nil {
+			m[role] = name
+		}
 	}
 	return m
 }
 
 // EnsureFolder 查询可唯一确定的已有文件夹。
 func EnsureFolder(ctx context.Context, conn *imappool.Conn, folders []Folder, role string) (string, error) {
-	return ResolveSpecialFolder(folders,role,nil)
+	return ResolveSpecialFolder(folders, role, nil)
 }
 
-func ResolveSpecialFolder(folders []Folder,role string,explicit *string) (string,error) {
-	if explicit!=nil{
-		for _,folder:=range folders{if !folder.NoSelect && folder.Name==*explicit{return folder.Name,nil}}
-		return "",provider.Errorf("folder_mapping_required","映射的 %s 文件夹不存在或无法选择",role)
+func ResolveSpecialFolder(folders []Folder, role string, explicit *string) (string, error) {
+	if explicit != nil {
+		for _, folder := range folders {
+			if !folder.NoSelect && folder.Name == *explicit {
+				return folder.Name, nil
+			}
+		}
+		return "", provider.Errorf("folder_mapping_required", "映射的 %s 文件夹不存在或无法选择", role)
 	}
-	var special,named []string
-	for _,folder:=range folders{
-		if folder.NoSelect{continue}
-		if role==RoleInbox && strings.EqualFold(folder.Name,"INBOX"){return folder.Name,nil}
-		if folder.SpecialUse==role{special=append(special,folder.Name)}else if folder.Role==role{named=append(named,folder.Name)}
+	var special, named []string
+	for _, folder := range folders {
+		if folder.NoSelect {
+			continue
+		}
+		if role == RoleInbox && strings.EqualFold(folder.Name, "INBOX") {
+			return folder.Name, nil
+		}
+		if folder.SpecialUse == role {
+			special = append(special, folder.Name)
+		} else if folder.Role == role {
+			named = append(named, folder.Name)
+		}
 	}
-	if len(special)==1{return special[0],nil}
-	if len(special)==0 && len(named)==1{return named[0],nil}
-	return "",provider.Errorf("folder_mapping_required","请明确选择 %s 文件夹",role)
+	if len(special) == 1 {
+		return special[0], nil
+	}
+	if len(special) == 0 && len(named) == 1 {
+		return named[0], nil
+	}
+	return "", provider.Errorf("folder_mapping_required", "请明确选择 %s 文件夹", role)
 }
 
 // CreateFolder creates and subscribes a folder.

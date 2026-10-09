@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/mail"
-	"net"
-	"strings"
-	"sort"
 	"golang.org/x/net/idna"
+	"io"
+	"net"
+	"net/mail"
+	"sort"
+	"strings"
 )
 
 // ProviderKind is the persisted connection type.
@@ -32,11 +32,11 @@ const (
 
 // ProtocolTemplate is one saved connection default.
 type ProtocolTemplate struct {
-	Enabled     bool   `json:"enabled"`
-	Host        string `json:"host,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	TLSMode     string `json:"tlsMode,omitempty"`
-	CABundleID  *int64 `json:"caBundleId,omitempty"`
+	Enabled    bool   `json:"enabled"`
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	TLSMode    string `json:"tlsMode,omitempty"`
+	CABundleID *int64 `json:"caBundleId,omitempty"`
 }
 
 // ProtocolTemplates is the complete three-key template set.
@@ -48,15 +48,24 @@ type ProtocolTemplates struct {
 
 func (p *ProtocolTemplates) UnmarshalJSON(data []byte) error {
 	var in struct {
-		IMAP *ProtocolTemplate `json:"imap"`
-		SMTP *ProtocolTemplate `json:"smtp"`
+		IMAP        *ProtocolTemplate `json:"imap"`
+		SMTP        *ProtocolTemplate `json:"smtp"`
 		ManageSieve *ProtocolTemplate `json:"managesieve"`
 	}
-	decoder:=json.NewDecoder(bytes.NewReader(data));decoder.DisallowUnknownFields()
-	if err:=decoder.Decode(&in);err!=nil{return Errorf("invalid","协议模板 JSON 无效")}
-	var trailing any;if err:=decoder.Decode(&trailing);err!=io.EOF{return Errorf("invalid","协议模板只能包含一个 JSON 值")}
-	if in.IMAP==nil || in.SMTP==nil || in.ManageSieve==nil{return Errorf("invalid","协议模板必须包含 imap、smtp、managesieve")}
-	*p=ProtocolTemplates{IMAP:*in.IMAP,SMTP:*in.SMTP,ManageSieve:*in.ManageSieve};return nil
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&in); err != nil {
+		return Errorf("invalid", "协议模板 JSON 无效")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return Errorf("invalid", "协议模板只能包含一个 JSON 值")
+	}
+	if in.IMAP == nil || in.SMTP == nil || in.ManageSieve == nil {
+		return Errorf("invalid", "协议模板必须包含 imap、smtp、managesieve")
+	}
+	*p = ProtocolTemplates{IMAP: *in.IMAP, SMTP: *in.SMTP, ManageSieve: *in.ManageSieve}
+	return nil
 }
 
 // DomainScope limits discovery and management.
@@ -86,11 +95,11 @@ const (
 type ResourcePurpose string
 
 const (
-	PurposeDomain         ResourcePurpose = "domain"
-	PurposeMailbox        ResourcePurpose = "mailbox"
-	PurposeRouting        ResourcePurpose = "routing"
-	PurposeForwarding     ResourcePurpose = "forwarding"
-	PurposeSenderIdentity ResourcePurpose = "sender_identity"
+	PurposeDomain          ResourcePurpose = "domain"
+	PurposeMailbox         ResourcePurpose = "mailbox"
+	PurposeRouting         ResourcePurpose = "routing"
+	PurposeForwarding      ResourcePurpose = "forwarding"
+	PurposeSenderIdentity  ResourcePurpose = "sender_identity"
 	PurposeLoginCredential ResourcePurpose = "login_credential"
 )
 
@@ -107,28 +116,28 @@ type Resource struct {
 
 // Capability is the complete UI execution capability.
 type CapabilityConstraints struct {
-	SameDomainOnly bool `json:"sameDomainOnly,omitempty"`
-	SameConnectionOnly bool `json:"sameConnectionOnly,omitempty"`
-	AllowedDeliveryModes []string `json:"allowedDeliveryModes,omitempty"`
+	SameDomainOnly          bool     `json:"sameDomainOnly,omitempty"`
+	SameConnectionOnly      bool     `json:"sameConnectionOnly,omitempty"`
+	AllowedDeliveryModes    []string `json:"allowedDeliveryModes,omitempty"`
 	RequiredSieveExtensions []string `json:"requiredSieveExtensions,omitempty"`
 }
 
 type Capability struct {
-	Key              string         `json:"key"`
-	Support          string         `json:"support"`
-	Readiness        string         `json:"readiness"`
-	PermissionAllowed bool          `json:"permissionAllowed"`
-	Constraints      CapabilityConstraints `json:"constraints"`
-	ReasonCode       string         `json:"reasonCode,omitempty"`
+	Key               string                `json:"key"`
+	Support           string                `json:"support"`
+	Readiness         string                `json:"readiness"`
+	PermissionAllowed bool                  `json:"permissionAllowed"`
+	Constraints       CapabilityConstraints `json:"constraints"`
+	ReasonCode        string                `json:"reasonCode,omitempty"`
 }
 
 // TypedError carries a public error code and a user-readable message.
 type TypedError struct {
-	Code    string
-	Message string
-	Err     error
+	Code        string
+	Message     string
+	Err         error
 	OperationID *string
-	Details any
+	Details     any
 }
 
 func (e *TypedError) Error() string { return e.Message }
@@ -148,7 +157,7 @@ func ValidateProtocolTemplate(p ProtocolTemplate) error {
 		}
 		return nil
 	}
-	if strings.ContainsAny(p.Host, "/?#@\\\r\n\x00") || strings.TrimSpace(p.Host) != p.Host || p.Host == "" || (strings.Contains(p.Host,":") && net.ParseIP(p.Host)==nil) {
+	if strings.ContainsAny(p.Host, "/?#@\\\r\n\x00") || strings.TrimSpace(p.Host) != p.Host || p.Host == "" || (strings.Contains(p.Host, ":") && net.ParseIP(p.Host) == nil) {
 		return Errorf("invalid", "invalid protocol host %q", p.Host)
 	}
 	if p.Port < 1 || p.Port > 65535 {
@@ -157,7 +166,9 @@ func ValidateProtocolTemplate(p ProtocolTemplate) error {
 	if p.TLSMode != "tls" && p.TLSMode != "starttls" {
 		return Errorf("invalid", "协议 TLS mode 必须为 tls 或 starttls")
 	}
-	if p.CABundleID!=nil && *p.CABundleID<1{return Errorf("invalid","CA bundle ID 必须为正整数")}
+	if p.CABundleID != nil && *p.CABundleID < 1 {
+		return Errorf("invalid", "CA bundle ID 必须为正整数")
+	}
 	return nil
 }
 
@@ -202,7 +213,9 @@ func enabledTemplate(host string, port int, tlsMode string) ProtocolTemplate {
 
 // ValidateAddress uses the standard library and rejects display names.
 func ValidateAddress(address string) (string, error) {
-	if strings.ContainsAny(address,"\r\n\x00") { return "", Errorf("invalid", "邮件地址含有无效字符") }
+	if strings.ContainsAny(address, "\r\n\x00") {
+		return "", Errorf("invalid", "邮件地址含有无效字符")
+	}
 	a, err := mail.ParseAddress(address)
 	if err != nil || a.Address != address {
 		return "", Errorf("invalid", "%q is not a valid email address", address)
@@ -214,21 +227,35 @@ func ValidateAddress(address string) (string, error) {
 // the text dependency is available.
 func NormalizeDomain(domain string) string { return strings.ToLower(strings.TrimSpace(domain)) }
 
-func CanonicalDomain(domain string) (string,error) {
-	value,err:=idna.Lookup.ToASCII(strings.ToLower(strings.TrimSpace(domain)))
-	if err!=nil || value=="" || strings.ContainsAny(value,"/@\r\n\x00") || !strings.Contains(value,".") { return "",Errorf("invalid","域名无效") }
-	return value,nil
+func CanonicalDomain(domain string) (string, error) {
+	value, err := idna.Lookup.ToASCII(strings.ToLower(strings.TrimSpace(domain)))
+	if err != nil || value == "" || strings.ContainsAny(value, "/@\r\n\x00") || !strings.Contains(value, ".") {
+		return "", Errorf("invalid", "域名无效")
+	}
+	return value, nil
 }
 
-func NormalizeScope(scope DomainScope) (DomainScope,error) {
-	if scope.Mode=="all" && len(scope.Domains)==0 { return DomainScope{Mode:"all"},nil }
-	if scope.Mode!="selected" || len(scope.Domains)==0 { return DomainScope{},Errorf("invalid","域名范围必须为 all 或非空 selected") }
-	set:=map[string]bool{}
-	for _,domain:=range scope.Domains { value,err:=CanonicalDomain(domain); if err!=nil { return DomainScope{},err }; set[value]=true }
-	out:=DomainScope{Mode:"selected",Domains:make([]string,0,len(set))}
-	for domain:=range set { out.Domains=append(out.Domains,domain) }
+func NormalizeScope(scope DomainScope) (DomainScope, error) {
+	if scope.Mode == "all" && len(scope.Domains) == 0 {
+		return DomainScope{Mode: "all"}, nil
+	}
+	if scope.Mode != "selected" || len(scope.Domains) == 0 {
+		return DomainScope{}, Errorf("invalid", "域名范围必须为 all 或非空 selected")
+	}
+	set := map[string]bool{}
+	for _, domain := range scope.Domains {
+		value, err := CanonicalDomain(domain)
+		if err != nil {
+			return DomainScope{}, err
+		}
+		set[value] = true
+	}
+	out := DomainScope{Mode: "selected", Domains: make([]string, 0, len(set))}
+	for domain := range set {
+		out.Domains = append(out.Domains, domain)
+	}
 	sort.Strings(out.Domains)
-	return out,nil
+	return out, nil
 }
 
 // JSONString is a helper for deterministic JSON serialization.
@@ -251,39 +278,43 @@ type ConnectionTest struct {
 
 // DiscoverySnapshotResource is one safe discovery item.
 type DiscoverySnapshotResource struct {
-	Resource Resource      `json:"resource"`
-	Summary  map[string]string `json:"summary,omitempty"`
-	AddressRule *AddressRuleInfo `json:"addressRule,omitempty"`
-	Identity *SenderIdentityInfo `json:"identity,omitempty"`
-	Domain *DomainInfo `json:"domain,omitempty"`
-	Forwarding *ForwardingInfo `json:"forwarding,omitempty"`
+	Resource    Resource            `json:"resource"`
+	Summary     map[string]string   `json:"summary,omitempty"`
+	AddressRule *AddressRuleInfo    `json:"addressRule,omitempty"`
+	Identity    *SenderIdentityInfo `json:"identity,omitempty"`
+	Domain      *DomainInfo         `json:"domain,omitempty"`
+	Forwarding  *ForwardingInfo     `json:"forwarding,omitempty"`
 }
 
-type ReadResourceRequest struct { Resource Resource `json:"resource"` }
-type ResourceReader interface { ReadResource(context.Context,ReadResourceRequest) (DiscoverySnapshotResource,error) }
+type ReadResourceRequest struct {
+	Resource Resource `json:"resource"`
+}
+type ResourceReader interface {
+	ReadResource(context.Context, ReadResourceRequest) (DiscoverySnapshotResource, error)
+}
 
 // DiscoverySnapshot is persisted without secrets.
 type DiscoverySnapshot struct {
-	ConnectionID      int64                      `json:"connectionId"`
-	ConnectionRevision int64                      `json:"connectionRevision"`
-	Scope             DomainScope                `json:"scope"`
-	Resources         []DiscoverySnapshotResource `json:"resources"`
-	Complete          bool                       `json:"complete"`
+	ConnectionID       int64                       `json:"connectionId"`
+	ConnectionRevision int64                       `json:"connectionRevision"`
+	Scope              DomainScope                 `json:"scope"`
+	Resources          []DiscoverySnapshotResource `json:"resources"`
+	Complete           bool                        `json:"complete"`
 }
 
 // Request and result types used by all management adapters.
 type ValidateConnectionRequest struct {
-	APIBaseURL string   `json:"apiBaseUrl"`
-	APIKey     string   `json:"apiKey"`
-	Username   string   `json:"username,omitempty"`
+	APIBaseURL string            `json:"apiBaseUrl"`
+	APIKey     string            `json:"apiKey"`
+	Username   string            `json:"username,omitempty"`
 	Protocols  ProtocolTemplates `json:"protocolDefaults"`
 }
 
 type ValidateConnectionResult struct {
-	OK       bool             `json:"ok"`
-	Code     string           `json:"code,omitempty"`
-	Message  string           `json:"message,omitempty"`
-	Checks   []ConnectionTest `json:"checks,omitempty"`
+	OK      bool             `json:"ok"`
+	Code    string           `json:"code,omitempty"`
+	Message string           `json:"message,omitempty"`
+	Checks  []ConnectionTest `json:"checks,omitempty"`
 }
 
 type DiscoverRequest struct {
@@ -376,9 +407,9 @@ type MailboxIdentity struct {
 }
 
 type MailboxInfo struct {
-	Domain     string           `json:"domain"`
-	LocalPart  string           `json:"localPart"`
-	Address    string           `json:"address"`
+	Domain     string            `json:"domain"`
+	LocalPart  string            `json:"localPart"`
+	Address    string            `json:"address"`
 	Identities []MailboxIdentity `json:"identities,omitempty"`
 }
 
@@ -388,10 +419,10 @@ type GetMailboxRequest struct {
 }
 
 type CreateMailboxRequest struct {
-	Domain       string `json:"domain"`
-	LocalPart    string `json:"localPart"`
-	Password     string `json:"password,omitempty"`
-	DisplayName  string `json:"displayName,omitempty"`
+	Domain      string `json:"domain"`
+	LocalPart   string `json:"localPart"`
+	Password    string `json:"password,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
 }
 
 type UpdateMailboxRequest struct {
@@ -420,19 +451,19 @@ type RevokeCredentialRequest struct {
 	Domain    string `json:"domain"`
 	LocalPart string `json:"localPart"`
 	RemoteKey string `json:"remoteKey"`
-	Secret string `json:"-"`
+	Secret    string `json:"-"`
 }
 
 type AddressRuleInfo struct {
-	RemoteKey string `json:"remoteKey"`
+	RemoteKey     string            `json:"remoteKey"`
 	RemoteLocator map[string]string `json:"remoteLocator"`
-	Domain    string   `json:"domain"`
-	LocalPart string   `json:"localPart"`
-	Prefix    bool     `json:"prefix"`
-	Catchall  bool     `json:"catchall"`
-	Targets   []string `json:"targets"`
-	Pattern string `json:"pattern,omitempty"`
-	Name string `json:"name,omitempty"`
+	Domain        string            `json:"domain"`
+	LocalPart     string            `json:"localPart"`
+	Prefix        bool              `json:"prefix"`
+	Catchall      bool              `json:"catchall"`
+	Targets       []string          `json:"targets"`
+	Pattern       string            `json:"pattern,omitempty"`
+	Name          string            `json:"name,omitempty"`
 }
 
 type AddressRuleRequest struct {
@@ -444,10 +475,10 @@ type AddressRuleRequest struct {
 }
 
 type ForwardingInfo struct {
-	Domain        string         `json:"domain"`
-	LocalPart     string         `json:"localPart"`
-	Targets       []string       `json:"targets"`
-	DeliveryMode  string         `json:"deliveryMode"`
+	Domain         string            `json:"domain"`
+	LocalPart      string            `json:"localPart"`
+	Targets        []string          `json:"targets"`
+	DeliveryMode   string            `json:"deliveryMode"`
 	StatusByTarget map[string]string `json:"statusByTarget"`
 }
 
@@ -459,13 +490,13 @@ type ForwardingRequest struct {
 }
 
 type SenderIdentityInfo struct {
-	Domain        string `json:"domain"`
+	Domain           string `json:"domain"`
 	MailboxLocalPart string `json:"mailboxLocalPart"`
-	LocalPart     string `json:"localPart"`
-	Address       string `json:"address"`
-	DisplayName string `json:"displayName,omitempty"`
-	PasswordUse string `json:"passwordUse,omitempty"`
-	MaySend *bool `json:"maySend,omitempty"`
+	LocalPart        string `json:"localPart"`
+	Address          string `json:"address"`
+	DisplayName      string `json:"displayName,omitempty"`
+	PasswordUse      string `json:"passwordUse,omitempty"`
+	MaySend          *bool  `json:"maySend,omitempty"`
 }
 
 type AuthorizeSenderIdentityRequest struct {

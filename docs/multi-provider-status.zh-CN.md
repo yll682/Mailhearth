@@ -45,6 +45,8 @@
 
 ```powershell
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider'
 go test -count=20 ./internal/core -run '^TestMultiProviderStorage(Forwarding|ConcurrentConnectionWorkers)' -timeout 120s
 go vet ./...
@@ -57,6 +59,10 @@ git diff --check
 指定的 82 项 Go 测试包括真实 SQLite、应用的实际 HTTP server、Sieve 编译器、JSON/CSV 处理和请求前提检查。验证内容包括迁移原子性、连接隔离、请求幂等、关联归属、身份授权、访问权限、会话撤销、发送状态保存、邮箱归档、本地解除登记、域名关联隔离、秘密领取、并发操作、初始化完成、成员创建、群组完整候选、邮箱移交、成员状态、凭据管理前提、管理入口权限、成员删除依赖、远程删除前提、新增邮箱群组候选、余额权限、凭据清理报告、域名观察、转发导入与观察、转发记录迁移、配置版本和 Sieve 扩展检查。另有六项前端测试，包含 requestId、翻译覆盖、插值参数及中文界面常量检查。转发及独立连接的并发操作测试重复执行 20 次通过。全包编译检查使用 `-run '^$'`。
 
 这些数据库和 HTTP 检查没有验证外部 SMTP 投递、IMAP 文件夹操作、服务商写入或 ManageSieve 脚本切换。前端检查包含 TypeScript 和生产构建，尚无浏览器交互验收。
+
+完整 Go 测试通过。新增组织初始化、成员邀请、登录与角色、共享邮箱协作、HTTP 认证和附件上传检查使用真实 SQLite、应用服务及文件读写。新增四项检查重复执行十次通过。CI 执行格式检查、全部 Go 测试和前端六项测试。
+
+Purelymail client 与 mailops 测试通过配置启用真实 API、IMAP 和 SMTP；没有设置配置路径时明确跳过，配置无效时失败。协议检查使用独立文件夹、唯一邮件标识和本次创建的资源。真实 IMAP4rev1 检查要求所选服务器具有对应协议能力。
 
 构建保留已有输出文件，测试数据保存在项目 data 目录。
 

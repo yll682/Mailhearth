@@ -42,15 +42,15 @@ type Config struct {
 	SieveAddr string
 	SieveTLS  TLSMode
 
-	IMAPMaxConns     int
-	IMAPIdleTimeout  time.Duration
-	MaxUploadBytes   int64
-	MaxMessageBytes  int64
-	SessionTTL       time.Duration
-	InviteTTL        time.Duration
-	TrustProxyHeader bool
+	IMAPMaxConns        int
+	IMAPIdleTimeout     time.Duration
+	MaxUploadBytes      int64
+	MaxMessageBytes     int64
+	SessionTTL          time.Duration
+	InviteTTL           time.Duration
+	TrustProxyHeader    bool
 	AllowedMailNetworks []*net.IPNet
-	CABundles map[int64]*x509.CertPool
+	CABundles           map[int64]*x509.CertPool
 }
 
 func env(key, def string) string {
@@ -121,22 +121,43 @@ func Load() (*Config, error) {
 	if c.IMAPMaxConns < 4 {
 		c.IMAPMaxConns = 4
 	}
-	for _,value:=range strings.Split(os.Getenv("MAILHEARTH_ALLOWED_MAIL_NETWORKS"),","){
-		if strings.TrimSpace(value)==""{continue}
-		_,network,err:=net.ParseCIDR(strings.TrimSpace(value));if err!=nil{return nil,fmt.Errorf("MAILHEARTH_ALLOWED_MAIL_NETWORKS: CIDR 无效")}
-		c.AllowedMailNetworks=append(c.AllowedMailNetworks,network)
+	for _, value := range strings.Split(os.Getenv("MAILHEARTH_ALLOWED_MAIL_NETWORKS"), ",") {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("MAILHEARTH_ALLOWED_MAIL_NETWORKS: CIDR 无效")
+		}
+		c.AllowedMailNetworks = append(c.AllowedMailNetworks, network)
 	}
-	c.CABundles=map[int64]*x509.CertPool{}
-	if path:=os.Getenv("MAILHEARTH_CA_BUNDLES_FILE");path!=""{
-		body,err:=os.ReadFile(path);if err!=nil{return nil,err}
+	c.CABundles = map[int64]*x509.CertPool{}
+	if path := os.Getenv("MAILHEARTH_CA_BUNDLES_FILE"); path != "" {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
 		var paths map[string]string
-		if err:=json.Unmarshal(body,&paths);err!=nil{return nil,err}
-		for key,path:=range paths{
-			id,err:=strconv.ParseInt(key,10,64);if err!=nil || id<=0{return nil,fmt.Errorf("CA bundle ID 无效")}
-			pem,err:=os.ReadFile(path);if err!=nil{return nil,err}
-			roots,err:=x509.SystemCertPool();if err!=nil{return nil,err}
-			if !roots.AppendCertsFromPEM(pem){return nil,fmt.Errorf("CA bundle %d 没有有效证书",id)}
-			c.CABundles[id]=roots
+		if err := json.Unmarshal(body, &paths); err != nil {
+			return nil, err
+		}
+		for key, path := range paths {
+			id, err := strconv.ParseInt(key, 10, 64)
+			if err != nil || id <= 0 {
+				return nil, fmt.Errorf("CA bundle ID 无效")
+			}
+			pem, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			roots, err := x509.SystemCertPool()
+			if err != nil {
+				return nil, err
+			}
+			if !roots.AppendCertsFromPEM(pem) {
+				return nil, fmt.Errorf("CA bundle %d 没有有效证书", id)
+			}
+			c.CABundles[id] = roots
 		}
 	}
 	return c, nil

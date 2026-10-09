@@ -50,11 +50,11 @@ const (
 
 // Mailbox remote and management states.
 const (
-	MailboxRemotePresent     = "present"
-	MailboxRemoteMissing     = "missing"
+	MailboxRemotePresent      = "present"
+	MailboxRemoteMissing      = "missing"
 	MailboxRemoteInaccessible = "inaccessible"
-	MailboxRemoteUnknown     = "unknown"
-	MailboxRemoteExternal    = "external"
+	MailboxRemoteUnknown      = "unknown"
+	MailboxRemoteExternal     = "external"
 
 	ManagementModeAPI      = "api"
 	ManagementModeExternal = "external"
@@ -62,12 +62,12 @@ const (
 
 // Address kinds.
 const (
-	AddressPrimary     = "primary"
-	AddressAlias       = "alias"
-	AddressForward     = "forward"
-	AddressGroup       = "group"
-	AddressCatchall    = "catchall"
-	AddressPrefix      = "prefix"
+	AddressPrimary      = "primary"
+	AddressAlias        = "alias"
+	AddressForward      = "forward"
+	AddressGroup        = "group"
+	AddressCatchall     = "catchall"
+	AddressPrefix       = "prefix"
 	AddressExternalRule = "external_rule"
 )
 
@@ -141,19 +141,19 @@ type Domain struct {
 }
 
 type DomainBinding struct {
-	ID                 int64             `json:"id"`
-	DomainID           int64             `json:"domainId"`
-	DomainName         string            `json:"domainName"`
-	ConnectionID       int64             `json:"connectionId"`
-	ConnectionLabel    string            `json:"connectionLabel"`
-	ManagementMode     string            `json:"managementMode"`
-	RemoteState        string            `json:"remoteState"`
-	ProviderSettings   map[string]any    `json:"providerSettings,omitempty"`
-	DNSStatus          map[string]string `json:"dnsStatus"`
-	DNSCheckedAt       *string           `json:"dnsCheckedAt"`
-	Revision           int64             `json:"revision"`
-	CreatedAt          string            `json:"createdAt"`
-	UpdatedAt          string            `json:"updatedAt"`
+	ID               int64             `json:"id"`
+	DomainID         int64             `json:"domainId"`
+	DomainName       string            `json:"domainName"`
+	ConnectionID     int64             `json:"connectionId"`
+	ConnectionLabel  string            `json:"connectionLabel"`
+	ManagementMode   string            `json:"managementMode"`
+	RemoteState      string            `json:"remoteState"`
+	ProviderSettings map[string]any    `json:"providerSettings,omitempty"`
+	DNSStatus        map[string]string `json:"dnsStatus"`
+	DNSCheckedAt     *string           `json:"dnsCheckedAt"`
+	Revision         int64             `json:"revision"`
+	CreatedAt        string            `json:"createdAt"`
+	UpdatedAt        string            `json:"updatedAt"`
 }
 
 type MailConnection struct {
@@ -188,53 +188,53 @@ type ProtocolTemplates struct {
 }
 
 type ProtocolTemplate struct {
-	Enabled     bool   `json:"enabled"`
-	Host        string `json:"host,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	TLSMode     string `json:"tlsMode,omitempty"`
-	CABundleID  *int64 `json:"caBundleId,omitempty"`
+	Enabled    bool   `json:"enabled"`
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	TLSMode    string `json:"tlsMode,omitempty"`
+	CABundleID *int64 `json:"caBundleId,omitempty"`
 }
 
 type Mailbox struct {
-	ID             int64           `json:"id"`
-	OrgID          int64           `json:"orgId"`
-	ConnectionID   int64           `json:"connectionId"`
-	ConnectionLabel string         `json:"connectionLabel"`
-	Kind           string          `json:"kind"`
-	Address        string          `json:"address"`
-	AddressKey     string          `json:"addressKey"`
-	DomainID       *int64          `json:"domainId"`
-	DomainBindingID *int64         `json:"domainBindingId,omitempty"`
-	DisplayName    string          `json:"displayName"`
-	OwnerMemberID  *int64          `json:"ownerMemberId"`
-	OwnerName      string          `json:"ownerName"`
-	Status         string          `json:"status"`
-	Imported       bool            `json:"imported"`
-	ManagementMode string          `json:"managementMode"`
-	RemoteState    string          `json:"remoteState"`
-	PMUser        string          `json:"-"`
-	HasCredential bool            `json:"-"`
-	CredentialAt  *string         `json:"-"`
-	CredentialLabel string        `json:"-"`
-	Revision       int64           `json:"revision"`
-	AccessRevision int64           `json:"accessRevision"`
-	SentCopyMode   string          `json:"sentCopyMode"`
-	FolderMapping  FolderMapping   `json:"folderMapping"`
-	Protocols MailboxProtocols `json:"protocols"`
-	Settings       MailboxSettings `json:"settings"`
-	AccessCount    int             `json:"accessCount"`
-	CreatedAt      string          `json:"createdAt"`
-	UpdatedAt      string          `json:"updatedAt"`
+	ID              int64            `json:"id"`
+	OrgID           int64            `json:"orgId"`
+	ConnectionID    int64            `json:"connectionId"`
+	ConnectionLabel string           `json:"connectionLabel"`
+	Kind            string           `json:"kind"`
+	Address         string           `json:"address"`
+	AddressKey      string           `json:"addressKey"`
+	DomainID        *int64           `json:"domainId"`
+	DomainBindingID *int64           `json:"domainBindingId,omitempty"`
+	DisplayName     string           `json:"displayName"`
+	OwnerMemberID   *int64           `json:"ownerMemberId"`
+	OwnerName       string           `json:"ownerName"`
+	Status          string           `json:"status"`
+	Imported        bool             `json:"imported"`
+	ManagementMode  string           `json:"managementMode"`
+	RemoteState     string           `json:"remoteState"`
+	PMUser          string           `json:"-"`
+	HasCredential   bool             `json:"-"`
+	CredentialAt    *string          `json:"-"`
+	CredentialLabel string           `json:"-"`
+	Revision        int64            `json:"revision"`
+	AccessRevision  int64            `json:"accessRevision"`
+	SentCopyMode    string           `json:"sentCopyMode"`
+	FolderMapping   FolderMapping    `json:"folderMapping"`
+	Protocols       MailboxProtocols `json:"protocols"`
+	Settings        MailboxSettings  `json:"settings"`
+	AccessCount     int              `json:"accessCount"`
+	CreatedAt       string           `json:"createdAt"`
+	UpdatedAt       string           `json:"updatedAt"`
 }
 
 type ProtocolStatus struct {
-	Readiness string `json:"readiness"`
+	Readiness   string `json:"readiness"`
 	CheckStatus string `json:"checkStatus"`
 }
 
 type MailboxProtocols struct {
-	IMAP *ProtocolStatus `json:"imap"`
-	SMTP *ProtocolStatus `json:"smtp"`
+	IMAP        *ProtocolStatus `json:"imap"`
+	SMTP        *ProtocolStatus `json:"smtp"`
 	ManageSieve *ProtocolStatus `json:"managesieve"`
 }
 
@@ -247,11 +247,11 @@ type FolderMapping struct {
 }
 
 type MailboxSettings struct {
-	SieveRules []SieveRule `json:"sieveRules"`
-	Vacation   *Vacation   `json:"vacation,omitempty"`
-	SieveSync  string      `json:"sieveSync,omitempty"`
-	SieveScriptName string `json:"sieveScriptName,omitempty"`
-	SieveScriptHash string `json:"sieveScriptHash,omitempty"`
+	SieveRules      []SieveRule `json:"sieveRules"`
+	Vacation        *Vacation   `json:"vacation,omitempty"`
+	SieveSync       string      `json:"sieveSync,omitempty"`
+	SieveScriptName string      `json:"sieveScriptName,omitempty"`
+	SieveScriptHash string      `json:"sieveScriptHash,omitempty"`
 }
 
 type MailboxAccess struct {
@@ -264,43 +264,43 @@ type MailboxAccess struct {
 }
 
 type Identity struct {
-	ID                     int64  `json:"id"`
-	MailboxID              int64  `json:"mailboxId"`
-	Address                string `json:"address"`
-	DisplayName            string `json:"displayName"`
-	ReplyTo                string `json:"replyTo"`
-	SignatureHTML          string `json:"signatureHtml"`
-	IsDefault              bool   `json:"isDefault"`
-	AuthorizationSource    string `json:"authorizationSource"`
-	AuthorizationStatus    string `json:"authorizationStatus"`
+	ID                     int64   `json:"id"`
+	MailboxID              int64   `json:"mailboxId"`
+	Address                string  `json:"address"`
+	DisplayName            string  `json:"displayName"`
+	ReplyTo                string  `json:"replyTo"`
+	SignatureHTML          string  `json:"signatureHtml"`
+	IsDefault              bool    `json:"isDefault"`
+	AuthorizationSource    string  `json:"authorizationSource"`
+	AuthorizationStatus    string  `json:"authorizationStatus"`
 	AuthorizationCheckedAt *string `json:"authorizationCheckedAt"`
-	Revision               int64  `json:"revision"`
+	Revision               int64   `json:"revision"`
 }
 
 type Address struct {
-	ID             int64    `json:"id"`
-	OrgID          int64    `json:"orgId"`
-	ConnectionID   int64    `json:"connectionId"`
-	DomainID       int64    `json:"domainId"`
-	DomainBindingID *int64  `json:"domainBindingId,omitempty"`
-	Domain         string   `json:"domain"`
-	LocalPart      string   `json:"localPart"`
-	Address        string   `json:"address"`
-	AddressKey     string   `json:"addressKey"`
-	Kind           string   `json:"kind"`
-	MailboxID      *int64   `json:"mailboxId"`
-	GroupID        *int64   `json:"groupId"`
-	Targets        []string `json:"targets"`
-	DesiredTargets []string `json:"desiredTargets"`
+	ID              int64    `json:"id"`
+	OrgID           int64    `json:"orgId"`
+	ConnectionID    int64    `json:"connectionId"`
+	DomainID        int64    `json:"domainId"`
+	DomainBindingID *int64   `json:"domainBindingId,omitempty"`
+	Domain          string   `json:"domain"`
+	LocalPart       string   `json:"localPart"`
+	Address         string   `json:"address"`
+	AddressKey      string   `json:"addressKey"`
+	Kind            string   `json:"kind"`
+	MailboxID       *int64   `json:"mailboxId"`
+	GroupID         *int64   `json:"groupId"`
+	Targets         []string `json:"targets"`
+	DesiredTargets  []string `json:"desiredTargets"`
 	ObservedTargets []string `json:"observedTargets"`
-	ManagementMode string   `json:"managementMode"`
-	SyncState      string   `json:"syncState"`
-	Revision       int64    `json:"revision"`
-	PMRuleID      *int64   `json:"-"`
-	IsPrefix       bool     `json:"isPrefix"`
-	IsCatchall     bool     `json:"isCatchall"`
-	Note           string   `json:"note"`
-	CreatedAt      string   `json:"createdAt"`
+	ManagementMode  string   `json:"managementMode"`
+	SyncState       string   `json:"syncState"`
+	Revision        int64    `json:"revision"`
+	PMRuleID        *int64   `json:"-"`
+	IsPrefix        bool     `json:"isPrefix"`
+	IsCatchall      bool     `json:"isCatchall"`
+	Note            string   `json:"note"`
+	CreatedAt       string   `json:"createdAt"`
 }
 
 type Group struct {
@@ -314,15 +314,15 @@ type Group struct {
 }
 
 type MailboxForwarding struct {
-	ID           int64                `json:"id"`
-	MailboxID    int64                `json:"mailboxId"`
-	Targets      []string             `json:"targets"`
-	DeliveryMode string               `json:"deliveryMode"`
-	RemoteStatus map[string]any       `json:"remoteStatus"`
-	SyncState    string               `json:"syncState"`
-	Revision     int64                `json:"revision"`
-	CreatedAt    string               `json:"createdAt"`
-	UpdatedAt    string               `json:"updatedAt"`
+	ID           int64          `json:"id"`
+	MailboxID    int64          `json:"mailboxId"`
+	Targets      []string       `json:"targets"`
+	DeliveryMode string         `json:"deliveryMode"`
+	RemoteStatus map[string]any `json:"remoteStatus"`
+	SyncState    string         `json:"syncState"`
+	Revision     int64          `json:"revision"`
+	CreatedAt    string         `json:"createdAt"`
+	UpdatedAt    string         `json:"updatedAt"`
 }
 
 type AuditEntry struct {
@@ -337,61 +337,61 @@ type AuditEntry struct {
 }
 
 type ProviderResource struct {
-	ID                 int64  `json:"id"`
-	ConnectionID       int64  `json:"connectionId"`
-	ResourceType       string `json:"resourceType"`
-	RemoteKey          string `json:"remoteKey"`
-	RemoteLocatorJSON  string `json:"remoteLocatorJson"`
-	Purpose            string `json:"purpose"`
-	OwnedByMailhearth  bool   `json:"ownedByMailhearth"`
-	LastSeenAt         *string `json:"lastSeenAt"`
-	RemoteState        string `json:"remoteState"`
-	DomainBindingID    *int64 `json:"domainBindingId,omitempty"`
-	MailboxID          *int64 `json:"mailboxId,omitempty"`
-	AddressID          *int64 `json:"addressId,omitempty"`
-	IdentityID         *int64 `json:"identityId,omitempty"`
-	CredentialID       *int64 `json:"credentialId,omitempty"`
-	MailboxForwardingID *int64 `json:"mailboxForwardingId,omitempty"`
+	ID                  int64   `json:"id"`
+	ConnectionID        int64   `json:"connectionId"`
+	ResourceType        string  `json:"resourceType"`
+	RemoteKey           string  `json:"remoteKey"`
+	RemoteLocatorJSON   string  `json:"remoteLocatorJson"`
+	Purpose             string  `json:"purpose"`
+	OwnedByMailhearth   bool    `json:"ownedByMailhearth"`
+	LastSeenAt          *string `json:"lastSeenAt"`
+	RemoteState         string  `json:"remoteState"`
+	DomainBindingID     *int64  `json:"domainBindingId,omitempty"`
+	MailboxID           *int64  `json:"mailboxId,omitempty"`
+	AddressID           *int64  `json:"addressId,omitempty"`
+	IdentityID          *int64  `json:"identityId,omitempty"`
+	CredentialID        *int64  `json:"credentialId,omitempty"`
+	MailboxForwardingID *int64  `json:"mailboxForwardingId,omitempty"`
 }
 
 type Operation struct {
-	ID              string  `json:"id"`
-	OrgID           int64   `json:"orgId"`
-	ActorMemberID   *int64  `json:"actorMemberId"`
-	Kind            string  `json:"kind"`
-	RequestID       string  `json:"requestId"`
-	RequestDigest   string  `json:"requestDigest"`
-	Status          string  `json:"status"`
-	Result          any     `json:"result"`
-	ErrorCode       *string `json:"errorCode,omitempty"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	ID            string  `json:"id"`
+	OrgID         int64   `json:"orgId"`
+	ActorMemberID *int64  `json:"actorMemberId"`
+	Kind          string  `json:"kind"`
+	RequestID     string  `json:"requestId"`
+	RequestDigest string  `json:"requestDigest"`
+	Status        string  `json:"status"`
+	Result        any     `json:"result"`
+	ErrorCode     *string `json:"errorCode,omitempty"`
+	CreatedAt     string  `json:"createdAt"`
+	UpdatedAt     string  `json:"updatedAt"`
 }
 
 type OperationStep struct {
-	OperationID    string  `json:"operationId"`
-	StepKey        string  `json:"stepKey"`
-	Sequence       int     `json:"sequence"`
-	Status         string  `json:"status"`
-	RemoteRefJSON  string  `json:"remoteRefJson"`
-	ResultJSON     string  `json:"resultJson"`
-	ErrorCode      *string `json:"errorCode,omitempty"`
-	StartedAt      *string `json:"startedAt,omitempty"`
-	FinishedAt     *string `json:"finishedAt,omitempty"`
+	OperationID   string  `json:"operationId"`
+	StepKey       string  `json:"stepKey"`
+	Sequence      int     `json:"sequence"`
+	Status        string  `json:"status"`
+	RemoteRefJSON string  `json:"remoteRefJson"`
+	ResultJSON    string  `json:"resultJson"`
+	ErrorCode     *string `json:"errorCode,omitempty"`
+	StartedAt     *string `json:"startedAt,omitempty"`
+	FinishedAt    *string `json:"finishedAt,omitempty"`
 }
 
 type Submission struct {
-	ID                   string  `json:"id"`
-	MailboxID            int64   `json:"mailboxId"`
-	MemberID             int64   `json:"memberId"`
-	RequestID            string  `json:"requestId"`
-	MessageID            string  `json:"messageId"`
-	Status               string  `json:"status"`
-	SMTPStatus           string  `json:"smtpStatus"`
-	SentStatus           string  `json:"sentStatus"`
-	Error                *string `json:"error,omitempty"`
-	CreatedAt            string  `json:"createdAt"`
-	UpdatedAt            string  `json:"updatedAt"`
+	ID         string  `json:"id"`
+	MailboxID  int64   `json:"mailboxId"`
+	MemberID   int64   `json:"memberId"`
+	RequestID  string  `json:"requestId"`
+	MessageID  string  `json:"messageId"`
+	Status     string  `json:"status"`
+	SMTPStatus string  `json:"smtpStatus"`
+	SentStatus string  `json:"sentStatus"`
+	Error      *string `json:"error,omitempty"`
+	CreatedAt  string  `json:"createdAt"`
+	UpdatedAt  string  `json:"updatedAt"`
 }
 
 // --- Sieve rule model (compiled to Sieve by internal/mailproto/sieve) ---

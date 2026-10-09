@@ -10,7 +10,11 @@
 $env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
 $env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
 New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+$env:TEMP=$env:GOTMPDIR
+$env:TMP=$env:GOTMPDIR
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
 go vet ./...
 npm --prefix web run typecheck
@@ -28,7 +32,7 @@ git diff --check
 ## 実環境と安全性
 
 `internal/integration/multiprovider` は実際の API とプロトコル接続を使用します。
-`MAILHEARTH_DEV_STACK` を無効にしてください。設定がない場合は明示的に失敗します。
+`MAILHEARTH_DEV_STACK` を無効にしてください。設定パスが未指定の場合は明示的にスキップし、指定した設定が無効な場合は失敗します。
 専用アカウント・ドメインと重要なメールを含まないメールボックスを使用します。プロトコル
 テストは実メールを送信し、独立したローカルテスト配置の endpoint 設定を変更します。
 実行前に対象テストを読んでください。現在の前提・プロトコルテストは既存の外部パスワードを
@@ -62,6 +66,7 @@ ManageSieve を無効にし、IMAP/SMTP を利用可能にします。管理 API
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
 go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 40m
 ```
 
 ## 範囲と結果
@@ -74,6 +79,13 @@ go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
 - `TestRealMultiProviderProtocols`：独立認証と実配信（T04）、SMTP 無効時の読み取り
   （T05）、ManageSieve 無効時の読み取り・配信（T06）、endpoint 変更と古い接続の終了
   （T37）。成功後に `protocols.json` を保存します。
+- `TestClientAgainstRealPurelymail`：実アカウントの参照、ユーザー・パスワード・
+  routing rule 操作と、本テストで作成したリソースの IMAP 認証・失効確認。
+- `TestMailOpsAgainstRealProtocols`：フォルダー、ページング、検索、flags、COPY/MOVE/削除、
+  MIME、添付、SMTP 配信と IDLE。独立フォルダーと一意のメッセージ識別子を使用します。
+- `TestListFoldersOnRev1Server`：実 IMAP4rev1 の LIST、STATUS と特殊フォルダー。
+  `manual.primaryMailbox` に IMAP4rev2、LIST-EXTENDED、LIST-STATUS、SPECIAL-USE が
+  ないことが必要です。他のサーバーではプロトコルテストを名前で選択してください。
 
 報告は `acceptanceComplete=false` です。T01–T40 と V01–V07 の全項目はテスト追加と
 実行が必要です。`internal/integration` の既存 Purelymail スイートは現行 API への移行が

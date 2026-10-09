@@ -6,9 +6,9 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
-	"strings"
 
 	"mailhearth/internal/secrets"
 
@@ -37,9 +37,13 @@ func TestMultiProviderMigrationFreshDatabase(t *testing.T) {
 func TestMultiProviderMigrationFromVersionOne(t *testing.T) {
 	inputs := testMigrationInputs(t)
 	apiSecret, err := inputs.CredentialsBox.Seal(" api-password \t")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	mailSecret, err := inputs.CredentialsBox.Seal(" mail-password \t")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := testDBPath(t, "upgrade.db")
 	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
 	base, err := sql.Open("sqlite", dsn)
@@ -118,9 +122,15 @@ func TestMultiProviderMigrationFromVersionOne(t *testing.T) {
 		t.Fatal("API 凭据密文发生变化")
 	}
 	var mode string
-	if err := d.QueryRow(`SELECT network_mode FROM mailbox_endpoints WHERE mailbox_id=? AND protocol='managesieve'`, mailboxID).Scan(&mode); err != nil { t.Fatal(err) }
-	if mode != "disabled" { t.Fatal("ManageSieve 应当保持停用") }
-	if _, err := inputs.CredentialsBox.Open(seal); err != nil { t.Fatal(err) }
+	if err := d.QueryRow(`SELECT network_mode FROM mailbox_endpoints WHERE mailbox_id=? AND protocol='managesieve'`, mailboxID).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "disabled" {
+		t.Fatal("ManageSieve 应当保持停用")
+	}
+	if _, err := inputs.CredentialsBox.Open(seal); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMultiProviderMigrationSecondOpen(t *testing.T) {
@@ -146,8 +156,11 @@ func TestMultiProviderMigrationSecondOpen(t *testing.T) {
 }
 
 func TestMultiProviderMigrationConstraintConflict(t *testing.T) {
-	inputs:=testMigrationInputs(t)
-	apiSeal,err:=inputs.CredentialsBox.Seal(" API credential \t");if err!=nil{t.Fatal(err)}
+	inputs := testMigrationInputs(t)
+	apiSeal, err := inputs.CredentialsBox.Seal(" API credential \t")
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := testDBPath(t, "constraint-conflict.db")
 	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
 	base, err := sql.Open("sqlite", dsn)
@@ -166,26 +179,40 @@ func TestMultiProviderMigrationConstraintConflict(t *testing.T) {
 	if _, err := base.Exec(`INSERT INTO organizations(name, created_at) VALUES ('Acme','2026-01-01T00:00:00Z')`); err != nil {
 		t.Fatal(err)
 	}
-	if _,err:=base.Exec(`INSERT INTO purelymail_accounts(org_id,label,api_token_enc,token_hint,created_at,updated_at) VALUES (1,'Purelymail',?,'hint','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`,apiSeal);err!=nil{t.Fatal(err)}
+	if _, err := base.Exec(`INSERT INTO purelymail_accounts(org_id,label,api_token_enc,token_hint,created_at,updated_at) VALUES (1,'Purelymail',?,'hint','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`, apiSeal); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := base.Exec(`INSERT INTO mailboxes(org_id,kind,pm_user,created_at,updated_at) VALUES (1,'personal','alice@acme.test','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z'),(1,'personal','ALICE@acme.test','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`); err != nil {
 		t.Fatal(err)
 	}
 	base.Close()
 
-	d, err := Open(path,inputs)
+	d, err := Open(path, inputs)
 	if err == nil {
 		d.Close()
 		t.Fatal("migration succeeded with a unique constraint conflict")
 	}
-	if !strings.Contains(err.Error(),"migration_duplicate_address"){t.Fatalf("迁移错误没有报告重复地址：%v",err)}
+	if !strings.Contains(err.Error(), "migration_duplicate_address") {
+		t.Fatalf("迁移错误没有报告重复地址：%v", err)
+	}
 	check, err := sql.Open("sqlite", dsn)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer check.Close()
 	var count int
-	if err := check.QueryRow(`SELECT COUNT(*) FROM mailboxes WHERE pm_user IN ('alice@acme.test','ALICE@acme.test')`).Scan(&count); err != nil { t.Fatal(err) }
-	if count != 2 { t.Fatal("失败迁移修改了原有数据") }
-	if err := check.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version='0002_multi_provider.sql'`).Scan(&count); err != nil { t.Fatal(err) }
-	if count != 0 { t.Fatal("失败迁移提交了版本记录") }
+	if err := check.QueryRow(`SELECT COUNT(*) FROM mailboxes WHERE pm_user IN ('alice@acme.test','ALICE@acme.test')`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatal("失败迁移修改了原有数据")
+	}
+	if err := check.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version='0002_multi_provider.sql'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("失败迁移提交了版本记录")
+	}
 }
 
 func testDBPath(t *testing.T, name string) string {
@@ -199,11 +226,15 @@ func testDBPath(t *testing.T, name string) string {
 
 func testMigrationInputs(t *testing.T) MigrationInputs {
 	t.Helper()
-	master := make([]byte,32)
-	if _, err := rand.Read(master); err != nil { t.Fatal(err) }
-	box, err := secrets.NewBox(master,"credentials")
-	if err != nil { t.Fatal(err) }
-	return MigrationInputs{PurelymailAPIURL:"https://purelymail.com/api/v0", IMAPAddr:"imap.purelymail.com:993", IMAPTLS:"tls", SMTPAddr:"smtp.purelymail.com:465", SMTPTLS:"tls", CredentialsBox:box}
+	master := make([]byte, 32)
+	if _, err := rand.Read(master); err != nil {
+		t.Fatal(err)
+	}
+	box, err := secrets.NewBox(master, "credentials")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return MigrationInputs{PurelymailAPIURL: "https://purelymail.com/api/v0", IMAPAddr: "imap.purelymail.com:993", IMAPTLS: "tls", SMTPAddr: "smtp.purelymail.com:465", SMTPTLS: "tls", CredentialsBox: box}
 }
 
 func applyEmbedded(q *sql.DB, name string) error {

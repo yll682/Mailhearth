@@ -32,11 +32,11 @@ func scanMailbox(row interface{ Scan(...any) error }) (*model.Mailbox, error) {
 	var b model.Mailbox
 	var domainID, owner, domainBindingID sql.NullInt64
 	var credAt sql.NullString
-	var imported, managementMode, remoteState, sentCopyMode, folderMapping, settings,protocols string
+	var imported, managementMode, remoteState, sentCopyMode, folderMapping, settings, protocols string
 	if err := row.Scan(&b.ID, &b.OrgID, &b.ConnectionID, &b.ConnectionLabel, &b.Kind, &b.Address, &b.AddressKey,
 		&domainID, &domainBindingID, &b.DisplayName, &owner, &b.OwnerName, &b.HasCredential, &credAt,
 		&b.Status, &imported, &managementMode, &remoteState, &b.Revision, &b.AccessRevision, &sentCopyMode, &folderMapping,
-		&settings, &b.CreatedAt, &b.UpdatedAt, &b.AccessCount,&protocols); err != nil {
+		&settings, &b.CreatedAt, &b.UpdatedAt, &b.AccessCount, &protocols); err != nil {
 		return nil, err
 	}
 	b.DomainID = nullInt(domainID)
@@ -47,7 +47,9 @@ func scanMailbox(row interface{ Scan(...any) error }) (*model.Mailbox, error) {
 	b.ManagementMode = managementMode
 	b.RemoteState = remoteState
 	b.SentCopyMode = sentCopyMode
-	if err:=json.Unmarshal([]byte(protocols),&b.Protocols);err!=nil{return nil,err}
+	if err := json.Unmarshal([]byte(protocols), &b.Protocols); err != nil {
+		return nil, err
+	}
 	if err := json.Unmarshal([]byte(folderMapping), &b.FolderMapping); err != nil {
 		return nil, err
 	}
@@ -59,6 +61,7 @@ func scanMailbox(row interface{ Scan(...any) error }) (*model.Mailbox, error) {
 	}
 	return &b, nil
 }
+
 // Mailboxes lists all mailboxes.
 func (s *Service) Mailboxes(ctx context.Context, orgID int64) ([]model.Mailbox, error) {
 	rows, err := s.DB.QueryContext(ctx, mailboxSelect+` WHERE b.org_id = ? ORDER BY b.kind, b.address`, orgID)
@@ -87,8 +90,15 @@ func (s *Service) Mailbox(ctx context.Context, orgID, id int64) (*model.Mailbox,
 }
 
 func (s *Service) mailboxByAddress(ctx context.Context, q db.Querier, orgID, connectionID int64, addr string) (*model.Mailbox, error) {
-	c,err:=s.MailConnection(ctx,orgID,connectionID);if err!=nil{return nil,err};_,key,err:=canonicalMailboxAddress(c.ProviderKind,addr);if err!=nil{return nil,err}
-	b, err := scanMailbox(q.QueryRowContext(ctx, mailboxSelect+` WHERE b.org_id = ? AND b.connection_id=? AND b.address_key = ?`, orgID,connectionID,key))
+	c, err := s.MailConnection(ctx, orgID, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	_, key, err := canonicalMailboxAddress(c.ProviderKind, addr)
+	if err != nil {
+		return nil, err
+	}
+	b, err := scanMailbox(q.QueryRowContext(ctx, mailboxSelect+` WHERE b.org_id = ? AND b.connection_id=? AND b.address_key = ?`, orgID, connectionID, key))
 	if db.IsNotFound(err) {
 		return nil, ErrNotFound
 	}
@@ -97,29 +107,54 @@ func (s *Service) mailboxByAddress(ctx context.Context, q db.Querier, orgID, con
 
 // CreateMailboxRequest 使用明确的连接与域名关联创建邮箱。
 type CreateMailboxRequest struct {
-	RequestID string `json:"requestId"`
-	ConnectionID int64 `json:"connectionId"`
-	DomainBindingID int64 `json:"domainBindingId"`
-	CredentialMode string `json:"credentialMode"`
-	SentCopyMode string `json:"sentCopyMode"`
-	Credentials []EnteredCredential `json:"credentials,omitempty"`
-	Endpoints EndpointInputs `json:"endpoints"`
-	FolderMapping model.FolderMapping `json:"folderMapping"`
-	Kind          string `json:"kind"` // personal | shared
-	DomainID      int64  `json:"domainId"`
-	LocalPart     string `json:"localPart"`
-	DisplayName   string `json:"displayName"`
-	OwnerMemberID int64  `json:"ownerMemberId"` // personal only
+	RequestID       string              `json:"requestId"`
+	ConnectionID    int64               `json:"connectionId"`
+	DomainBindingID int64               `json:"domainBindingId"`
+	CredentialMode  string              `json:"credentialMode"`
+	SentCopyMode    string              `json:"sentCopyMode"`
+	Credentials     []EnteredCredential `json:"credentials,omitempty"`
+	Endpoints       EndpointInputs      `json:"endpoints"`
+	FolderMapping   model.FolderMapping `json:"folderMapping"`
+	Kind            string              `json:"kind"` // personal | shared
+	DomainID        int64               `json:"domainId"`
+	LocalPart       string              `json:"localPart"`
+	DisplayName     string              `json:"displayName"`
+	OwnerMemberID   int64               `json:"ownerMemberId"` // personal only
 }
 
 // CreateMailbox 通过 Operation 创建并验证所属服务商的邮箱。
 func (s *Service) CreateMailbox(ctx context.Context, orgID, actor int64, req CreateMailboxRequest) (*model.Mailbox, error) {
-	if req.ConnectionID<1 || req.DomainBindingID<1{return nil,provider.Errorf("invalid","创建邮箱需要 connectionId 和 domainBindingId")}
-	if req.DomainID>0{binding,err:=s.DomainBinding(ctx,orgID,req.DomainBindingID);if err!=nil{return nil,err};if binding.DomainID!=req.DomainID || binding.ConnectionID!=req.ConnectionID{return nil,ErrNotFound}}
-	var owner *int64;if req.OwnerMemberID!=0{owner=&req.OwnerMemberID}
-	in:=ManagedMailboxCreateInput{Mode:"create",ConnectionID:req.ConnectionID,DomainBindingID:req.DomainBindingID,Kind:req.Kind,LocalPart:req.LocalPart,DisplayName:req.DisplayName,OwnerMemberID:owner,CredentialMode:req.CredentialMode,SentCopyMode:req.SentCopyMode,Credentials:req.Credentials,Endpoints:req.Endpoints,FolderMapping:req.FolderMapping}
-	op,err:=s.runLocalManagementOperation(ctx,orgID,actor,req.RequestID,OperationPayload{Kind:"mailbox.create",Create:&in});if err!=nil{return nil,err}
-	var result struct{MailboxID int64 `json:"mailboxId"`};if err:=json.Unmarshal(op.Result,&result);err!=nil{return nil,err};if result.MailboxID<1{return nil,provider.Errorf("internal","邮箱创建结果缺少 mailboxId")};return s.Mailbox(ctx,orgID,result.MailboxID)
+	if req.ConnectionID < 1 || req.DomainBindingID < 1 {
+		return nil, provider.Errorf("invalid", "创建邮箱需要 connectionId 和 domainBindingId")
+	}
+	if req.DomainID > 0 {
+		binding, err := s.DomainBinding(ctx, orgID, req.DomainBindingID)
+		if err != nil {
+			return nil, err
+		}
+		if binding.DomainID != req.DomainID || binding.ConnectionID != req.ConnectionID {
+			return nil, ErrNotFound
+		}
+	}
+	var owner *int64
+	if req.OwnerMemberID != 0 {
+		owner = &req.OwnerMemberID
+	}
+	in := ManagedMailboxCreateInput{Mode: "create", ConnectionID: req.ConnectionID, DomainBindingID: req.DomainBindingID, Kind: req.Kind, LocalPart: req.LocalPart, DisplayName: req.DisplayName, OwnerMemberID: owner, CredentialMode: req.CredentialMode, SentCopyMode: req.SentCopyMode, Credentials: req.Credentials, Endpoints: req.Endpoints, FolderMapping: req.FolderMapping}
+	op, err := s.runLocalManagementOperation(ctx, orgID, actor, req.RequestID, OperationPayload{Kind: "mailbox.create", Create: &in})
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		MailboxID int64 `json:"mailboxId"`
+	}
+	if err := json.Unmarshal(op.Result, &result); err != nil {
+		return nil, err
+	}
+	if result.MailboxID < 1 {
+		return nil, provider.Errorf("internal", "邮箱创建结果缺少 mailboxId")
+	}
+	return s.Mailbox(ctx, orgID, result.MailboxID)
 }
 
 // SplitLocal returns the local part of an address.
@@ -134,7 +169,8 @@ func (s *Service) EnsureCredential(ctx context.Context, orgID, actor, mailboxID 
 	if err != nil {
 		return err
 	}
-	_,err=s.runLocalManagementOperation(ctx,orgID,actor,"",OperationPayload{Kind:"mailbox.connect",MailboxID:mb.ID,RemoteMailbox:&RemoteMailboxInput{ExpectedRevision:mb.Revision,CredentialMode:"managed"}});return err
+	_, err = s.runLocalManagementOperation(ctx, orgID, actor, "", OperationPayload{Kind: "mailbox.connect", MailboxID: mb.ID, RemoteMailbox: &RemoteMailboxInput{ExpectedRevision: mb.Revision, CredentialMode: "managed"}})
+	return err
 }
 
 // RotateCredential 通过 Operation 验证新凭据并核查旧凭据撤销。
@@ -143,7 +179,8 @@ func (s *Service) RotateCredential(ctx context.Context, orgID, actor, mailboxID 
 	if err != nil {
 		return err
 	}
-	_,err=s.runLocalManagementOperation(ctx,orgID,actor,"",OperationPayload{Kind:"mailbox.rotate",MailboxID:mb.ID,RemoteMailbox:&RemoteMailboxInput{ExpectedRevision:mb.Revision}});return err
+	_, err = s.runLocalManagementOperation(ctx, orgID, actor, "", OperationPayload{Kind: "mailbox.rotate", MailboxID: mb.ID, RemoteMailbox: &RemoteMailboxInput{ExpectedRevision: mb.Revision}})
+	return err
 }
 
 // ResetMailboxPassword 完成密码重置并通过一次性领取接口返回主密码。
@@ -152,15 +189,29 @@ func (s *Service) ResetMailboxPassword(ctx context.Context, orgID, actor, mailbo
 	if err != nil {
 		return "", err
 	}
-	op,err:=s.runLocalManagementOperation(ctx,orgID,actor,"",OperationPayload{Kind:"mailbox.resetPassword",MailboxID:mb.ID,RemoteMailbox:&RemoteMailboxInput{ExpectedRevision:mb.Revision}});if err!=nil{return "",err};return s.ClaimOperationSecret(ctx,orgID,actor,op.ID)
+	op, err := s.runLocalManagementOperation(ctx, orgID, actor, "", OperationPayload{Kind: "mailbox.resetPassword", MailboxID: mb.ID, RemoteMailbox: &RemoteMailboxInput{ExpectedRevision: mb.Revision}})
+	if err != nil {
+		return "", err
+	}
+	return s.ClaimOperationSecret(ctx, orgID, actor, op.ID)
 }
 
 // SuspendMailbox 暂停本地访问并保留服务器凭据。
 func (s *Service) SuspendMailbox(ctx context.Context, orgID, actor, mailboxID int64, expectedRevision ...int64) error {
-	mb,err:=s.Mailbox(ctx,orgID,mailboxID);if err!=nil{return err};revision:=mb.Revision;if len(expectedRevision)>1{return provider.Errorf("invalid","只能提供一个邮箱版本")};if len(expectedRevision)==1{revision=expectedRevision[0]}
-	_,err=s.runLocalManagementOperation(ctx,orgID,actor,"",OperationPayload{Kind:"mailbox.suspend",MailboxID:mailboxID,ExpectedRevision:revision});return err
+	mb, err := s.Mailbox(ctx, orgID, mailboxID)
+	if err != nil {
+		return err
+	}
+	revision := mb.Revision
+	if len(expectedRevision) > 1 {
+		return provider.Errorf("invalid", "只能提供一个邮箱版本")
+	}
+	if len(expectedRevision) == 1 {
+		revision = expectedRevision[0]
+	}
+	_, err = s.runLocalManagementOperation(ctx, orgID, actor, "", OperationPayload{Kind: "mailbox.suspend", MailboxID: mailboxID, ExpectedRevision: revision})
+	return err
 }
-
 
 // BindMailbox 将已登记邮箱关联到指定成员。
 func (s *Service) BindMailbox(ctx context.Context, orgID, actor, mailboxID, ownerID int64, displayName string) (*model.Mailbox, error) {
@@ -176,25 +227,34 @@ func (s *Service) BindMailbox(ctx context.Context, orgID, actor, mailboxID, owne
 			return nil, invalid("owner not found")
 		}
 	}
-	in:=UpdateMailboxInput{ExpectedRevision:mb.Revision};if ownerID>0{kind:=model.MailboxPersonal;in.Kind=&kind;in.OwnerMemberID=&ownerID};if name:=strings.TrimSpace(displayName);name!=""{in.DisplayName=&name}
-	return s.UpdateMailbox(ctx,orgID,actor,mailboxID,in)
+	in := UpdateMailboxInput{ExpectedRevision: mb.Revision}
+	if ownerID > 0 {
+		kind := model.MailboxPersonal
+		in.Kind = &kind
+		in.OwnerMemberID = &ownerID
+	}
+	if name := strings.TrimSpace(displayName); name != "" {
+		in.DisplayName = &name
+	}
+	return s.UpdateMailbox(ctx, orgID, actor, mailboxID, in)
 }
-
 
 func randomPassword() string { return secretsRandomPassword() }
 
 // UpdateMailboxInput edits display name, kind and owner.
 type UpdateMailboxInput struct {
-	RequestID string `json:"requestId"`
-	ExpectedRevision int64 `json:"expectedRevision"`
-	DisplayName   *string `json:"displayName"`
-	Kind          *string `json:"kind"`
-	OwnerMemberID *int64  `json:"ownerMemberId"` // 0 clears
+	RequestID        string  `json:"requestId"`
+	ExpectedRevision int64   `json:"expectedRevision"`
+	DisplayName      *string `json:"displayName"`
+	Kind             *string `json:"kind"`
+	OwnerMemberID    *int64  `json:"ownerMemberId"` // 0 clears
 }
 
 // UpdateMailbox applies edits; converting to shared clears the owner.
 func (s *Service) UpdateMailbox(ctx context.Context, orgID, actor, id int64, in UpdateMailboxInput) (*model.Mailbox, error) {
-	if _,err:=s.runLocalManagementOperation(ctx,orgID,actor,in.RequestID,OperationPayload{Kind:"mailbox.update",MailboxID:id,MailboxEdit:&in});err!=nil{return nil,err}
+	if _, err := s.runLocalManagementOperation(ctx, orgID, actor, in.RequestID, OperationPayload{Kind: "mailbox.update", MailboxID: id, MailboxEdit: &in}); err != nil {
+		return nil, err
+	}
 	return s.Mailbox(ctx, orgID, id)
 }
 
@@ -240,14 +300,17 @@ func (s *Service) GrantAccess(ctx context.Context, orgID, actor, mailboxID, memb
 	if mb.OwnerMemberID != nil && *mb.OwnerMemberID == memberID {
 		return nil, invalid("the owner already has full access")
 	}
-	err=s.DB.Tx(ctx,func(tx *sql.Tx)error{
-		if _,err:=tx.ExecContext(ctx,`INSERT INTO mailbox_access(mailbox_id,member_id,level,granted_by,granted_at) VALUES (?,?,?,?,?) ON CONFLICT(mailbox_id,member_id) DO UPDATE SET level=excluded.level,granted_by=excluded.granted_by,granted_at=excluded.granted_at`,mailboxID,memberID,level,actor,db.Now());err!=nil{return err}
-		_,err:=tx.ExecContext(ctx,`UPDATE mailboxes SET revision=revision+1,access_revision=access_revision+1,updated_at=? WHERE id=? AND org_id=?`,db.Now(),mailboxID,orgID);return err
+	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO mailbox_access(mailbox_id,member_id,level,granted_by,granted_at) VALUES (?,?,?,?,?) ON CONFLICT(mailbox_id,member_id) DO UPDATE SET level=excluded.level,granted_by=excluded.granted_by,granted_at=excluded.granted_at`, mailboxID, memberID, level, actor, db.Now()); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE mailboxes SET revision=revision+1,access_revision=access_revision+1,updated_at=? WHERE id=? AND org_id=?`, db.Now(), mailboxID, orgID)
+		return err
 	})
-	if err!=nil {
+	if err != nil {
 		return nil, err
 	}
-	s.cancelMailRequests(memberID,mailboxID)
+	s.cancelMailRequests(memberID, mailboxID)
 	s.audit(ctx, orgID, actor, "mailbox.grant", "mailbox", fmt.Sprint(mailboxID), map[string]any{"member": memberID, "level": level})
 	list, err := s.AccessList(ctx, orgID, mailboxID)
 	if err != nil {
@@ -266,11 +329,16 @@ func (s *Service) RevokeAccess(ctx context.Context, orgID, actor, mailboxID, mem
 	if _, err := s.Mailbox(ctx, orgID, mailboxID); err != nil {
 		return err
 	}
-	if err:=s.DB.Tx(ctx,func(tx *sql.Tx)error{
-		if _,err:=tx.ExecContext(ctx,`DELETE FROM mailbox_access WHERE mailbox_id=? AND member_id=?`,mailboxID,memberID);err!=nil{return err}
-		_,err:=tx.ExecContext(ctx,`UPDATE mailboxes SET access_revision=access_revision+1,revision=revision+1,updated_at=? WHERE id=?`,db.Now(),mailboxID);return err
-	});err!=nil{return err}
-	s.cancelMailRequests(memberID,mailboxID)
+	if err := s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM mailbox_access WHERE mailbox_id=? AND member_id=?`, mailboxID, memberID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE mailboxes SET access_revision=access_revision+1,revision=revision+1,updated_at=? WHERE id=?`, db.Now(), mailboxID)
+		return err
+	}); err != nil {
+		return err
+	}
+	s.cancelMailRequests(memberID, mailboxID)
 	s.audit(ctx, orgID, actor, "mailbox.revoke", "mailbox", fmt.Sprint(mailboxID), map[string]any{"member": memberID})
 	return nil
 }
@@ -293,7 +361,7 @@ func (s *Service) Identities(ctx context.Context, mailboxID int64) ([]model.Iden
 			return nil, err
 		}
 		i.IsDefault = def == 1
-		i.AuthorizationCheckedAt=nullStr(checked)
+		i.AuthorizationCheckedAt = nullStr(checked)
 		out = append(out, i)
 	}
 	return out, rows.Err()
@@ -301,35 +369,45 @@ func (s *Service) Identities(ctx context.Context, mailboxID int64) ([]model.Iden
 
 // IdentityInput edits an identity.
 type IdentityInput struct {
-	ExpectedRevision int64 `json:"expectedRevision"`
-	Address       string `json:"address"`
-	DisplayName   string `json:"displayName"`
-	ReplyTo       string `json:"replyTo"`
-	SignatureHTML string `json:"signatureHtml"`
-	IsDefault     bool   `json:"isDefault"`
+	ExpectedRevision int64  `json:"expectedRevision"`
+	Address          string `json:"address"`
+	DisplayName      string `json:"displayName"`
+	ReplyTo          string `json:"replyTo"`
+	SignatureHTML    string `json:"signatureHtml"`
+	IsDefault        bool   `json:"isDefault"`
 }
 
 // UpsertIdentity creates or updates an identity (id 0 creates).
 func (s *Service) UpsertIdentity(ctx context.Context, orgID, actor, mailboxID, id int64, in IdentityInput) (*model.Identity, error) {
-	mb,err:=s.Mailbox(ctx,orgID,mailboxID);if err!=nil{return nil,err}
-	connection,err:=s.MailConnection(ctx,orgID,mb.ConnectionID);if err!=nil{return nil,err}
-	addr,_,err:=canonicalMailboxAddress(connection.ProviderKind,in.Address)
+	mb, err := s.Mailbox(ctx, orgID, mailboxID)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := s.MailConnection(ctx, orgID, mb.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	addr, _, err := canonicalMailboxAddress(connection.ProviderKind, in.Address)
 	if err != nil {
 		return nil, err
 	}
 	replyTo := strings.TrimSpace(in.ReplyTo)
 	if replyTo != "" {
-		if replyTo,_,err=canonicalMailboxAddress(provider.Manual,replyTo); err != nil {
+		if replyTo, _, err = canonicalMailboxAddress(provider.Manual, replyTo); err != nil {
 			return nil, err
 		}
 	}
 	sig := sanitizeSignature(in.SignatureHTML)
 	now := db.Now()
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if id!=0 && in.ExpectedRevision<1{return provider.Errorf("invalid","需要 expectedRevision")}
-		if err:=requireIdentityManagement(ctx,tx,orgID,actor,mailboxID);err!=nil{return err}
+		if id != 0 && in.ExpectedRevision < 1 {
+			return provider.Errorf("invalid", "需要 expectedRevision")
+		}
+		if err := requireIdentityManagement(ctx, tx, orgID, actor, mailboxID); err != nil {
+			return err
+		}
 		if in.IsDefault {
-			if _, err := tx.ExecContext(ctx, `UPDATE identities SET is_default=0,revision=revision+1 WHERE mailbox_id=? AND id!=? AND is_default=1`, mailboxID,id); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE identities SET is_default=0,revision=revision+1 WHERE mailbox_id=? AND id!=? AND is_default=1`, mailboxID, id); err != nil {
 				return err
 			}
 		}
@@ -338,24 +416,50 @@ func (s *Service) UpsertIdentity(ctx context.Context, orgID, actor, mailboxID, i
 			def = 1
 		}
 		if id == 0 {
-			var exists bool;if err:=tx.QueryRowContext(ctx,`SELECT EXISTS(SELECT 1 FROM identities WHERE mailbox_id=? AND address=?)`,mailboxID,addr).Scan(&exists);err!=nil{return err};if exists{return provider.Errorf("identity_exists","发件身份已登记")}
+			var exists bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identities WHERE mailbox_id=? AND address=?)`, mailboxID, addr).Scan(&exists); err != nil {
+				return err
+			}
+			if exists {
+				return provider.Errorf("identity_exists", "发件身份已登记")
+			}
 			res, err := tx.ExecContext(ctx, `INSERT INTO identities(mailbox_id,address,display_name,reply_to,signature_html,is_default,created_at,authorization_source,authorization_status) VALUES (?,?,?,?,?,?,?,'admin','unverified')`,
 				mailboxID, addr, strings.TrimSpace(in.DisplayName), replyTo, sig, def, now)
 			if err != nil {
 				return err
 			}
-			id,err=res.LastInsertId();if err!=nil{return err}
-		}else{
-			res,err:=tx.ExecContext(ctx,`UPDATE identities SET authorization_status=CASE WHEN address!=? THEN 'unverified' ELSE authorization_status END,authorization_source=CASE WHEN address!=? THEN 'admin' ELSE authorization_source END,authorization_checked_at=CASE WHEN address!=? THEN NULL ELSE authorization_checked_at END,address=?,display_name=?,reply_to=?,signature_html=?,is_default=CASE WHEN ?=1 THEN 1 ELSE is_default END,revision=revision+1 WHERE id=? AND mailbox_id=? AND revision=?`,addr,addr,addr,addr,strings.TrimSpace(in.DisplayName),replyTo,sig,def,id,mailboxID,in.ExpectedRevision);if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return provider.Errorf("revision_conflict","发件身份已更新")}
+			id, err = res.LastInsertId()
+			if err != nil {
+				return err
+			}
+		} else {
+			res, err := tx.ExecContext(ctx, `UPDATE identities SET authorization_status=CASE WHEN address!=? THEN 'unverified' ELSE authorization_status END,authorization_source=CASE WHEN address!=? THEN 'admin' ELSE authorization_source END,authorization_checked_at=CASE WHEN address!=? THEN NULL ELSE authorization_checked_at END,address=?,display_name=?,reply_to=?,signature_html=?,is_default=CASE WHEN ?=1 THEN 1 ELSE is_default END,revision=revision+1 WHERE id=? AND mailbox_id=? AND revision=?`, addr, addr, addr, addr, strings.TrimSpace(in.DisplayName), replyTo, sig, def, id, mailboxID, in.ExpectedRevision)
+			if err != nil {
+				return err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if n != 1 {
+				return provider.Errorf("revision_conflict", "发件身份已更新")
+			}
 		}
-		var defaults int;if err:=tx.QueryRowContext(ctx,`SELECT COUNT(*) FROM identities WHERE mailbox_id=? AND is_default=1`,mailboxID).Scan(&defaults);err!=nil{return err}
-		if defaults==0{if _,err:=tx.ExecContext(ctx,`UPDATE identities SET is_default=1 WHERE id=(SELECT MIN(id) FROM identities WHERE mailbox_id=?)`,mailboxID);err!=nil{return err}}
+		var defaults int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM identities WHERE mailbox_id=? AND is_default=1`, mailboxID).Scan(&defaults); err != nil {
+			return err
+		}
+		if defaults == 0 {
+			if _, err := tx.ExecContext(ctx, `UPDATE identities SET is_default=1 WHERE id=(SELECT MIN(id) FROM identities WHERE mailbox_id=?)`, mailboxID); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	s.cancelMailRequests(0,mailboxID)
+	s.cancelMailRequests(0, mailboxID)
 	list, err := s.Identities(ctx, mailboxID)
 	if err != nil {
 		return nil, err
@@ -369,30 +473,62 @@ func (s *Service) UpsertIdentity(ctx context.Context, orgID, actor, mailboxID, i
 }
 
 // DeleteIdentity removes a non-default identity.
-func (s *Service) DeleteIdentity(ctx context.Context, orgID, actor, mailboxID, id int64,expectedRevision ...int64) error {
+func (s *Service) DeleteIdentity(ctx context.Context, orgID, actor, mailboxID, id int64, expectedRevision ...int64) error {
 	if _, err := s.Mailbox(ctx, orgID, mailboxID); err != nil {
 		return err
 	}
-	if len(expectedRevision)!=1 || expectedRevision[0]<1{return provider.Errorf("invalid","需要 expectedRevision")}
-	err:=s.DB.Tx(ctx,func(tx *sql.Tx)error{
-		if err:=requireIdentityManagement(ctx,tx,orgID,actor,mailboxID);err!=nil{return err}
-		var revision int64;var isDefault bool
-		err:=tx.QueryRowContext(ctx,`SELECT revision,is_default FROM identities WHERE id=? AND mailbox_id=?`,id,mailboxID).Scan(&revision,&isDefault);if db.IsNotFound(err){return ErrNotFound};if err!=nil{return err}
-		if revision!=expectedRevision[0]{return provider.Errorf("revision_conflict","发件身份已更新")};if isDefault{return invalid("默认身份不能删除")}
-		var linked bool;if err:=tx.QueryRowContext(ctx,`SELECT EXISTS(SELECT 1 FROM provider_resources WHERE identity_id=?)`,id).Scan(&linked);err!=nil{return err};if linked{return provider.Errorf("external_action_required","发件身份仍有关联的服务商资源")}
-		if _,err:=tx.ExecContext(ctx,`DELETE FROM identities WHERE id=? AND mailbox_id=? AND revision=?`,id,mailboxID,revision);err!=nil{return err}
-		_,err=tx.ExecContext(ctx,`INSERT INTO audit_log(org_id,actor_member_id,action,target_type,target_id,detail_json,created_at) VALUES (?,?,'identity.delete','identity',?,?,?)`,orgID,actor,fmtID(id),toJSON(struct{MailboxID int64 `json:"mailboxId"`}{mailboxID}),db.Now());return err
-	});if err!=nil{return err};s.cancelMailRequests(0,mailboxID);return nil
+	if len(expectedRevision) != 1 || expectedRevision[0] < 1 {
+		return provider.Errorf("invalid", "需要 expectedRevision")
+	}
+	err := s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireIdentityManagement(ctx, tx, orgID, actor, mailboxID); err != nil {
+			return err
+		}
+		var revision int64
+		var isDefault bool
+		err := tx.QueryRowContext(ctx, `SELECT revision,is_default FROM identities WHERE id=? AND mailbox_id=?`, id, mailboxID).Scan(&revision, &isDefault)
+		if db.IsNotFound(err) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if revision != expectedRevision[0] {
+			return provider.Errorf("revision_conflict", "发件身份已更新")
+		}
+		if isDefault {
+			return invalid("默认身份不能删除")
+		}
+		var linked bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM provider_resources WHERE identity_id=?)`, id).Scan(&linked); err != nil {
+			return err
+		}
+		if linked {
+			return provider.Errorf("external_action_required", "发件身份仍有关联的服务商资源")
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM identities WHERE id=? AND mailbox_id=? AND revision=?`, id, mailboxID, revision); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(org_id,actor_member_id,action,target_type,target_id,detail_json,created_at) VALUES (?,?,'identity.delete','identity',?,?,?)`, orgID, actor, fmtID(id), toJSON(struct {
+			MailboxID int64 `json:"mailboxId"`
+		}{mailboxID}), db.Now())
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	s.cancelMailRequests(0, mailboxID)
+	return nil
 }
 
 // --- credential resolution for the mail layer ---
 
 // MailboxContext is what the mail API needs to act on a mailbox.
 type MailboxContext struct {
-	Mailbox *model.Mailbox
-	Level   string
-	Cred    imappool.Cred
-	SMTP *ResolvedEndpoint
+	Mailbox     *model.Mailbox
+	Level       string
+	Cred        imappool.Cred
+	SMTP        *ResolvedEndpoint
 	ManageSieve *ResolvedEndpoint
 }
 
@@ -408,15 +544,26 @@ func (m *MailboxContext) CanSend() bool {
 // credential. Admin permissions do not grant mail access: reading a shared
 // mailbox always requires an explicit grant (or ownership).
 func (s *Service) ResolveMailbox(ctx context.Context, orgID, memberID, mailboxID int64) (*MailboxContext, error) {
-	mc,err:=s.CheckMailboxAccess(ctx,orgID,memberID,mailboxID);if err!=nil{return nil,err}
-	imap,err:=s.ResolveEndpoint(ctx,orgID,mailboxID,provider.ProtocolIMAP);if err!=nil{return nil,err}
-	mc.Cred=imap.IMAPCredential();return mc,nil
+	mc, err := s.CheckMailboxAccess(ctx, orgID, memberID, mailboxID)
+	if err != nil {
+		return nil, err
+	}
+	imap, err := s.ResolveEndpoint(ctx, orgID, mailboxID, provider.ProtocolIMAP)
+	if err != nil {
+		return nil, err
+	}
+	mc.Cred = imap.IMAPCredential()
+	return mc, nil
 }
 
-func (s *Service) CheckMailboxAccess(ctx context.Context,orgID,memberID,mailboxID int64) (*MailboxContext,error) {
-	member,err:=s.Member(ctx,orgID,memberID)
-	if err!=nil{return nil,err}
-	if member.Status!=model.MemberActive{return nil,ErrForbidden}
+func (s *Service) CheckMailboxAccess(ctx context.Context, orgID, memberID, mailboxID int64) (*MailboxContext, error) {
+	member, err := s.Member(ctx, orgID, memberID)
+	if err != nil {
+		return nil, err
+	}
+	if member.Status != model.MemberActive {
+		return nil, ErrForbidden
+	}
 	mb, err := s.Mailbox(ctx, orgID, mailboxID)
 	if err != nil {
 		return nil, err
@@ -437,9 +584,13 @@ func (s *Service) CheckMailboxAccess(ctx context.Context,orgID,memberID,mailboxI
 		return nil, invalid("mailbox %s is %s", mb.Address, mb.Status)
 	}
 	var enabled bool
-	if err:=s.DB.QueryRowContext(ctx,`SELECT enabled FROM mail_connections WHERE id=? AND org_id=?`,mb.ConnectionID,orgID).Scan(&enabled);err!=nil{return nil,err}
-	if !enabled{return nil,provider.Errorf("endpoint_disabled","邮件连接已停用")}
-	return &MailboxContext{Mailbox:mb,Level:level},nil
+	if err := s.DB.QueryRowContext(ctx, `SELECT enabled FROM mail_connections WHERE id=? AND org_id=?`, mb.ConnectionID, orgID).Scan(&enabled); err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, provider.Errorf("endpoint_disabled", "邮件连接已停用")
+	}
+	return &MailboxContext{Mailbox: mb, Level: level}, nil
 }
 
 // AccessibleMailbox is a mailbox as presented to a member.
@@ -470,9 +621,14 @@ func (s *Service) AccessibleMailboxes(ctx context.Context, orgID, memberID int64
 		if out[i].OwnerMemberID != nil && *out[i].OwnerMemberID == memberID {
 			out[i].Level = model.AccessFull
 		} else {
-			if err:=s.DB.QueryRowContext(ctx, `SELECT level FROM mailbox_access WHERE mailbox_id = ? AND member_id = ?`, out[i].ID, memberID).Scan(&out[i].Level);err!=nil{return nil,err}
+			if err := s.DB.QueryRowContext(ctx, `SELECT level FROM mailbox_access WHERE mailbox_id = ? AND member_id = ?`, out[i].ID, memberID).Scan(&out[i].Level); err != nil {
+				return nil, err
+			}
 		}
-		out[i].Identities,err=s.Identities(ctx,out[i].ID);if err!=nil{return nil,err}
+		out[i].Identities, err = s.Identities(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

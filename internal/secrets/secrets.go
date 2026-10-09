@@ -24,7 +24,7 @@ import (
 // Box seals and opens secrets with AES-256-GCM using a key derived from the
 // installation master key.
 type Box struct {
-	aead cipher.AEAD
+	aead       cipher.AEAD
 	requestKey []byte
 }
 
@@ -91,13 +91,17 @@ func NewBox(master []byte, purpose string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	requestKey,err:=hkdf.Key(sha256.New,master,nil,"mailhearth/request-digests",32)
-	if err!=nil{return nil,err}
-	return &Box{aead: aead,requestKey:requestKey}, nil
+	requestKey, err := hkdf.Key(sha256.New, master, nil, "mailhearth/request-digests", 32)
+	if err != nil {
+		return nil, err
+	}
+	return &Box{aead: aead, requestKey: requestKey}, nil
 }
 
 func (b *Box) RequestDigest(data []byte) string {
-	mac:=hmac.New(sha256.New,b.requestKey);mac.Write(data);return hex.EncodeToString(mac.Sum(nil))
+	mac := hmac.New(sha256.New, b.requestKey)
+	mac.Write(data)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // Seal encrypts plaintext; the output is safe to store in a TEXT column.

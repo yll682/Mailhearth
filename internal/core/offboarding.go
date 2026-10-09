@@ -12,9 +12,9 @@ import (
 
 // MailboxPlan says what happens to one mailbox when its owner leaves.
 type MailboxPlan struct {
-	MailboxID int64  `json:"mailboxId"`
-	ExpectedRevision int64 `json:"expectedRevision"`
-	Action    string `json:"action"` // handover | shared | suspend | keep
+	MailboxID        int64  `json:"mailboxId"`
+	ExpectedRevision int64  `json:"expectedRevision"`
+	Action           string `json:"action"` // handover | shared | suspend | keep
 	// handover: the member who takes over the mailbox (owner + history).
 	NewOwnerID int64 `json:"newOwnerId"`
 	// shared: members granted access to the now-shared mailbox.
@@ -25,8 +25,8 @@ type MailboxPlan struct {
 
 // OffboardRequest offboards a member.
 type OffboardRequest struct {
-	RequestID string `json:"requestId"`
-	ExpectedRevision int64 `json:"expectedRevision"`
+	RequestID        string        `json:"requestId"`
+	ExpectedRevision int64         `json:"expectedRevision"`
 	Plans            []MailboxPlan `json:"plans"`
 	RemoveFromGroups bool          `json:"removeFromGroups"`
 	RevokeShared     bool          `json:"revokeShared"`
@@ -34,9 +34,9 @@ type OffboardRequest struct {
 
 // OffboardResult reports what happened.
 type OffboardResult struct {
-	Member   *model.Member `json:"member"`
+	Member    *model.Member  `json:"member"`
 	Operation *OperationView `json:"operation"`
-	Warnings []string `json:"warnings,omitempty"`
+	Warnings  []string       `json:"warnings,omitempty"`
 }
 
 // Offboard 提交离职状态、访问撤销与持久化处理步骤。
@@ -44,9 +44,13 @@ func (s *Service) Offboard(ctx context.Context, orgID, actor, memberID int64, re
 	op, _, err := s.QueueOperation(ctx, orgID, actor, req.RequestID, OperationPayload{
 		Kind: "member.offboard", Offboard: &OffboardOperationInput{MemberID: memberID, Request: req},
 	}, nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	m, err := s.Member(ctx, orgID, memberID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &OffboardResult{Member: m, Operation: op}, nil
 }
 

@@ -10,7 +10,11 @@ Ejecuta desde la raíz del repositorio. Conserva caché y archivos intermedios e
 $env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
 $env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
 New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+$env:TEMP=$env:GOTMPDIR
+$env:TMP=$env:GOTMPDIR
 go test ./... -run '^$'
+gofmt -l ./internal ./cmd
+go test -count=1 ./... -timeout 180s
 go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
 go vet ./...
 npm --prefix web run typecheck
@@ -29,7 +33,7 @@ La concurrencia y reenvíos pueden repetirse con `-count=20`; race requiere comp
 ## Entornos reales y seguridad
 
 `internal/integration/multiprovider` utiliza API y protocolos reales. Deshabilita
-`MAILHEARTH_DEV_STACK`; la configuración ausente provoca un error explícito. Usa cuentas,
+`MAILHEARTH_DEV_STACK`; las pruebas se omiten explícitamente si no se indica la ruta de configuración y fallan si la configuración indicada es inválida. Usa cuentas,
 dominios y buzones de prueba sin mensajes importantes. Las pruebas de protocolos envían
 correo real y modifican endpoint en una instalación local aislada. Lee las pruebas antes
 de ejecutarlas; las comprobaciones actuales de requisitos y protocolos no restablecen
@@ -65,6 +69,7 @@ del proveedor no proporciona contraseñas de protocolos del buzón.
 ```powershell
 $env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
 go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+go test -count=1 -v ./internal/purelymail ./internal/mailproto/mailops -timeout 40m
 ```
 
 ## Cobertura y resultados
@@ -77,6 +82,13 @@ go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
 - `TestRealMultiProviderProtocols`: credenciales independientes y entrega real (T04), lectura
   sin SMTP (T05), lectura/entrega sin ManageSieve (T06), revisión de endpoint y cierre de conexiones
   antiguas (T37). Escribe `protocols.json`.
+- `TestClientAgainstRealPurelymail`: consultas reales de cuenta, operaciones de usuarios,
+  contraseñas y routing rules; verifica autenticación y revocación por IMAP de recursos propios.
+- `TestMailOpsAgainstRealProtocols`: carpetas, paginación, búsqueda, flags, COPY/MOVE/eliminación,
+  MIME, adjuntos, entrega SMTP e IDLE, con carpetas aisladas e identificadores únicos.
+- `TestListFoldersOnRev1Server`: LIST/STATUS y carpetas especiales de IMAP4rev1 real. Requiere
+  `manual.primaryMailbox` sin IMAP4rev2, LIST-EXTENDED, LIST-STATUS ni SPECIAL-USE;
+  selecciona las otras pruebas por nombre al utilizar un servidor diferente.
 
 Los informes conservan `acceptanceComplete=false`. La matriz T01–T40 y V01–V07 completa necesita
 pruebas adicionales y ejecución real. La suite Purelymail de `internal/integration` todavía necesita
