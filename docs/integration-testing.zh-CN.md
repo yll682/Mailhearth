@@ -1,86 +1,84 @@
-# 对真实 Purelymail 账户的集成测试
+# 多服务商集成测试
 
 [English](integration-testing.md) · **简体中文** · [繁體中文](integration-testing.zh-TW.md) · [日本語](integration-testing.ja.md) · [Español](integration-testing.es.md)
 
-单元测试跑在内存中的 Purelymail API 假实现上。假实现能证明 Mailhearth 自身逻辑一致，却无法证明它与线上服务相符：假实现和客户端出自同一份对 API 的理解。只有真实账户才能发现写错的字段名、Purelymail 实际解释方式与我们假设不同的规则、没有真正被吊销的应用密码，或者根本没投递到的邮件。
+## 本地检查
 
-`internal/integration` 里的套件补上这个缺口。它默认跳过，所以 `make test` 和 CI 仍然离线、快速。
+在项目根目录执行。缓存和中间文件保存在已经忽略的 `data/` 目录。
 
-## 覆盖范围
-
-每个测试都通过 Mailhearth 自己的服务层操作，然后拿线上账户的实际状态核对，而不是核对 Mailhearth 自己的数据库。
-
-| 测试 | 验证内容 |
-| --- | --- |
-| `TestImportExistingAccount` | 接入已有用户和路由规则的账户时，能如实导入、标记为导入项、不签发应用密码、且不改动上游。第二次同步是空操作。 |
-| `TestMailboxLifecycle` | 创建信箱会生成真实用户和可用的应用密码；IMAP 登录、SMTP 投递、收件、渲染和已发送副本都正常；轮换会让旧密码在服务商侧失效；删除会移除用户。 |
-| `TestRoutingRules` | 别名会变成服务商认可的路由规则，发往它的邮件能收到，删除地址会撤回规则。 |
-| `TestGroupDistribution` | 群组地址能送达每个成员，移除成员会改写上游规则。 |
-| `TestSharedMailboxAccess` | 授权决定谁能打开共享信箱。仅有管理员权限永远不等于邮件访问权。撤销后立即关门。 |
-| `TestSieveRules` | Mailhearth 编译出的 Sieve 脚本被服务商接受、成为活动脚本，并且真的把邮件归入目标文件夹而不是收件箱。 |
-| `TestOffboarding` | 离职者失去所有入口，包括其桌面邮件客户端持有的凭据；信箱及其历史邮件移交给接手人。 |
-| `TestSuspendAndReactivate` | 停用会锁住所有人但继续收信；恢复后访问可用，期间到达的邮件都在。 |
-| `TestPasswordResetForExternalClients` | 发给 Thunderbird 用的密码确实能认证，重置后 Mailhearth 自己的应用密码依然有效且与之不同。 |
-| `TestExternalForwarding` | 转发到账户外地址会生成预期的规则。 |
-| `TestTokenRejection` | 错误的 API 令牌会被拒绝，且不会破坏已存好的有效连接。 |
-
-## 安全性
-
-套件会创建和删除真实信箱与真实路由规则，而删除 Purelymail 用户会连带删除其邮件。两道机制把影响范围限制住。
-
-套件创建的每个对象都命名为 `<前缀>-<运行号>-<角色><序号>`，前缀默认 `mh-it`。任何破坏性辅助函数在操作地址前都会调用 `guardOwned`：地址必须既在配置的测试域名下，**又**带有该前缀，否则直接中止整轮运行。即便代码改动要求某个测试去删它没创建过的信箱，也删不掉。
-
-每个测试还会在创建对象的同时登记清理动作，所以中断或失败的运行仍会拆掉自己造出来的东西。
-
-即使如此：**请把套件指向一个不含任何重要数据的域名。** 在账户上专门加一个测试域名是正确做法。上述防护针对的是套件自身行为失常，而不是把 `MAILHEARTH_IT_DOMAIN` 误写成生产域名、且前缀恰好撞上的情况。
-
-每个测试都会在临时目录里建立自己的空数据库和独立主密钥，不会碰到你真实的部署。
-
-## 运行
-
-域名必须已存在于 Purelymail 账户中且 MX 记录正常，因为这些测试大多以投递为衡量对象。API 令牌需要完整权限。
-
-```bash
-export MAILHEARTH_IT_TOKEN=你的API令牌
-export MAILHEARTH_IT_DOMAIN=test.example.com
-
-go test ./internal/integration -v -timeout 40m
+```powershell
+$env:GOCACHE=Join-Path (Get-Location) 'data/go-build-cache'
+$env:GOTMPDIR=Join-Path (Get-Location) 'data/integration/go-work'
+New-Item -ItemType Directory -Force $env:GOCACHE,$env:GOTMPDIR | Out-Null
+go test ./... -run '^$'
+go test -count=1 ./... -run '^TestMultiProvider' -timeout 120s
+go vet ./...
+npm --prefix web run typecheck
+npm --prefix web run test
+npm --prefix web run build
+git diff --check
 ```
 
-整套预计耗时数分钟：大部分时间在等邮件真正到达。调试时可只跑一个：
+全部包的编译检查使用 `-run '^$'`。指定测试使用真实 SQLite、应用 HTTP server 和
+纯算法，检查关联归属、授权、操作、路由、转发导入与观察、发送状态和 Sieve。
+前端测试使用 TypeScript parser 检查 requestId 稳定性、翻译覆盖和插值参数。这些
+检查没有执行外部投递或浏览器交互。并发与转发检查可以使用 `-count=20` 重复执行；
+race 检查需要 C 编译器和 cgo。
 
-```bash
-go test ./internal/integration -run TestMailboxLifecycle -v -timeout 15m
-```
+## 真实环境与安全
 
-测试会在账户上创建并删除用户。Purelymail 按用户计费，跑完一整套花费不到一分钱。
+`internal/integration/multiprovider` 使用真实 API 和协议连接。关闭
+`MAILHEARTH_DEV_STACK`；缺少配置时明确失败。使用专用测试账户、域名及没有重要
+邮件的邮箱。协议测试发送真实邮件，并修改独立本地测试部署的 endpoint 设置。
+执行前阅读所选测试；当前认证前提和协议检查不重置已有外部邮箱密码。后续生命周期
+验收可能创建、删除资源、撤销凭据和修改规则，需要使用专用资源。
+
+配置只保存在 `data/integration/multi-provider/`，程序解析路径并检查所属目录。
+凭据不提交到 Git，也不发送到聊天或日志。每次运行在该目录下保存独立数据库、主密钥、
+测试数据和报告。妥善保护这些文件，完成检查后按需要清理。
 
 ## 配置
 
-| 变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `MAILHEARTH_IT_TOKEN` | — | API 令牌。必填，未设置则跳过。 |
-| `MAILHEARTH_IT_DOMAIN` | — | 测试域名。必填，未设置则跳过。 |
-| `MAILHEARTH_IT_PREFIX` | `mh-it` | 标记套件所属对象的本地部分前缀，必须以 `mh` 开头。 |
-| `MAILHEARTH_IT_EXTERNAL` | — | 账户外的一个地址，用于启用 `TestExternalForwarding`。 |
-| `MAILHEARTH_IT_DELIVER_SECONDS` | `180` | 等待邮件到达多久后判定失败。 |
-| `MAILHEARTH_IT_KEEP` | 未设置 | 保留创建的对象以便检查，需自行清理。 |
-| `MAILHEARTH_IT_API_URL` | `https://purelymail.com/api/v0` | API 端点。 |
-| `MAILHEARTH_IT_IMAP_ADDR` | `imap.purelymail.com:993` | IMAP 地址。 |
-| `MAILHEARTH_IT_SMTP_ADDR` | `smtp.purelymail.com:465` | 投递地址。 |
-| `MAILHEARTH_IT_SIEVE_ADDR` | `mailserver.purelymail.com:4190` | ManageSieve 地址，留空则跳过 Sieve 测试。 |
-| `MAILHEARTH_IT_IMAP_TLS` | `tls` | `tls`、`starttls` 或 `none`。 |
-| `MAILHEARTH_IT_SMTP_TLS` | `tls` | `tls`、`starttls` 或 `none`。 |
-| `MAILHEARTH_IT_SIEVE_TLS` | `starttls` | `tls`、`starttls` 或 `none`。 |
+JSON 读取拒绝未知字段和额外 JSON 值。以下环境全部需要配置：
 
-## 测试失败时
+| 字段 | 必要内容 |
+|---|---|
+| `purelymail` | `apiKey`、`domain`、`imap`、`smtp`、`managesieve` |
+| `migadu` | 上述字段及 `apiUsername`；没有 ManageSieve 时明确停用 |
+| 各协议模板 | `enabled`；启用时提供 `host`、`port`、`tlsMode`（`tls`/`starttls`），可选 `caBundleId` |
+| `manual` | `primaryMailbox`、`secondaryMailbox`、`independentSmtp`、`privateCaMailbox`、`noSieveMailbox` |
+| 各手动邮箱 | `address`、`credentials`（`clientKey`、`secret`），以及包含三项协议的 `endpoints` |
+| 启用的手动 endpoint | `networkMode: override`、`network` 模板、`authMode: password`、`username`、`credential: {clientKey}` |
+| 停用的手动 endpoint | `networkMode: disabled` |
+| `deliveryTimeoutSeconds` | 正整数，默认 180 |
 
-投递超时是最常见的失败，通常说明域名的 DNS 不完整，而不是 Mailhearth 有问题。先检查 MX 和 SPF 记录，再考虑调高 `MAILHEARTH_IT_DELIVER_SECONDS`。Purelymail 的垃圾邮件过滤也可能把测试邮件归入 Junk；失败信息会写明它搜索了哪个文件夹、在里面看到多少封邮件。
+`independentSmtp` 的 IMAP 和 SMTP 必须使用不同 username 和 secret。私有 CA 检查
+需要测试部署能够读取的 CA 及对应 `caBundleId`。`MAILHEARTH_CA_BUNDLES_FILE` 指向
+将正整数 CA ID 映射到 PEM 文件路径的 JSON 文件。`noSieveMailbox` 停用 ManageSieve，
+保留可用的 IMAP/SMTP。服务商管理认证不提供邮箱协议密码。
 
-用 `MAILHEARTH_IT_KEEP=1` 重跑可保留对象，在 Purelymail 网页界面里检查。记得事后删除：它们会持续产生费用，而下一轮运行不会接管它们。
+```powershell
+$env:MAILHEARTH_MULTIPROVIDER_TEST_CONFIG=Join-Path (Get-Location) 'data/integration/multi-provider/config.json'
+go test -count=1 -v ./internal/integration/multiprovider -timeout 40m
+```
 
-如果运行被强杀导致清理没执行，残留物很好找：每一个都带着前缀。
+## 覆盖与结果
 
-## 不要放进 CI
+- `TestRealMultiProviderPrerequisites`：真实 Purelymail/Migadu 管理认证及手动协议
+  凭据。成功后写入 `prerequisites.json`。
+- `TestRealMultiProviderTransactions`：连接隔离、相同地址登记、候选认证拒绝、revision
+  冲突、requestId 与内容检查及安全查询字段。对应部分 T01、T03、T08、T17–T19、
+  T40，成功后写入 `transactions.json`。
+- `TestRealMultiProviderProtocols`：独立凭据与实际投递（T04）、SMTP 停用后的读取
+  （T05）、ManageSieve 停用后的读取与投递（T06）、endpoint 版本及旧连接关闭
+  （T37），成功后写入 `protocols.json`。
 
-不要把这套测试接到合并请求流水线上。它需要真实令牌、要花钱，而且投递等待让它远远太慢，不适合做合并前的门禁。应在发布前运行，以及在改动 Purelymail 客户端、IMAP/SMTP 路径或 Sieve 编译器之后运行。
+报告保存 `acceptanceComplete=false`。完整 T01–T40 和 V01–V07 仍需要补充测试并
+实际执行；`internal/integration` 的旧 Purelymail 套件仍需要迁移到当前接口。
+本地测试通过或导入成功不表示真实服务商验收完成。Migadu 转发方式在 V03 通过前
+保持 `unverified`。
+
+投递失败时检查 MX/SPF、凭据、启用协议、目标确认状态、Junk 等文件夹及 Message-ID。
+网络错误不证明凭据已经撤销或资源已经删除。保留 operationId/submissionId 并核查
+未知结果，不自动重新发送。普通 CI 不使用真实凭据；服务商、SMTP/IMAP、migration
+或 Sieve 变更后及发布前执行专用验收。

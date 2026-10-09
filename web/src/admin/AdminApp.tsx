@@ -2,12 +2,14 @@ import { route, go } from "@/lib/router";
 import { me, can, logout } from "@/lib/state";
 import { t } from "@/lib/i18n";
 import { Icon, Avatar, Menu } from "@/ui";
-import { OverviewPage, ConnectionPage, AuditPage, RolesPage } from "./AdminOrg";
+import { OverviewPage, OrganisationPage, AuditPage, RolesPage } from "./AdminOrg";
 import { MembersPage, MemberDetail } from "./AdminMembers";
 import { MailboxesPage, MailboxDetail } from "./AdminMailboxes";
 import { AddressesPage, GroupsPage } from "./AdminAddresses";
 import { DomainsPage } from "./AdminDomains";
 import { useState } from "preact/hooks";
+import { ConnectionsPage } from "./AdminConnections";
+import { OperationsPage } from "./AdminOperations";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: "home", perm: "members.manage" },
@@ -18,7 +20,9 @@ const NAV = [
   { key: "domains", label: "Domains", icon: "globe", perm: "domains.manage" },
   { key: "roles", label: "Roles", icon: "key", perm: "org.manage" },
   { key: "audit", label: "Audit log", icon: "activity", perm: "audit.read" },
-  { key: "connection", label: "Connection", icon: "bolt", perm: "org.manage" },
+  { key: "connections", label: "Mail connections", icon: "bolt", perm: "org.manage" },
+  { key: "operations", label: "Operations", icon: "activity", perm: "org.manage" },
+  { key: "organisation", label: "Organisation", icon: "settings", perm: "org.manage" },
 ];
 
 export function AdminApp() {
@@ -26,7 +30,7 @@ export function AdminApp() {
   const section = segs[1] ?? "overview";
   const id = segs[2];
   const [drawer, setDrawer] = useState(false);
-  const nav = NAV.filter((n) => can(n.perm));
+  const nav = NAV.filter((n) => can(n.perm) || (n.key === "operations" && (can("mailboxes.manage") || can("shared.manage"))));
   if (nav.length === 0) {
     go("/mail", true);
     return null;
@@ -58,8 +62,14 @@ export function AdminApp() {
     case "audit":
       page = <AuditPage />;
       break;
-    case "connection":
-      page = <ConnectionPage />;
+    case "connections":
+      page = <ConnectionsPage />;
+      break;
+    case "operations":
+      page = <OperationsPage id={id} />;
+      break;
+    case "organisation":
+      page = <OrganisationPage />;
       break;
     default:
       page = <OverviewPage />;

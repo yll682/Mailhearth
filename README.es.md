@@ -4,16 +4,13 @@
 
 **Mailhearth** es una plataforma de correo empresarial autoalojada para equipos
 pequeños (1–50 personas): startups, empresas unipersonales, estudios y
-organizaciones pequeñas. Convierte una cuenta de
-[Purelymail](https://purelymail.com) en un producto de correo completo para el
-equipo: una organización con miembros, roles, buzones personales y compartidos,
-alias, grupos y dominios, además de un cliente de webmail rápido que el personal
-usa a diario sin llegar a oír nunca la palabra «Purelymail».
+organizaciones pequeñas. Conecta Purelymail, Migadu y buzones IMAP/SMTP configurados
+manualmente con miembros, roles, buzones personales y compartidos, alias, grupos,
+dominios y un cliente de webmail.
 
-Purelymail se encarga del correo: SMTP, entrega, filtrado de spam, almacenamiento,
-DKIM y DMARC. Mailhearth se encarga de la organización, los permisos, la
-administración y la experiencia de usuario. No se reimplementa nada que
-Purelymail ya haga bien.
+Los servidores de correo proporcionan entrega, filtrado y almacenamiento.
+Mailhearth proporciona organización, permisos, administración y experiencia de usuario.
+La autenticación de la API de administración y de cada protocolo se configura por separado.
 
 ```mermaid
 flowchart LR
@@ -23,18 +20,18 @@ flowchart LR
     subgraph host["Tu servidor"]
         APP["mailhearth<br/>binario único + SQLite"]
     end
-    subgraph pm["Purelymail"]
+    subgraph pm["Purelymail · Migadu · servidores de correo manuales"]
         API["API de administración<br/>dominios · usuarios · reglas de enrutamiento"]
         MAIL["IMAP · SMTP · ManageSieve<br/>buzones · envío · filtros"]
     end
 
     SPA <-->|"JSON + SSE sobre HTTPS<br/>solo cookie de sesión"| APP
-    APP -->|"token de API"| API
-    APP -->|"contraseña de aplicación por buzón"| MAIL
+    APP -->|"credenciales de administración por conexión"| API
+    APP -->|"credenciales independientes por protocolo"| MAIL
 ```
 
-Las credenciales se quedan en tu servidor: el navegador nunca recibe el token de
-API ni ninguna contraseña de buzón.
+Las consultas habituales no devuelven contraseñas API ni de protocolos guardadas.
+Las contraseñas nuevas para clientes externos tienen un flujo autorizado de reclamación única.
 
 | Webmail | Consola de administración |
 |---|---|
@@ -48,9 +45,9 @@ interfaz real contra el entorno de desarrollo.</sub>
 
 **Para administradores**
 
-- Asistente de primera ejecución: crea la organización, pega un token de API de
-  Purelymail e importa todos los dominios, buzones y reglas de enrutamiento
-  existentes sin tocar la cuenta.
+- Asistente inicial: crea la organización y las conexiones, descubre y selecciona
+  recursos, configura credenciales o completa la configuración sin vincular un buzón.
+  La importación solo lee recursos remotos; el acceso requiere configuración independiente.
 - Da de alta a las personas tal como piensas en ellas: nombre, rol, departamento,
   un buzón nuevo o existente, acceso a buzones compartidos, grupos y un enlace de
   invitación.
@@ -58,9 +55,9 @@ interfaz real contra el entorno de desarrollo.</sub>
   sin ver nunca una contraseña. Niveles de acceso: total / envío / lectura.
 - Alias, reenvíos, direcciones catch-all y con prefijo, y direcciones de
   distribución de grupo que siguen automáticamente la pertenencia al grupo.
-- Baja de un miembro en un solo paso: traspasar un buzón, convertirlo en
-  compartido, conservarlo o bloquearlo, reenviar el correo nuevo, rotar todas las
-  credenciales y salir de los grupos.
+- Baja con pasos persistentes: transferir o conservar buzones, actualizar grupos y
+  revocar sesiones. Las credenciales siguen las capacidades del proveedor; la revocación
+  externa requiere un informe del administrador registrado por separado.
 - Dominios con estado de DNS (MX/SPF/DKIM/DMARC) y registros DNS listos para
   copiar y pegar.
 - Roles con permisos detallados, registro de auditoría y transferencia de
@@ -75,14 +72,17 @@ interfaz real contra el entorno de desarrollo.</sub>
   cinco idiomas.
 - Trabajo en equipo en buzones compartidos: ver quién respondió, asignar un
   mensaje, marcarlo como resuelto y dejar notas internas.
-- Reglas de correo y respuestas automáticas compiladas a Sieve e instaladas en el
-  servidor, de modo que funcionan aunque no haya nadie conectado.
+- Reglas y respuestas automáticas en servidores con ManageSieve configurado y las
+  extensiones necesarias. Los scripts existentes se conservan; sustituir el activo exige confirmación.
+- Las solicitudes de envío guardan por separado SMTP y la copia en Sent. Un resultado
+  desconocido no se reintenta automáticamente; reintentar la copia no repite SMTP.
 
 **Postura de seguridad**
 
-- El token de API de Purelymail y cada contraseña de aplicación de buzón se cifran
-  en reposo (AES-256-GCM, con la clave derivada de una clave maestra) y nunca
-  salen del servidor. Los navegadores solo guardan una cookie de sesión.
+- Las credenciales de API y las contraseñas de protocolos se cifran con AES-256-GCM
+  y claves derivadas de la clave maestra. El navegador guarda una cookie de sesión.
+  Un administrador autorizado puede reclamar una nueva contraseña para clientes externos
+  una sola vez y dentro de su plazo de caducidad.
 - El HTML de los mensajes se sanea en el servidor y se renderiza en un iframe
   aislado y sin scripts bajo una CSP estricta; las imágenes remotas se bloquean
   hasta que las pides; los archivos adjuntos se sirven con `nosniff` y disposición
@@ -92,8 +92,8 @@ interfaz real contra el entorno de desarrollo.</sub>
 
 ## Requisitos
 
-- Una cuenta de Purelymail con al menos un dominio propio y un token de API
-  (portal de Purelymail → Account → API).
+- Una cuenta de Purelymail o Migadu para administrar mediante API, o un buzón existente
+  con credenciales IMAP/SMTP para una conexión manual. ManageSieve es opcional.
 - Un host Linux pequeño (con 512 MB de RAM sobra; el binario en reposo ronda los
   30 MB) y un proxy inverso que termine TLS (Caddy, nginx, Traefik).
 
@@ -105,23 +105,24 @@ cp .env.example .env            # define MAILHEARTH_BASE_URL con tu URL pública
 docker compose up -d --build
 ```
 
-Abre la URL, crea la organización, conecta Purelymail, importa y listo. Haz una
+Abre la URL, crea la organización, configura conexiones y selecciona recursos.
+Configura y verifica las credenciales de cada protocolo habilitado antes de usar el correo. Haz una
 copia de seguridad del volumen `/data`: contiene la base de datos SQLite y
 `master.key`.
 
 Sin Docker, `make build` genera un binario estático `mailhearth` que incluye el
 cliente web. Ejecútalo con `MAILHEARTH_DATA_DIR=/var/lib/mailhearth`.
 
-## Pruébalo sin una cuenta de Purelymail
+## Usar un buzón IMAP/SMTP existente
 
-```bash
-make dev        # o: MAILHEARTH_DEV_STACK=1 go run ./cmd/mailhearth -seed-demo
-```
+Selecciona una conexión manual y registra la dirección completa y el hostname, port,
+TLS mode, username y password de cada protocolo habilitado. IMAP y SMTP pueden usar
+credenciales diferentes. Deshabilita ManageSieve si no existe. La validación TLS usa
+certificados del sistema o un conjunto de certificados CA privados configurado explícitamente.
 
-Esto inicia una simulación en proceso de la API de Purelymail, un servidor IMAP y
-un servidor SMTP con datos de demostración. Usa el token de API `dev-token` en el
-asistente y vincula `alice@acme.test` como tu buzón. No se conserva nada entre
-reinicios.
+La importación de reenvíos conserva el buzón de origen, el estado de confirmación de
+cada destino y las referencias remotas. Los modos sin verificar permanecen `unverified`;
+la escritura de reenvíos de Migadu requiere la verificación de entrega V03.
 
 ## Configuración
 
@@ -132,21 +133,24 @@ Todo son variables de entorno; consulta [`.env.example`](.env.example). Las
 ## Documentación
 
 - [Arquitectura](docs/architecture.es.md): componentes, modelo de datos y cómo
-  Mailhearth traslada sus conceptos a Purelymail.
+  Mailhearth administra conexiones, endpoint de protocolos y operaciones persistentes.
 - [Seguridad](docs/security.es.md): modelo de amenazas y controles implementados.
 - [Operaciones](docs/operations.es.md): copias de seguridad, actualizaciones,
   dimensionamiento y resolución de problemas.
 - [Pruebas de integración](docs/integration-testing.es.md): verificar una versión
-  contra una cuenta real de Purelymail.
+  con Purelymail, Migadu y entornos de protocolos manuales reales.
 - [Registro de cambios](CHANGELOG.es.md): qué cambió en cada versión.
 
 ## Desarrollo
 
 ```bash
-make test                       # go vet + go test + tsc
-make test-integration           # contra una cuenta real de Purelymail, consulta docs
+go test ./... -run '^$'
+go test -count=1 ./... -run '^TestMultiProvider'
+go vet ./...
+npm --prefix web run typecheck
+npm --prefix web run test
+npm --prefix web run build
 cd web && npm run dev           # servidor de desarrollo Vite que redirige /api a :8080
-node scripts/screenshot.mjs http://127.0.0.1:8090 out en   # maneja la interfaz
 ```
 
 Go 1.27, Preact + Vite y SQLite (controlador Go puro, sin cgo). Todo se
@@ -156,6 +160,8 @@ La interfaz se ofrece en inglés, chino simplificado, chino tradicional (Taiwán
 japonés y español. Los textos están en
 [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts): el inglés es el origen, y un idioma
 nuevo es un diccionario más una entrada en el selector de idioma.
+`web/tests/i18n.test.mjs` comprueba la cobertura y los parámetros de interpolación.
+La aceptación con proveedores reales sigue pendiente; las comprobaciones locales no confirman la entrega externa.
 
 ## Licencia
 

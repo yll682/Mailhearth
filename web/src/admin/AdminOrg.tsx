@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { t } from "@/lib/i18n";
-import { get, post, put, patch, del, type Overview, type Connection, type Discovery, type ImportResult, type AuditEntry, type Role, type Member } from "@/lib/api";
+import { statusLabel } from "@/lib/resourceLabels";
+import { get, post, patch, del, type Overview, type AuditEntry, type Role, type Member, type ConnectionBilling } from "@/lib/api";
 import { toast, errorToast, can, me, loadMe } from "@/lib/state";
 import { fmtDate } from "@/lib/format";
 import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, Badge, Confirm, Avatar, Info } from "@/ui";
@@ -20,17 +21,17 @@ export function OverviewPage() {
   if (loading) return <Spinner />;
   if (error || !data) return <ErrorBox error={error} onRetry={reload} />;
   const o = data;
-  const dnsBad = o.domains.filter((d) => d.dns && !(d.dns.mx && d.dns.spf && d.dns.dkim && d.dns.dmarc) && !d.isShared);
-  // A freshly imported mailbox is usually both unconnected and unowned, so
-  // list each mailbox once and show everything it still needs.
+  const dnsBad = o.domainBindings.filter((binding) => Object.values(binding.dnsStatus).includes("fail"));
+  const dnsVerified = o.domainBindings.length > 0 && o.domainBindings.every((binding) => ["mx", "spf", "dkim", "dmarc"].every((key) => binding.dnsStatus[key as keyof typeof binding.dnsStatus] === "pass"));
+  // 每个邮箱只显示一次，并列出尚需配置的项目。
   const needy = new Map<number, { address: string; needs: string[] }>();
-  for (const m of o.unconnected) needy.set(m.id, { address: m.address, needs: [t("Not connected")] });
+  for (const m of o.unconnected) needy.set(m.id, { address: `${m.address} · ${m.connectionLabel}`, needs: [t("Not connected")] });
   for (const m of o.unassigned) {
-    const e = needy.get(m.id) ?? { address: m.address, needs: [] };
+    const e = needy.get(m.id) ?? { address: `${m.address} · ${m.connectionLabel}`, needs: [] };
     e.needs.push(t("No owner"));
     needy.set(m.id, e);
   }
-  const attention = needy.size + dnsBad.length + (o.connection.lastError ? 1 : 0);
+  const attention = needy.size + dnsBad.length + o.connections.filter((connection) => connection.lastApiErrorCode).length;
   return (
     <div class="page">
       <PageHead title={t("Overview")}>
@@ -53,25 +54,21 @@ export function OverviewPage() {
             <span class="stat-l">{t("Addresses")}</span>
           </a>
           <a class="stat" href="/admin/domains">
-            <span class="stat-n">{o.domains.filter((d) => d.status === "active").length}</span>
+            <span class="stat-n">{o.domains.length}</span>
             <span class="stat-l">{t("Domains")}</span>
-            <span class="stat-sub muted">{dnsBad.length ? <span class="warn-text">{t("{n} with DNS problems", { n: dnsBad.length })}</span> : t("Passing")}</span>
+            <span class="stat-sub muted">{dnsBad.length ? <span class="warn-text">{t("{n} with DNS problems", { n: dnsBad.length })}</span> : t(dnsVerified ? "Passing" : "DNS status unverified")}</span>
           </a>
-          {can("billing.read") && o.connection.credit ? (
-            <div class="stat">
-              <span class="stat-n">${Number(o.connection.credit).toFixed(2)}</span>
-              <span class="stat-l">{t("Purelymail credit")}</span>
-              <span class="stat-sub muted">{o.connection.lastSyncAt ? `${t("Last sync")} ${fmtDate(o.connection.lastSyncAt)}` : ""}</span>
-            </div>
-          ) : null}
+          {o.connections.map((connection) => <a key={connection.id} class="stat" href={`/admin/connections/${connection.id}`}><span class="stat-l">{connection.label}</span><span class="stat-sub muted">{connection.providerKind} · ID {connection.id} · {connection.lastApiCheckStatus ? statusLabel(connection.lastApiCheckStatus) : (connection.enabled ? t("Enabled") : t("Disabled"))}</span><span class="stat-sub muted">{connection.lastSyncAt ? `${t("Last sync")} ${fmtDate(connection.lastSyncAt)}` : ""}</span></a>)}
         </div>
+
+        {can("billing.read") ? <section class="card"><h3>{t("Balance and usage by connection")}</h3><p class="muted">{t("Values retain the provider's units and scope.")}</p>{o.connections.map((connection) => <ConnectionBillingCard key={connection.id} connection={connection} />)}</section> : null}
 
         <section class="card">
           <h3>
             {t("Needs attention")} {attention ? <Badge tone="warn">{attention}</Badge> : <Badge tone="good">0</Badge>}
           </h3>
           {attention === 0 ? <p class="muted">{t("Everything looks good.")}</p> : null}
-          {o.connection.lastError ? <div class="notice warn">{o.connection.lastError}</div> : null}
+          {o.connections.filter((connection) => connection.lastApiErrorCode).map((connection) => <div key={connection.id} class="notice warn">{connection.label} · {connection.lastApiErrorCode}</div>)}
           {needy.size ? (
             <div class="attn">
               <b>{t("Mailboxes")}</b>
@@ -95,7 +92,7 @@ export function OverviewPage() {
               <ul>
                 {dnsBad.map((d) => (
                   <li key={d.id}>
-                    <a href="/admin/domains">{d.name}</a> — {["mx", "spf", "dkim", "dmarc"].filter((k) => !(d.dns as unknown as Record<string, boolean>)[k]).map((k) => k.toUpperCase()).join(", ")}
+                    <a href="/admin/domains">{d.domainName} · {d.connectionLabel}</a> — {["mx", "spf", "dkim", "dmarc"].filter((key) => d.dnsStatus[key as keyof typeof d.dnsStatus] === "fail").map((key) => key.toUpperCase()).join(", ")}
                   </li>
                 ))}
               </ul>
@@ -118,8 +115,13 @@ export function OverviewPage() {
   );
 }
 
+function ConnectionBillingCard({ connection }: { connection: Overview["connections"][number] }) {
+  const { data, loading, error, reload } = useAsync(() => connection.enabled ? get<ConnectionBilling>(`/api/admin/connections/${connection.id}/billing`) : Promise.resolve(null), [connection.id, connection.enabled]);
+  return <section class="stack"><h4>{connection.label} · {connection.providerKind} · ID {connection.id}</h4>{!connection.enabled ? <p class="muted">{t("Disabled")}</p> : loading ? <Spinner /> : error ? <ErrorBox error={error} onRetry={reload} /> : data ? <><p class="muted">{t("Balance")}: {t(data.balanceSupport)} · {t("Usage")}: {t(data.usageSupport)}</p>{data.values.map((value) => <p key={`${value.domain ?? ""}/${value.key}`}><b>{value.domain ? `${value.domain} · ` : ""}{t(value.key)}</b>: {value.value} {t(value.unit)} {value.period ? `· ${t(value.period)}` : ""}</p>)}</> : null}</section>;
+}
+
 const actionLabels: Record<string, string> = {
-  "org.create": "created the organisation", "org.update": "renamed the organisation", "org.transfer": "transferred ownership", "connection.set": "connected Purelymail", "connection.sync": "synced with Purelymail",
+  "org.create": "created the organisation", "org.update": "renamed the organisation", "org.transfer": "transferred ownership", "connection.set": "configured a mail connection", "connection.create": "configured a mail connection", "connection.configure": "configured a mail connection", "connection.sync": "synced a mail connection",
   "member.create": "added a member", "member.update": "updated a member", "member.status": "changed member status", "member.invite": "created an invite", "member.password": "reset a password", "member.offboard": "offboarded a member", "member.delete": "deleted a member",
   "mailbox.create": "created a mailbox", "mailbox.bind": "assigned a mailbox", "mailbox.credential": "connected a mailbox", "mailbox.rotate": "rotated a mailbox credential", "mailbox.password": "reset a mailbox password", "mailbox.suspend": "suspended a mailbox", "mailbox.reactivate": "reactivated a mailbox", "mailbox.update": "updated a mailbox", "mailbox.delete": "deleted a mailbox", "mailbox.grant": "granted mailbox access", "mailbox.revoke": "revoked mailbox access", "mailbox.forward": "set mailbox forwarding", "mailbox.forward.clear": "cleared mailbox forwarding", "mailbox.handover": "handed over a mailbox", "mailbox.toshared": "converted a mailbox to shared",
   "address.create": "created an address", "address.update": "updated an address", "address.delete": "deleted an address", "group.create": "created a group", "group.update": "updated a group", "group.delete": "deleted a group", "group.address": "set a group address", "group.address.remove": "removed a group address",
@@ -191,18 +193,12 @@ export function AuditPage() {
   );
 }
 
-export function ConnectionPage() {
-  const { data, error, loading, reload } = useAsync(() => get<Connection>("/api/admin/connection"), []);
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+export function OrganisationPage() {
   const [orgName, setOrgName] = useState(me.value?.org.name ?? "");
   const [transfer, setTransfer] = useState(false);
-  if (loading) return <Spinner />;
-  if (error || !data) return <ErrorBox error={error} onRetry={reload} />;
   return (
     <div class="page">
-      <PageHead title={t("Connection")} />
+      <PageHead title={t("Organisation")} />
       <div class="page-body narrow stack">
         <section class="card">
           <h3>{t("Organisation")}</h3>
@@ -231,71 +227,6 @@ export function ConnectionPage() {
               </Button>
             ) : null}
           </div>
-        </section>
-        <section class="card">
-          <h3>Purelymail</h3>
-          <dl class="kv">
-            <dt>{t("API endpoint")}</dt>
-            <dd class="mono">{data.apiUrl}</dd>
-            <dt>{t("API token")}</dt>
-            <dd class="mono">{data.tokenHint}</dd>
-            {can("billing.read") ? (
-              <>
-                <dt>{t("Purelymail credit")}</dt>
-                <dd>${Number(data.credit || 0).toFixed(2)}</dd>
-              </>
-            ) : null}
-            <dt>{t("Last sync")}</dt>
-            <dd>{data.lastSyncAt ? fmtDate(data.lastSyncAt, "full") : t("Never")}</dd>
-          </dl>
-          {data.lastError ? <div class="notice warn">{data.lastError}</div> : null}
-          <p class="muted">
-            {t("Imports changes made outside Mailhearth.")} <Info text={t("Re-reads domains, mailboxes and routing rules from Purelymail and updates the organisation model.")} />
-          </p>
-          <Button
-            icon="refresh"
-            busy={syncing}
-            onClick={async () => {
-              setSyncing(true);
-              try {
-                const r = await post<ImportResult>("/api/admin/connection/sync");
-                toast(t("Sync finished: {n} new mailboxes, {a} new addresses.", { n: r.mailboxesNew, a: r.addressesNew }), "success");
-                reload();
-              } catch (e) {
-                errorToast(e);
-              } finally {
-                setSyncing(false);
-              }
-            }}
-          >
-            {syncing ? t("Syncing…") : t("Sync now")}
-          </Button>
-        </section>
-        <section class="card">
-          <h3>{t("Replace token")}</h3>
-          <Field label={t("Purelymail API token")} hint={t("The token is never shown again after saving.")}>
-            <input value={token} onInput={(e) => setToken((e.target as HTMLInputElement).value)} />
-          </Field>
-          <Button
-            kind="primary"
-            busy={busy}
-            disabled={!token.trim()}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await put<Discovery>("/api/admin/connection", { apiToken: token });
-                setToken("");
-                toast(t("Token updated."), "success");
-                reload();
-              } catch (e) {
-                errorToast(e);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t("Save")}
-          </Button>
         </section>
       </div>
       {transfer ? <TransferModal onClose={() => setTransfer(false)} /> : null}

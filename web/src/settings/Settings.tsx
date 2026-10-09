@@ -2,8 +2,10 @@ import { useEffect, useState } from "preact/hooks";
 import { route, go } from "@/lib/router";
 import { me, mailboxes, toast, errorToast, refreshMailboxes, logout, isAdmin } from "@/lib/state";
 import { t, lang, setLang, LANGS } from "@/lib/i18n";
-import { get, post, put, type AccessibleMailbox, type Identity, type SieveRule, type Vacation, type Folder } from "@/lib/api";
+import { get, post, put, patch, waitOperation, ApiError, type Operation, type Capability, type AccessibleMailbox, type Identity, type SieveRule, type Vacation, type Folder, type FolderMappingView } from "@/lib/api";
 import { Button, Field, Icon, Tabs, Toggle, Avatar, Spinner, Modal, Info } from "@/ui";
+import { SubmissionsTab } from "./SubmissionsTab";
+import { useOperationRequests } from "@/lib/useOperationRequests";
 
 export function SettingsPage() {
   const tab = route.value.segments[1] ?? "account";
@@ -11,6 +13,8 @@ export function SettingsPage() {
     { key: "account", label: t("Account") },
     { key: "identities", label: t("Identities & signatures") },
     { key: "rules", label: t("Mail rules") },
+    { key: "folders", label: t("Special folders") },
+    { key: "submissions", label: t("Sending requests") },
   ];
   return (
     <div class="page">
@@ -28,10 +32,61 @@ export function SettingsPage() {
       </header>
       <Tabs tabs={tabs} value={tab} onChange={(k) => go("/settings/" + k)} />
       <div class="page-body narrow">
-        {tab === "account" ? <AccountTab /> : tab === "identities" ? <IdentitiesTab /> : <RulesTab />}
+        {tab === "account" ? <AccountTab /> : tab === "identities" ? <IdentitiesTab /> : tab === "folders" ? <FoldersTab /> : tab === "submissions" ? <SubmissionsTab /> : <RulesTab />}
       </div>
     </div>
   );
+}
+
+function FoldersTab() {
+  const boxes = mailboxes.value.filter((box) => box.level === "full");
+  const [id, setId] = useState(boxes[0]?.id ?? 0);
+  const [view, setView] = useState<FolderMappingView | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setView(null); setFolders([]); setFailed(false);
+    if (!id) return;
+    setLoading(true);
+    Promise.all([get<FolderMappingView>(`/api/mail/mailboxes/${id}/folder-mapping`, controller.signal), get<Folder[]>(`/api/mail/mailboxes/${id}/folders`, controller.signal)])
+      .then(([mapping, list]) => { if (!controller.signal.aborted) { setView(mapping); setFolders(list.filter((folder) => !folder.noSelect)); } })
+      .catch((error) => { if (!controller.signal.aborted) { setFailed(true); errorToast(error); } })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, reload]);
+  const save = async () => {
+    if (!view) return;
+    setBusy(true);
+    try {
+      const saved = await put<FolderMappingView>(`/api/mail/mailboxes/${id}/folder-mapping`, { expectedRevision: view.revision, mapping: view.mapping, sentCopyMode: view.sentCopyMode });
+      setView(saved); await refreshMailboxes(); toast(t("Folder mapping saved."), "success");
+    } catch (error) { errorToast(error); } finally { setBusy(false); }
+  };
+  if (!boxes.length) return <p class="muted">{t("No mailboxes.")}</p>;
+  const labels = { sent: "Sent", drafts: "Drafts", trash: "Trash", junk: "Junk", archive: "Archive" };
+  return <div class="stack">
+    <Field label={t("Mailbox")}><select value={id} disabled={busy} onChange={(event) => setId(Number(event.currentTarget.value))}>{boxes.map((box) => <option key={box.id} value={box.id}>{box.connectionLabel} · {box.address}</option>)}</select></Field>
+    <p class="muted">{t("Choose existing folders. Automatic selection requires a unique match.")}</p>
+    {loading ? <Spinner /> : null}
+    {failed ? <Button onClick={() => setReload((value) => value + 1)}>{t("Retry")}</Button> : null}
+    {view ? <section class="card"><form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      {(Object.keys(labels) as (keyof typeof labels)[]).map((role) => <Field key={role} label={t(labels[role])}>
+        <select value={view.mapping[role] ?? ""} disabled={busy} onChange={(event) => setView({ ...view, mapping: { ...view.mapping, [role]: event.currentTarget.value || null } })}>
+          <option value="">{t("Automatic selection")}</option>
+          {view.mapping[role] && !folders.some((folder) => folder.name === view.mapping[role]) ? <option value={view.mapping[role]!} disabled>{view.mapping[role]} · {t("Folder unavailable")}</option> : null}
+          {folders.map((folder) => <option key={folder.name} value={folder.name}>{folder.name}</option>)}
+        </select>
+      </Field>)}
+      <Field label={t("Sent copy handling")}><select disabled={busy} value={view.sentCopyMode} onChange={(event) => setView({ ...view, sentCopyMode: event.currentTarget.value as "append" | "server" })}>
+        <option value="append">{t("Mailhearth saves the Sent copy")}</option><option value="server">{t("Mail server saves the Sent copy")}</option>
+      </select></Field>
+      <Button type="submit" kind="primary" busy={busy}>{t("Save")}</Button>
+    </form></section> : null}
+  </div>;
 }
 
 function AccountTab() {
@@ -182,8 +237,8 @@ export function IdentityEditor({ mailbox, identity, onClose, admin }: { mailbox:
   const save = async () => {
     setBusy(true);
     try {
-      const body = { address: identity.address, displayName: name, replyTo, signatureHtml: sig, isDefault: def };
-      if (admin) await (await import("@/lib/api")).patch(`/api/admin/mailboxes/${mailbox.id}/identities/${identity.id}`, body);
+      const body = { expectedRevision: identity.revision, displayName: name, replyTo, signatureHtml: sig, isDefault: def };
+      if (admin) await patch(`/api/admin/mailboxes/${mailbox.id}/identities/${identity.id}`, { ...body, address: identity.address });
       else await put(`/api/mail/mailboxes/${mailbox.id}/identities/${identity.id}`, body);
       await refreshMailboxes();
       toast(t("Sender identity saved."), "success");
@@ -226,6 +281,7 @@ const OPS: Record<string, string[]> = { size: ["over", "under"], default: ["cont
 const ACTIONS = ["move", "copy", "flag", "markread", "forward", "redirect", "discard", "stop"];
 
 function RulesTab() {
+  const requests = useOperationRequests();
   const boxes = mailboxes.value.filter((b) => b.level === "full");
   const [mbId, setMbId] = useState(boxes[0]?.id ?? 0);
   const [rules, setRules] = useState<SieveRule[]>([]);
@@ -233,17 +289,27 @@ function RulesTab() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [available, setAvailable] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [reason, setReason] = useState("");
+  const [vacationAvailable, setVacationAvailable] = useState(false);
+  const [vacationReason, setVacationReason] = useState("");
+  const [takeover, setTakeover] = useState<{ active: string; activeScriptHash: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [script, setScript] = useState("");
   const [showScript, setShowScript] = useState(false);
   useEffect(() => {
     if (!mbId) return;
     setLoaded(false);
-    Promise.all([get<{ rules: SieveRule[]; vacation: Vacation | null; script: string; available: boolean }>(`/api/mail/mailboxes/${mbId}/rules`), get<Folder[]>(`/api/mail/mailboxes/${mbId}/folders`).catch(() => [] as Folder[])]).then(([r, f]) => {
+    setTakeover(null);
+    Promise.all([get<{ rules: SieveRule[]; vacation: Vacation | null; script: string; available: boolean; revision: number; capability: Capability; vacationCapability: Capability }>(`/api/mail/mailboxes/${mbId}/rules`), get<Folder[]>(`/api/mail/mailboxes/${mbId}/folders`)]).then(([r, f]) => {
       setRules(r.rules ?? []);
       setVacation(r.vacation ?? { enabled: false, subject: "", body: "", days: 7 });
       setScript(r.script);
       setAvailable(r.available);
+      setRevision(r.revision);
+      setReason(r.capability.reasonCode ?? "");
+      setVacationAvailable(r.vacationCapability.support === "automatic" && r.vacationCapability.readiness === "ready" && r.vacationCapability.permissionAllowed);
+      setVacationReason(r.vacationCapability.reasonCode ?? "");
       setFolders(f);
       setLoaded(true);
     }, errorToast);
@@ -251,15 +317,21 @@ function RulesTab() {
   if (!mbId) return <p class="muted">{t("No mailboxes")}</p>;
   if (!loaded) return <Spinner />;
   const upd = (i: number, r: SieveRule) => setRules(rules.map((x, j) => (j === i ? r : x)));
-  const save = async () => {
+  const save = async (confirmTakeover = false) => {
     setBusy(true);
     try {
-      const r = await put<{ rules: SieveRule[]; script: string; uploaded: boolean }>(`/api/mail/mailboxes/${mbId}/rules`, { rules, vacation });
+      const action = `rules/${mbId}`;
+      await waitOperation(await put<Operation>(`/api/mail/mailboxes/${mbId}/rules`, requests.prepare(action, { expectedRevision: revision, rules, vacation, takeover: confirmTakeover, expectedActiveScriptHash: confirmTakeover ? takeover?.activeScriptHash : "" })));
+      requests.complete(action);
+      const r = await get<{ rules: SieveRule[]; script: string; revision: number }>(`/api/mail/mailboxes/${mbId}/rules`);
       setRules(r.rules);
       setScript(r.script);
-      toast(r.uploaded ? t("Rules saved and installed on the server.") : t("Rules saved."), "success");
+      setRevision(r.revision);
+      setTakeover(null);
+      toast(t("Rules saved and installed on the server."), "success");
     } catch (e) {
-      errorToast(e);
+      if (e instanceof ApiError && e.code === "sieve_takeover_required" && e.details && typeof e.details === "object" && "active" in e.details && "activeScriptHash" in e.details && typeof e.details.active === "string" && typeof e.details.activeScriptHash === "string") setTakeover({ active: e.details.active, activeScriptHash: e.details.activeScriptHash });
+      else errorToast(e);
     } finally {
       setBusy(false);
     }
@@ -267,24 +339,26 @@ function RulesTab() {
   return (
     <div class="stack">
       <MailboxSelect value={mbId} onChange={setMbId} />
-      {!available ? <div class="notice warn">{t("Rule management is not available for this server.")}</div> : null}
+      {!available ? <div class="notice warn">{t("Rule management is not available for this server.")} {reason}</div> : null}
+      {takeover ? <section class="card"><h3>{t("Confirm active script takeover")}</h3><p>{t("The existing script will be retained.")}</p><p class="mono">{takeover.active}<br />{takeover.activeScriptHash}</p><Button busy={busy} onClick={() => save(true)}>{t("Confirm takeover")}</Button><Button disabled={busy} onClick={() => setTakeover(null)}>{t("Cancel")}</Button></section> : null}
       <p class="muted">
-        {t("Rules run on the mail server, before mail reaches your inbox.")} <Info text={t("Stored as Sieve. Saving replaces any filters this mailbox has in other mail clients.")} />
+        {t("Rules run on the mail server, before mail reaches your inbox.")} <Info text={t("The active script is verified before the new rules are activated.")} />
       </p>
 
       <section class="card">
         <h3>{t("Auto-reply")}</h3>
-        <Toggle checked={vacation.enabled} onChange={(v) => setVacation({ ...vacation, enabled: v })} label={t("Enabled")} />
+        {!vacationAvailable ? <div class="notice warn">{t("Auto-reply is not available for this server.")} {vacationReason}</div> : null}
+        <Toggle checked={vacation.enabled} disabled={!vacationAvailable || busy} onChange={(v) => setVacation({ ...vacation, enabled: v })} label={t("Enabled")} />
         {vacation.enabled ? (
           <>
             <Field label={t("Auto-reply subject")}>
-              <input value={vacation.subject} onInput={(e) => setVacation({ ...vacation, subject: (e.target as HTMLInputElement).value })} />
+              <input disabled={!vacationAvailable || busy} value={vacation.subject} onInput={(e) => setVacation({ ...vacation, subject: (e.target as HTMLInputElement).value })} />
             </Field>
             <Field label={t("Auto-reply message")}>
-              <textarea rows={4} value={vacation.body} onInput={(e) => setVacation({ ...vacation, body: (e.target as HTMLTextAreaElement).value })} />
+              <textarea disabled={!vacationAvailable || busy} rows={4} value={vacation.body} onInput={(e) => setVacation({ ...vacation, body: (e.target as HTMLTextAreaElement).value })} />
             </Field>
             <Field label={t("Repeat interval")} info={t("Reply at most once every N days to the same sender.")}>
-              <input type="number" min={1} max={30} value={vacation.days} onInput={(e) => setVacation({ ...vacation, days: Number((e.target as HTMLInputElement).value) })} />
+              <input disabled={!vacationAvailable || busy} type="number" min={1} max={30} value={vacation.days} onInput={(e) => setVacation({ ...vacation, days: Number((e.target as HTMLInputElement).value) })} />
             </Field>
           </>
         ) : null}
@@ -292,7 +366,7 @@ function RulesTab() {
 
       <div class="row gap">
         <h3 class="grow">{t("Rules")}</h3>
-        <Button size="sm" icon="plus" onClick={() => setRules([...rules, { id: "", name: "", enabled: true, match: "all", conditions: [{ field: "from", op: "contains", value: "" }], actions: [{ type: "move", folder: "" }] }])}>
+        <Button size="sm" icon="plus" disabled={busy} onClick={() => setRules([...rules, { id: crypto.randomUUID(), name: "", enabled: true, match: "all", conditions: [{ field: "from", op: "contains", value: "" }], actions: [{ type: "move", folder: "" }] }])}>
           {t("Add rule")}
         </Button>
       </div>
@@ -349,7 +423,7 @@ function RulesTab() {
         </section>
       ))}
       <div class="row gap">
-        <Button kind="primary" busy={busy} onClick={save} disabled={!available}>
+        <Button kind="primary" busy={busy} onClick={() => save()} disabled={!available}>
           {t("Save")}
         </Button>
         <button class="linklike" onClick={() => setShowScript(!showScript)}>{t("Preview Sieve script")}</button>

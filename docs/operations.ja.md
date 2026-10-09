@@ -12,13 +12,14 @@ Mailhearth は、購入できる最小のホスト向けに作られています
 | アイドル時 RSS | 25–40 MB | `GOMEMLIMIT` の既定値は 160 MiB |
 | ビジー時 RSS（10 ユーザー） | 60–120 MB | 大半は IMAP 取得バッファー |
 | CPU | 無視できる | ログイン時の argon2id が最も重い処理 |
-| ディスク | 数 MB | SQLite：組織モデルとコラボレーションのメタデータ。メールは Purelymail 上に残る |
-| フロントエンド | gzip 後 51 KB | JS チャンク 1 個、CSS ファイル 1 個、イミュータブルキャッシュ |
+| ディスク | 組織データに応じて増加 | SQLite に操作、送信状態、共同作業情報を保存。メールは各 IMAP サービスに保存 |
+| フロントエンド | gzip 後約 100 KB | 2026-10-09 の JS と CSS のビルド結果。ファイル名は内容ハッシュを含む |
 
 `MAILHEARTH_IMAP_MAX_CONNS`（既定 24）は「同時利用ユーザー数 × 2 に、利用者が
 開いたままにしているメールボックスの数を足した値」を目安に調整します。各 IDLE
-ウォッチャーは 1 本の接続を保持します。Purelymail はユーザーごとにかなりの数の
-IMAP 接続を許可しますが、必要以上に保持する理由はありません。
+ウォッチャーは 1 本の接続を保持します。全体の既定上限は 24、connection ごとの
+上限は 8、mailbox ごとの上限は 3 です。IDLE は通常リクエスト用の接続枠を残します。
+各プロバイダーの実際の制限に従って設定します。
 
 ## バックアップ
 
@@ -38,7 +39,8 @@ out.db"` で一貫性のあるオンラインコピーを取得します。`mast
 
 ## アップグレード
 
-移行は起動時に自動で実行され、追加のみです。新しいイメージを取得し、
+migration は起動時に実行され、テーブル変換と参照検査を含みます。更新前に
+データベースと master key の整合したバックアップを保存します。新しいイメージを取得し、
 `docker compose up -d` を実行します。移行をまたぐダウングレードはサポートして
 いません。代わりにバックアップから復元してください。
 
@@ -60,24 +62,35 @@ nginx：`/api/mail/` に `proxy_buffering off;` と `proxy_read_timeout 3600s;` 
 
 ## トラブルシューティング
 
-**「Purelymail がこの API トークンを拒否しました」** — トークンが失効したか、
-入力が誤っています。管理 → 接続 で差し替えてください。
+**`provider_auth_failed`** — 管理 → 接続で該当する connection の管理認証を更新します。
+候補の認証に失敗した場合、現在の設定を保持します。メール認証は別に検査します。
 
-**メールボックスが「未接続」と表示される** — インポートされたメールボックスに
-アプリパスワードが付くのは、誰かが紐付けたとき（オンボーディング）か、管理者が
-*接続* を押したときだけです。Purelymail が拒否する場合
-（`createAppPassword` の失敗）、そのユーザーがまだアカウントに存在するかを
-確認し、*今すぐ同期* を実行してください。
+**メールプロトコルが未設定** — インポートは選択したリソースを登録します。
+IMAP、SMTP、ManageSieve と entered 認証を明示的に設定するか、connection の
+managed 認証機能を使用します。有効なプロトコルの実際の認証後に設定を保存します。
+SMTP と ManageSieve は独立して無効化できます。
 
-**「メールサーバーがこのメールボックスの認証情報を拒否しました」** — アプリ
-パスワードが Purelymail のポータルで削除されたか、ユーザーのパスワードが
-Mailhearth の外でリセットされています。そのメールボックスで *認証情報を
-ローテーション* を使用してください。
+**`mailbox_auth_failed`** — 該当プロトコルの username と password を確認します。
+entered 認証はプロトコル設定、managed 認証はローテーション操作で更新します。
+ネットワーク障害、一時的な拒否、未分類の ManageSieve 応答は未確認のまま保持します。
+遠隔認証の失効は新しい接続で確認します。
 
-**ルールを保存できない** — ホストから `mailserver.purelymail.com:4190` の
-ManageSieve（STARTTLS）に到達できる必要があります。一部の VPS 事業者は
-外向きポートを遮断しています。`openssl s_client -starttls sieve -connect
-mailserver.purelymail.com:4190` でテストしてください。
+**ルールを保存できない** — mailbox の ManageSieve endpoint、TLS、拡張を確認します。
+Purelymail の既定は `mailserver.purelymail.com:4190` と STARTTLS です。Migadu の
+テンプレートは無効で開始し、実際のアカウント設定を使用します。既存の active script の
+引き継ぎには明示的な確認と現在の内容ハッシュが必要です。自動返信には `vacation` が必要です。
+
+**Operation が `unknown`** — ステップと遠隔結果を確認してから明示的に再試行します。
+リソースロックは保持されます。認証作成の応答が失われて遠隔 ID がない場合、プロバイダー
+画面で認証を処理し、管理者の清理報告を提出します。元の操作は取り消され、作成済み
+リソースは保持されます。状態は `external_reported`、`systemVerified: false` です。
+
+**Submission が `sent_copy_failed`** — SMTP はメールを受け付けています。Sent コピー
+のみ再試行します。SMTP または APPEND が `unknown` の場合、Submission と固有識別子を
+確認し、元の requestId を保持します。
+
+**同期で新しいリソースを検出** — connection の同期結果からインポート対象を選択します。
+認証、権限、履歴を保持します。読み取り失敗から削除済みと判定しません。
 
 **ライブ更新がない** — SSE がプロキシでバッファリングされています。上記を
 参照してください。クライアントは手動更新に切り替わり、操作が起きたときには
@@ -94,11 +107,18 @@ Mailhearth が作成するメールボックスでは有効になっています
 設定すると、リクエストごとの行と IMAP ウォッチャーの再接続が追加されます。
 ログに認証情報は含まれません。
 
-## 開発環境のフェイク実装
+## 検査コマンド
 
-`MAILHEARTH_DEV_STACK=1` は Purelymail、IMAP、SMTP をプロセス内のフェイクに
-差し替えます。`-seed-demo` は 2 つのドメイン、5 人のユーザー、ルーティング
-ルール、サンプルメールを追加します。フェイクの API トークンは `dev-token` で、
-ユーザーは `<name>-pass` で認証します。Go のテストも同じフェイクを使うため、
-`go test ./...` は IMAP IDLE、SMTP 送信、HTML サニタイズを含む経路全体を
-通します。
+```powershell
+go test ./... -run '^$'
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+go vet ./...
+npm --prefix web run test
+npm --prefix web run build
+```
+
+実環境テストでは `MAILHEARTH_DEV_STACK` を無効化します。認証設定をプロジェクトの
+`data/integration/multi-provider/` に保存して `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG`
+を設定し、`go test -count=1 -v ./internal/integration/multiprovider` を実行します。
+設定がなければ明示的に失敗します。ローカル検査と実環境の検証は別に記録します。
+未実行の検証項目は未完了として保持します。

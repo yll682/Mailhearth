@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"github.com/google/uuid"
 
 	"mailhearth/internal/config"
 	"mailhearth/internal/core"
@@ -47,7 +48,6 @@ func newHarness(t *testing.T) *harness {
 	box, _ := secrets.NewBox(master, "test")
 	cfg := &config.Config{PurelymailAPIURL: srv.URL, InviteTTL: 24 * 3600e9, SessionTTL: 24 * 3600e9}
 	svc := core.New(database, cfg, box, nil, slog.Default())
-	svc.NewPM = func(token string) purelymail.API { return purelymail.New(srv.URL, token) }
 
 	ctx := context.Background()
 	owner, err := svc.Init(ctx, core.InitRequest{OrgName: "Acme", AdminName: "Alice", AdminEmail: "alice@acme.test", Password: "correct-horse-battery"})
@@ -313,7 +313,7 @@ func TestSetupImportAndModel(t *testing.T) {
 		t.Fatal("shared access must be revoked")
 	}
 	// Clear forwarding restores primary delivery.
-	if _, err := svc.SetMailboxForwarding(ctx, h.orgID, h.owner, cres.Mailbox.ID, nil); err != nil {
+	if _, err := svc.SetMailboxForwarding(ctx, h.orgID, h.owner, cres.Mailbox.ID, core.ForwardingInput{RequestID: uuid.NewString(), ExpectedRevision: 1}); err != nil {
 		t.Fatal(err)
 	}
 	a, _ := svc.Addresses(ctx, h.orgID)
@@ -339,7 +339,7 @@ func TestSetupImportAndModel(t *testing.T) {
 	if _, err := svc.CreateRole(ctx, h.orgID, h.owner, core.RoleInput{Name: "Bad", Permissions: []string{model.PermOrgOwner}}); err == nil {
 		t.Fatal("owner permission must not be grantable")
 	}
-	if _, err := svc.UpdateMember(ctx, h.orgID, h.owner, bres.Member.ID, core.MemberInput{RoleID: role.ID}); err != nil {
+	if _, err := svc.UpdateMember(ctx, h.orgID, h.owner, bres.Member.ID, core.MemberInput{RoleID: role.ID,ExpectedRevision:bres.Member.Revision}); err != nil {
 		t.Fatal(err)
 	}
 	bperms, _, _ = svc.Permissions(ctx, bres.Member.ID)

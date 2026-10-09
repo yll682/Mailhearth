@@ -4,14 +4,13 @@
 
 **Mailhearth** is a self-hosted business email platform for small teams
 (1–50 people): startups, one-person companies, studios and small
-organisations. It turns a [Purelymail](https://purelymail.com) account into a
-complete team mail product: an organisation with people, roles, personal and
-shared mailboxes, aliases, groups and domains, plus a fast webmail client that
-staff use every day without ever hearing the word "Purelymail".
+organisations. It connects Purelymail, Migadu and manually configured IMAP/SMTP
+mailboxes to an organisation with people, roles, personal and shared mailboxes,
+aliases, groups and domains, plus a fast webmail client.
 
-Purelymail does the mail: SMTP, delivery, spam filtering, storage, DKIM and
-DMARC. Mailhearth does the organisation, permissions, administration and
-user experience. Nothing is re-implemented that Purelymail already does well.
+Mail servers provide delivery, filtering and message storage. Mailhearth provides
+organisation, permissions, administration and the user experience. Management API
+authentication and each mailbox's protocol authentication are configured independently.
 
 ```mermaid
 flowchart LR
@@ -21,18 +20,18 @@ flowchart LR
     subgraph host["Your server"]
         APP["mailhearth<br/>single binary + SQLite"]
     end
-    subgraph pm["Purelymail"]
+    subgraph pm["Purelymail · Migadu · manual mail servers"]
         API["Management API<br/>domains · users · routing rules"]
         MAIL["IMAP · SMTP · ManageSieve<br/>mailboxes · sending · filters"]
     end
 
     SPA <-->|"JSON + SSE over HTTPS<br/>session cookie only"| APP
-    APP -->|"API token"| API
-    APP -->|"per-mailbox app password"| MAIL
+    APP -->|"management credentials per connection"| API
+    APP -->|"independent credentials per protocol"| MAIL
 ```
 
-Credentials stop at your server: the browser never receives the API token or
-any mailbox password.
+Routine queries never return saved API or protocol passwords. Newly generated
+external-client passwords have an explicit, authorized one-time claim flow.
 
 | Webmail | Admin console |
 |---|---|
@@ -46,17 +45,18 @@ the real UI against the development stack.</sub>
 
 **For administrators**
 
-- First-run wizard: create the organisation, paste a Purelymail API token,
-  and import every existing domain, mailbox and routing rule without touching
-  the account.
+- First-run wizard: create the organisation and mail connections, discover and
+  select resources to import, then configure mailbox credentials or complete setup
+  without binding a mailbox. Import is read-only upstream and does not enable login.
 - Onboard people the way you think about them: name, role, department, a new
   or existing mailbox, shared mailbox access, groups, an invite link.
 - Shared mailboxes (`support@`, `sales@`) that several people work from
   without ever seeing a password. Access levels: full / send / read.
 - Aliases, forwards, catch-all and prefix addresses, and group distribution
   addresses that follow group membership automatically.
-- Offboarding in one step: hand a mailbox over, convert it to shared, keep it
-  or lock it, forward new mail, rotate every credential, leave groups.
+- Persistent offboarding steps: transfer or retain mailboxes, update groups and
+  revoke sessions. Protocol credential handling follows the provider's capabilities;
+  external revocation requires an administrator report and remains separately recorded.
 - Domains with DNS health (MX/SPF/DKIM/DMARC) and copy-paste DNS records.
 - Roles with fine-grained permissions, an audit log, ownership transfer.
 
@@ -68,14 +68,17 @@ the real UI against the development stack.</sub>
   shortcuts, light and dark mode, and a five-language interface.
 - Shared mailbox teamwork: see who replied, assign a message, mark it
   resolved, leave internal notes.
-- Mail rules and auto-reply compiled to Sieve and installed on the server, so
-  they work even when nobody is logged in.
+- Mail rules and auto-reply on servers with configured ManageSieve and the required
+  extensions. Existing scripts are retained; taking over an active script requires confirmation.
+- Sending requests persist SMTP and Sent-copy results separately. Unknown delivery
+  is never retried automatically; retrying a failed Sent copy does not submit SMTP again.
 
 **Security posture**
 
-- The Purelymail API token and every mailbox app password are encrypted at
+- Management API credentials and mailbox protocol passwords are encrypted at
   rest (AES-256-GCM, key derived from a master key) and never leave the server.
-  Browsers only ever hold a session cookie.
+  Browsers hold a session cookie. An authorized administrator can explicitly claim
+  a newly generated external-client password once, within its expiry period.
 - Message HTML is sanitised server-side and rendered in a sandboxed,
   script-free iframe under a strict CSP; remote images are blocked until you
   ask for them; attachments are served with `nosniff` and download disposition.
@@ -83,8 +86,8 @@ the real UI against the development stack.</sub>
 
 ## Requirements
 
-- A Purelymail account with at least one custom domain and an API token
-  (Purelymail portal → Account → API).
+- A Purelymail or Migadu account for API management, or an existing mailbox with
+  IMAP/SMTP credentials for a manual connection. ManageSieve is optional.
 - A small Linux host (512 MB RAM is plenty; the binary idles around 30 MB)
   and a reverse proxy that terminates TLS (Caddy, nginx, Traefik).
 
@@ -96,21 +99,23 @@ cp .env.example .env            # set MAILHEARTH_BASE_URL to your public URL
 docker compose up -d --build
 ```
 
-Open the URL, create the organisation, connect Purelymail, import, done.
+Open the URL, create the organisation, configure connections and select imports.
+Configure and verify credentials for each enabled mailbox protocol before using mail.
 Back up the `/data` volume: it holds the SQLite database and `master.key`.
 
 Without Docker: `make build` produces a static `mailhearth` binary that
 embeds the web client. Run it with `MAILHEARTH_DATA_DIR=/var/lib/mailhearth`.
 
-## Try it without a Purelymail account
+## Use an existing IMAP/SMTP mailbox
 
-```bash
-make dev        # or: MAILHEARTH_DEV_STACK=1 go run ./cmd/mailhearth -seed-demo
-```
+Choose a manual connection, register the full mailbox address, and configure each
+enabled protocol's hostname, port, TLS mode, username and password. IMAP and SMTP
+may use different credentials. Disable ManageSieve when unavailable. TLS certificate
+validation uses system certificates or an explicitly configured private CA bundle.
 
-This starts an in-process fake of the Purelymail API, an IMAP server and an
-SMTP server with demo data. Use API token `dev-token` in the wizard and bind
-`alice@acme.test` as your mailbox. Nothing is persisted between restarts.
+Forwarding imports preserve the source mailbox, individual target confirmation
+states and remote references. Unverified delivery modes stay `unverified`;
+Migadu forwarding writes require V03 delivery verification.
 
 ## Configuration
 
@@ -121,20 +126,23 @@ The only ones you normally set are `MAILHEARTH_BASE_URL` and
 ## Documentation
 
 - [Architecture](docs/architecture.md): components, data model, how Mailhearth
-  maps its concepts onto Purelymail.
+  manages connections, protocol endpoints and persistent operations.
 - [Security](docs/security.md): threat model and the controls in place.
 - [Operations](docs/operations.md): backups, upgrades, sizing, troubleshooting.
 - [Integration testing](docs/integration-testing.md): verifying a release
-  against a real Purelymail account.
+  against real Purelymail, Migadu and manual protocol environments.
 - [Changelog](CHANGELOG.md): what changed in every release.
 
 ## Development
 
 ```bash
-make test                       # go vet + go test + tsc
-make test-integration           # against a real Purelymail account, see docs
+go test ./... -run '^$'
+go test -count=1 ./... -run '^TestMultiProvider'
+go vet ./...
+npm --prefix web run typecheck
+npm --prefix web run test
+npm --prefix web run build
 cd web && npm run dev           # Vite dev server proxying /api to :8080
-node scripts/screenshot.mjs http://127.0.0.1:8090 out en   # drive the UI
 ```
 
 Go 1.27, Preact + Vite, SQLite (pure Go driver, no cgo). Everything ships in
@@ -144,6 +152,8 @@ The interface ships in English, Simplified Chinese, Traditional Chinese
 (Taiwan), Japanese and Spanish. Strings live in
 [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts): English is the source, and a
 new language is one dictionary plus an entry in the language switcher.
+Translation coverage and interpolation parameters are checked by `web/tests/i18n.test.mjs`.
+Real-provider acceptance is pending; local checks do not confirm external delivery.
 
 ## License
 

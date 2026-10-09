@@ -13,6 +13,7 @@ import (
 // MailboxPlan says what happens to one mailbox when its owner leaves.
 type MailboxPlan struct {
 	MailboxID int64  `json:"mailboxId"`
+	ExpectedRevision int64 `json:"expectedRevision"`
 	Action    string `json:"action"` // handover | shared | suspend | keep
 	// handover: the member who takes over the mailbox (owner + history).
 	NewOwnerID int64 `json:"newOwnerId"`
@@ -24,6 +25,8 @@ type MailboxPlan struct {
 
 // OffboardRequest offboards a member.
 type OffboardRequest struct {
+	RequestID string `json:"requestId"`
+	ExpectedRevision int64 `json:"expectedRevision"`
 	Plans            []MailboxPlan `json:"plans"`
 	RemoveFromGroups bool          `json:"removeFromGroups"`
 	RevokeShared     bool          `json:"revokeShared"`
@@ -32,69 +35,19 @@ type OffboardRequest struct {
 // OffboardResult reports what happened.
 type OffboardResult struct {
 	Member   *model.Member `json:"member"`
-	Warnings []string      `json:"warnings"`
+	Operation *OperationView `json:"operation"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
-// Offboard disables the member, revokes their sessions and applies the
-// per-mailbox plan. Every mailbox credential the person could have used is
-// rotated so that access truly ends even for external mail clients.
+// Offboard 提交离职状态、访问撤销与持久化处理步骤。
 func (s *Service) Offboard(ctx context.Context, orgID, actor, memberID int64, req OffboardRequest) (*OffboardResult, error) {
+	op, _, err := s.QueueOperation(ctx, orgID, actor, req.RequestID, OperationPayload{
+		Kind: "member.offboard", Offboard: &OffboardOperationInput{MemberID: memberID, Request: req},
+	}, nil)
+	if err != nil { return nil, err }
 	m, err := s.Member(ctx, orgID, memberID)
-	if err != nil {
-		return nil, err
-	}
-	if m.RoleKey == model.RoleOwner {
-		return nil, invalid("transfer ownership before offboarding the owner")
-	}
-	if actor == memberID {
-		return nil, invalid("you cannot offboard yourself")
-	}
-	res := &OffboardResult{Warnings: []string{}}
-	owned, err := s.ownedMailboxes(ctx, orgID, memberID)
-	if err != nil {
-		return nil, err
-	}
-	plans := map[int64]MailboxPlan{}
-	for _, p := range req.Plans {
-		plans[p.MailboxID] = p
-	}
-	for _, mb := range owned {
-		p, ok := plans[mb.ID]
-		if !ok {
-			p = MailboxPlan{MailboxID: mb.ID, Action: "suspend"}
-		}
-		if err := s.applyMailboxPlan(ctx, orgID, actor, &mb, p); err != nil {
-			res.Warnings = append(res.Warnings, mb.Address+": "+err.Error())
-		}
-	}
-	if req.RevokeShared {
-		s.DB.ExecContext(ctx, `DELETE FROM mailbox_access WHERE member_id = ?`, memberID)
-	}
-	if req.RemoveFromGroups {
-		rows, err := s.DB.QueryContext(ctx, `SELECT group_id FROM group_members WHERE member_id = ?`, memberID)
-		if err == nil {
-			var gids []int64
-			for rows.Next() {
-				var g int64
-				rows.Scan(&g)
-				gids = append(gids, g)
-			}
-			rows.Close()
-			for _, g := range gids {
-				if err := s.RemoveGroupMember(ctx, orgID, actor, g, memberID); err != nil {
-					res.Warnings = append(res.Warnings, fmt.Sprintf("group %d: %v", g, err))
-				}
-			}
-		}
-	}
-	now := db.Now()
-	if _, err := s.DB.ExecContext(ctx, `UPDATE members SET status = 'departed', departed_at = ?, updated_at = ? WHERE id = ?`, now, now, memberID); err != nil {
-		return nil, err
-	}
-	s.RevokeSessions(ctx, memberID)
-	s.audit(ctx, orgID, actor, "member.offboard", "member", fmt.Sprint(memberID), map[string]any{"plans": req.Plans, "warnings": res.Warnings})
-	res.Member, err = s.Member(ctx, orgID, memberID)
-	return res, err
+	if err != nil { return nil, err }
+	return &OffboardResult{Member: m, Operation: op}, nil
 }
 
 func (s *Service) ownedMailboxes(ctx context.Context, orgID, memberID int64) ([]model.Mailbox, error) {
@@ -112,82 +65,6 @@ func (s *Service) ownedMailboxes(ctx context.Context, orgID, memberID int64) ([]
 		out = append(out, *b)
 	}
 	return out, rows.Err()
-}
-
-func (s *Service) applyMailboxPlan(ctx context.Context, orgID, actor int64, mb *model.Mailbox, p MailboxPlan) error {
-	switch p.Action {
-	case "handover":
-		if p.NewOwnerID == 0 {
-			return invalid("choose who takes over the mailbox")
-		}
-		if _, err := s.Member(ctx, orgID, p.NewOwnerID); err != nil {
-			return invalid("new owner not found")
-		}
-		if _, err := s.DB.ExecContext(ctx, `UPDATE mailboxes SET owner_member_id = ?, updated_at = ? WHERE id = ?`, p.NewOwnerID, db.Now(), mb.ID); err != nil {
-			return err
-		}
-		if err := s.RotateCredential(ctx, orgID, actor, mb.ID); err != nil {
-			return err
-		}
-		if err := s.lockOutOtherClients(ctx, orgID, mb.ID); err != nil {
-			return err
-		}
-		s.audit(ctx, orgID, actor, "mailbox.handover", "mailbox", fmt.Sprint(mb.ID), map[string]any{"address": mb.Address, "newOwner": p.NewOwnerID})
-	case "shared":
-		if _, err := s.DB.ExecContext(ctx, `UPDATE mailboxes SET kind = 'shared', owner_member_id = NULL, updated_at = ? WHERE id = ?`, db.Now(), mb.ID); err != nil {
-			return err
-		}
-		for _, mid := range p.GrantMemberIDs {
-			if _, err := s.GrantAccess(ctx, orgID, actor, mb.ID, mid, model.AccessFull); err != nil {
-				return err
-			}
-		}
-		if err := s.RotateCredential(ctx, orgID, actor, mb.ID); err != nil {
-			return err
-		}
-		if err := s.lockOutOtherClients(ctx, orgID, mb.ID); err != nil {
-			return err
-		}
-		s.audit(ctx, orgID, actor, "mailbox.toshared", "mailbox", fmt.Sprint(mb.ID), map[string]any{"address": mb.Address, "grants": p.GrantMemberIDs})
-	case "keep":
-		if err := s.RotateCredential(ctx, orgID, actor, mb.ID); err != nil {
-			return err
-		}
-		if err := s.lockOutOtherClients(ctx, orgID, mb.ID); err != nil {
-			return err
-		}
-		if _, err := s.DB.ExecContext(ctx, `UPDATE mailboxes SET owner_member_id = NULL, updated_at = ? WHERE id = ?`, db.Now(), mb.ID); err != nil {
-			return err
-		}
-	default: // suspend
-		if err := s.SuspendMailbox(ctx, orgID, actor, mb.ID); err != nil {
-			return err
-		}
-		if _, err := s.DB.ExecContext(ctx, `UPDATE mailboxes SET owner_member_id = NULL, updated_at = ? WHERE id = ?`, db.Now(), mb.ID); err != nil {
-			return err
-		}
-	}
-	if len(p.ForwardTo) > 0 {
-		if _, err := s.SetMailboxForwarding(ctx, orgID, actor, mb.ID, p.ForwardTo); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// lockOutOtherClients resets the Purelymail password so any phone or
-// desktop client the departed person configured stops working.
-func (s *Service) lockOutOtherClients(ctx context.Context, orgID, mailboxID int64) error {
-	mb, err := s.Mailbox(ctx, orgID, mailboxID)
-	if err != nil {
-		return err
-	}
-	api, err := s.pm(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	pw := randomPassword()
-	return upstream("purelymail modify user", api.ModifyUser(ctx, modifyPassword(mb.Address, pw)))
 }
 
 // --- team collaboration state on shared mailboxes ---
@@ -394,9 +271,9 @@ func (s *Service) SuggestContacts(ctx context.Context, orgID int64, q string, li
 	}
 	like := "%" + q + "%"
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT COALESCE(m.display_name, b.display_name), b.pm_user, CASE WHEN b.kind = 'shared' THEN 'shared' ELSE 'member' END
+		SELECT COALESCE(m.display_name, b.display_name), b.address, CASE WHEN b.kind = 'shared' THEN 'shared' ELSE 'member' END
 		FROM mailboxes b LEFT JOIN members m ON m.id = b.owner_member_id
-		WHERE b.org_id = ? AND b.status = 'active' AND (b.pm_user LIKE ? OR LOWER(COALESCE(m.display_name, b.display_name)) LIKE ?)
+		WHERE b.org_id = ? AND b.status = 'active' AND (b.address LIKE ? OR LOWER(COALESCE(m.display_name, b.display_name)) LIKE ?)
 		UNION ALL
 		SELECT COALESCE(g.name, a.local_part), a.address, CASE WHEN a.group_id IS NOT NULL THEN 'group' ELSE 'alias' END
 		FROM addresses a LEFT JOIN groups g ON g.id = a.group_id

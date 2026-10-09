@@ -2,115 +2,97 @@
 
 [English](architecture.md) · **简体中文** · [繁體中文](architecture.zh-TW.md) · [日本語](architecture.ja.md) · [Español](architecture.es.md)
 
-## 目标与范围
+## 部署与组件
 
-Mailhearth 把 Purelymail 可靠而低成本的邮件基础设施包装成一个小型组织可以
-直接部署、管理和日常使用的产品。它**不**运行 SMTP 服务器，不保存邮件的主副本，
-不做反垃圾，也不实现 DLP / eDiscovery / MDM。它也不是 Purelymail 后台的换皮，
-管理的单位是组织里的人，而非账户上的一个「用户」。
+Mailhearth 使用单个 Go 二进制、内嵌 Preact 资源和 SQLite（modernc，无 cgo）。
+邮件服务器保存正文并负责投递和过滤。SQLite 保存组织数据、加密凭据、资源关联、
+管理操作、发送请求和协作数据。Node 用于前端构建。
 
-塑造这套设计的约束条件：
+- `cmd/mailhearth`：配置、主密钥、数据库、IMAP 连接池、执行器及 HTTP server。
+- `internal/config`、`internal/secrets`：环境配置、AES-256-GCM/HKDF、argon2id 和 token。
+- `internal/db`、`internal/model`：内嵌 migration、关联检查及持久化模型。
+- `internal/provider`：公共管理接口及 Purelymail、Migadu、manual 适配器。
+- `internal/purelymail`：供对应适配器使用的 Purelymail API 客户端。
+- `internal/core`：连接、发现与导入、组织、资源生命周期、Operation 和 Submission。
+- `internal/mailproto/imappool`：连接额度、endpoint 版本失效处理及 IDLE 监听。
+- `internal/mailproto/mailops`、`mimeutil`、`sieve`：IMAP/SMTP、MIME 消毒、Sieve 编译和 ManageSieve。
+- `internal/httpapi`、`internal/web`、`web/`：权限检查、JSON/SSE、内嵌资源及邮件、管理、设置界面。
 
-- **主机很小。** 目标部署环境是最便宜的 VPS。服务端是一个静态 Go 二进制加
-  SQLite，进程内有一个有上限的 IMAP 连接池，前端 gzip 后 51 KB。没有 Redis，
-  没有 Postgres，运行时没有 Node，除了少量 goroutine 也没有后台 worker。
-- **邮件以 Purelymail 为准。** 邮件从不复制进 Mailhearth 的数据库。客户端显示
-  的一切都通过 IMAP 按需获取；数据库只保存组织模型，以及以 `Message-ID` 为键
-  的少量协作数据。
-- **浏览器里没有机密。** API 令牌和邮箱的应用密码加密存放在 SQLite 里。浏览器
-  只和 Mailhearth 通信。
+## 组织与资源归属
 
-## 组件
+每次部署有一个 Organization。Member 保存角色、部门和 `invited`、`active`、
+`disabled`、`departed` 状态。Role 包含具名权限。personal Mailbox 的所有权和 shared
+Mailbox 的明确授权（`full`、`send`、`read`）决定邮件访问；管理权限不授予邮件访问。
 
-| Package | 职责 |
-|---|---|
-| `cmd/mailhearth` | 入口：配置、master key、数据库、IMAP 连接池、HTTP 服务器 |
-| `internal/config` | 环境变量配置 |
-| `internal/db` | SQLite（modernc，无 cgo）和内嵌 migration |
-| `internal/secrets` | AES-256-GCM 加密盒（由 master key 经 HKDF 派生）、argon2id、token |
-| `internal/purelymail` | 类型化 API 客户端；`fake/` 是内存版 Purelymail |
-| `internal/model` | 服务层和 API 共用的组织模型类型 |
-| `internal/core` | 服务：初始化与导入、成员、角色、域名、邮箱、地址、群组、离职交接、团队状态 |
-| `internal/mailproto/imappool` | 有上限的 IMAP 连接池与 IDLE 监听 |
-| `internal/mailproto/mailops` | 文件夹、列表、渲染、操作、撰写、SMTP |
-| `internal/mailproto/mimeutil` | HTML 消毒、文本与 HTML 互转、解码 |
-| `internal/mailproto/sieve` | 规则模型到 Sieve 的编译器；ManageSieve 客户端 |
-| `internal/httpapi` | JSON API、会话、CSRF、上传、SSE、沙箱邮件视图 |
-| `internal/web` | 内嵌 SPA，带 gzip 和不可变缓存 |
-| `internal/devstack` | 供开发和测试使用的模拟 Purelymail、IMAP、SMTP |
-| `web/` | Preact + Vite 单页应用（邮件、管理、设置） |
+MailConnection 属于组织，保存服务商类型、名称、管理 API 认证、域名范围和三项协议
+默认模板。Domain 表示逻辑域名；DomainBinding 保存连接关联、服务商设置和 DNS 状态。
+Mailbox 地址在所属连接内唯一，不同连接的相同地址分别保存。
 
-## 组织模型
+Address 包括 `primary`、`alias`、`forward`、`group`、`catchall`、`prefix` 和外部管理的
+`external_rule`。邮箱转发独立保存在 `mailbox_forwardings`，导入保留 primary 地址。
+Identity 显示设置和 SMTP 发件授权分别处理；收件别名不授予对应 From 的发送权限。
+Group 计算全部符合条件的 personal 邮箱，检查连接与域名限制后消除重复目标。
 
-| 概念 | 含义 | 对应存储 |
-|---|---|---|
-| **Organization** | 一次部署里唯一的租户。 | `organizations` |
-| **Member** | 登录 Mailhearth 的真人。有角色、状态（invited/active/disabled/departed）、职位、部门。 | `members` |
-| **Role** | 一组具名权限（`members.manage`、`shared.manage` 等）。内置 owner、admin、member，允许自定义角色。 | `roles` |
-| **Domain** | Purelymail 账户上的一个域名，附带 DNS 健康状态。 | `domains` ↔ Purelymail domain |
-| **Mailbox** | 能登录、保存邮件的账户。`personal` 归某个成员所有，`shared` 归组织所有、由多名成员共同处理。 | `mailboxes` ↔ Purelymail user |
-| **Address** | 能收到邮件的东西：邮箱自身地址（`primary`）、指向一个邮箱的 `alias`、指向任意目标的 `forward`、群组分发地址 `group`、`catchall` 或 `prefix` 规则。 | `addresses` ↔ Purelymail routing rule |
-| **Identity** | 邮箱可以使用的发件地址、显示名和签名。 | `identities` |
-| **Group** | 成员的集合，可选配一个分发地址，其目标跟随成员变化。 | `groups`、`group_members` |
-| **Access grant** | 成员对邮箱的访问授权，级别为 `full`/`send`/`read`。 | `mailbox_access` |
+ProviderResource 将每个远程引用关联到一个本地对象及用途，保存归属、远程状态和
+安全的结构化观察结果。引用约束与 revision 检查保护连接、组织范围和历史记录。
 
-一个成员可以拥有多个邮箱；一个邮箱可以有多个地址；一个地址可以通过转发或群组
-送达多个成员。成员换岗或离职时，邮箱和地址仍归组织所有：所有权会被重新指派，
-不会被隐式删除。
+## 协议配置
 
-## 与 Purelymail 的对应关系
+每个 Mailbox 有独立的 IMAP、SMTP 和 ManageSieve endpoint。network mode 为
+`inherit`、`override` 或 `disabled`；启用的 endpoint 分别指定 username 和加密
+Credential。凭据使用 `managed` 或明确输入方式。候选配置通过全部启用协议的认证
+之后才能在一个事务内提交。endpoint、连接、凭据和访问版本变化会关闭旧连接。
 
-| Mailhearth 操作 | 调用的 Purelymail API |
-|---|---|
-| 连接账户 | `checkAccountCredit`（校验令牌） |
-| 导入与同步 | `listDomains`、`listUser`、`listRoutingRules` — 只读且幂等 |
-| 创建邮箱 | `createUser`（随机密码，不发欢迎邮件）+ `createAppPassword` |
-| 连接已导入的邮箱 | `createAppPassword`（从不需要原有密码） |
-| 轮换凭据 | `createAppPassword`，然后 `deleteAppPassword` 删掉旧的 |
-| 为外部客户端重置密码 | `modifyUser{newPassword}` + 轮换 |
-| 挂起 / 离职时切断访问 | `modifyUser{newPassword}` + `deleteAppPassword` |
-| 别名 / 转发 / 全收 / 前缀 / 群组地址 | `createRoutingRule` / `deleteRoutingRule` |
-| 邮箱转发 | 在邮箱自身地址上建路由规则（Purelymail 的语义：规则优先于投递） |
-| 添加域名 / 重新检查 DNS / 域名设置 | `addDomain`、`updateDomainSettings`、`getOwnershipCode` |
+Purelymail 默认 IMAP 为 `imap.purelymail.com:993` TLS，SMTP 为
+`smtp.purelymail.com:465` TLS，ManageSieve 为 `mailserver.purelymail.com:4190` STARTTLS。
+Migadu 默认 IMAP 为 `imap.migadu.com:993` TLS，SMTP 为 `smtp.migadu.com:465` TLS，
+ManageSieve 停用。手动连接默认全部停用，需要明确配置。TLS 使用系统证书或明确指定
+的私有 CA 证书集合，并验证 hostname。
 
-Mailhearth 为每个邮箱只持有一个名为 "Mailhearth" 的应用密码。成员永远看不到它；
-服务端在确认该成员拥有这个邮箱或已获授权之后，代表成员用它连接 IMAP、SMTP 和
-ManageSieve。管理权限并不等于邮件访问权：读取共享邮箱始终需要显式授权。
+## 发现、导入与管理操作
 
-## 邮件路径
+发现完整读取所选范围，生成具有期限和连接 revision 的快照。导入在一个本地事务内
+检查归属、版本、期限和依赖。导入的 personal 邮箱没有 owner 和登录凭据。同步更新
+已登记资源的观察结果；新增资源等待选择导入。owner、访问授权、协作数据、签名和
+entered 凭据保留。
 
-1. `httpapi` 为已登录成员解析目标邮箱（`core.ResolveMailbox`）并取得凭据。
-2. `imappool.Get` 返回一个池化连接（总数上限为 `MAILHEARTH_IMAP_MAX_CONNS`，
-   每份凭据保留 2 个空闲连接，空闲 90 秒后回收）。
-3. `mailops` 执行 IMAP 命令：用带 `LIST-STATUS` 的 `LIST` 取文件夹，用序号区间
-   `FETCH` 取 envelope、flags 和 `BODYSTRUCTURE` 做分页，用 `UID SEARCH` 做查询，
-   用 `BODY.PEEK[part]` 做渲染，在服务器支持时使用 `MOVE`/`UIDPLUS` 并保留回退路径。
-4. HTML 正文经过 `mimeutil.SanitizeHTML`（bluemonday 白名单、CSS 清洗、`cid:`
-   解析、远程图片拦截），在一个 `default-src 'none'` CSP 的独立文档里输出，由
-   沙箱 iframe 显示。
-5. 发信用 go-message 构造 RFC 5322 报文，用同一份凭据经 SMTP 提交，随后写入
-   Sent 文件夹，并把原邮件标记为已回复或已转发。
-6. IDLE 监听（每个邮箱加文件夹一个，所有打开的标签页共享）通过 Server-Sent
-   Events 把变化推送到浏览器。
+转发导入保存来源邮箱、所选目标、远程引用和 `active`、`pending_confirmation`、
+`blocked`、`unknown` 确认状态。观察目标及投递方式与期望设置分别保存。未经验证的
+方式保持 `unverified`；API 中存在资源及管理员报告均不证明实际投递。Migadu 转发
+写入继续要求 V03 验证。
 
-## 共享邮箱协作
+Operation 保存 requestId、内容摘要、加密载荷、资源占用和独立步骤。重复提交返回
+原操作；版本变化和权限撤销阻止旧配置执行。未知远程写入需要核查，已确认步骤保持
+完成。外部操作保存管理员报告及 `systemVerified=false`。凭据创建响应丢失且没有远程
+ID 时需要明确的清理报告。暂停立即撤销本地访问；归档保留历史。离职分别记录移交、
+群组处理和凭据撤销。
 
-协作状态以 `mid:<message-id>` 为键，因此邮件在文件夹之间移动后依然保留。
-`message_state` 保存负责人和处理状态；`mail_activity` 是只追加的记录（回复、
-转发、分配、备注等），既由显式的团队操作写入，也在成员用共享邮箱发信时自动写入。
-邮件列表会在行上显示「谁已回复」、负责人和处理状态标记。
+## 邮件与发送流程
 
-## 规则
+1. HTTP 检查当前所有权或授权，解析对应协议 endpoint。
+2. IMAP 连接默认总上限 24、每个连接 8、每个邮箱 3。IDLE 监听运行时为普通请求保留
+   总计 4 个、每个连接 2 个名额。
+3. `mailops` 通过 IMAP 读取文件夹、分页、搜索和 MIME 内容。明确映射、唯一
+   SPECIAL-USE 和唯一名称识别用于确定特殊文件夹。
+4. `mimeutil` 清理 HTML/CSS、解析 `cid:`、拦截远程图片。独立文档使用限制性 CSP，
+   在无脚本的沙箱 iframe 中显示。
+5. Submission 保存 requestId、固定 Message-ID、内容摘要和加密 envelope；正文保存
+   在服务器 Drafts。SMTP accepted 和 Sent 副本分别记录。未知发送结果不会自动重试。
+   重试副本保留 SMTP 状态；草稿清理要求 UID EXPUNGE。
+6. 共享 IDLE 监听通过 SSE 通知浏览器。协作使用 `mid:<message-id>`，`message_state`
+   保存负责人和状态，`mail_activity` 保存回复、转发、分配及备注，移动文件夹后保留。
 
-成员以结构化的条件和动作编辑规则。`sieve.Compile` 把它们（连同自动回复）编译成
-Sieve 脚本，只使用 Purelymail 声明支持的扩展（`fileinto imap4flags copy body
-vacation`）。脚本以 `mailhearth` 为名经 ManageSieve 上传到
-`mailserver.purelymail.com:4190`（STARTTLS）并激活。结构化形式保存在
-`mailboxes.settings_json` 里。
+## 规则与前端
 
-## 前端
+结构化规则根据服务器声明的扩展编译为 Sieve。ManageSieve 使用邮箱 endpoint 和
+go-managesieve。启用前检查当前脚本 hash，接管需要确认，读取独立候选脚本并核验
+启用结果，随后更新本地设置。已有脚本保留。规则及自动回复能力分别依赖启用协议
+和所需扩展。
 
-Preact 加 `@preact/signals`，一个 60 行的 history 路由，没有 UI 框架。路由为
-`/mail/:mailbox/:folder/:uid`、`/admin/:section/:id`、`/settings/:tab`、
-`/login`、`/invite/:token`、`/setup`。文案以英文为键，配一份 zh-CN 词典。布局在
-860 px 以上是三栏邮件客户端，以下是抽屉加单栏。
+Preact、`@preact/signals` 和 history router 提供 `/mail`、`/admin`、`/settings`、
+`/login`、`/invite/:token`、`/setup`。860 px 以上使用三栏，以下使用抽屉和单栏。
+English 源文案提供 zh-CN、zh-TW、日本語和 Español 词典。TypeScript AST 检查翻译
+覆盖与插值参数。生产构建保留已有 hash 资源供已打开的客户端使用。
+
+本地数据库、HTTP 和构建检查见[集成测试](integration-testing.zh-CN.md)。真实服务商
+验收尚未完成。

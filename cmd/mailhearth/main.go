@@ -109,7 +109,11 @@ func run(seedDemo bool) error {
 		return err
 	}
 
-	database, err := db.Open(filepath.Join(cfg.DataDir, "mailhearth.db"))
+	database, err := db.Open(filepath.Join(cfg.DataDir, "mailhearth.db"), db.MigrationInputs{
+		PurelymailAPIURL: cfg.PurelymailAPIURL, IMAPAddr: cfg.IMAPAddr, IMAPTLS: string(cfg.IMAPTLS),
+		SMTPAddr: cfg.SMTPAddr, SMTPTLS: string(cfg.SMTPTLS), SieveAddr: cfg.SieveAddr, SieveTLS: string(cfg.SieveTLS),
+		CredentialsBox: box, AllowDevelopmentPlaintext: cfg.DevStack,
+	})
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
@@ -121,6 +125,12 @@ func run(seedDemo bool) error {
 	defer pool.Close()
 
 	svc := core.New(database, cfg, box, pool, log)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err:=svc.StartOperations(ctx);err!=nil{return err}
+	defer func(){stop();svc.WaitOperations()}()
+	if err:=svc.StartSubmissions(ctx);err!=nil{return err}
+	defer func(){stop();svc.WaitSubmissions()}()
 	api := httpapi.New(cfg, svc, pool, web.Handler(), signKey, log)
 
 	srv := &http.Server{
@@ -140,13 +150,13 @@ func run(seedDemo bool) error {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	<-ctx.Done()
+	var workerErr error
+	select{case <-ctx.Done():case workerErr=<-svc.OperationErrors():stop()}
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	if err:=srv.Shutdown(shutdownCtx);err!=nil{return err}
+	return workerErr
 }
 
 func deriveSignKey(master []byte) ([]byte, error) {

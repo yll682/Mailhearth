@@ -1,7 +1,4 @@
-// Package core implements the organisation model on top of SQLite and the
-// Purelymail API: members, mailboxes, addresses, shared mailboxes, groups,
-// roles, onboarding and offboarding. Handlers call into this package; it
-// never touches HTTP.
+// Package core 使用 SQLite 保存组织数据，通过所属连接的 provider 管理远程资源。
 package core
 
 import (
@@ -14,12 +11,13 @@ import (
 	"net/mail"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"mailhearth/internal/config"
 	"mailhearth/internal/db"
 	"mailhearth/internal/mailproto/imappool"
 	"mailhearth/internal/model"
-	"mailhearth/internal/purelymail"
 	"mailhearth/internal/secrets"
 )
 
@@ -63,13 +61,22 @@ type Service struct {
 	Box   *secrets.Box
 	Log   *slog.Logger
 	Pool  *imappool.Pool
-	NewPM func(token string) purelymail.API
+	requestMu sync.Mutex
+	requests map[string]accessRequest
+	operationWake chan struct{}
+	operationWG sync.WaitGroup
+	operationErrors chan error
+	submissionWake chan struct{}
+	submissionWG sync.WaitGroup
+	submissionMu sync.Mutex
+	submissionActive map[int64]bool
+	operationsStarted atomic.Bool
+	submissionsStarted atomic.Bool
 }
 
 // New wires a service.
 func New(database *db.DB, cfg *config.Config, box *secrets.Box, pool *imappool.Pool, log *slog.Logger) *Service {
-	s := &Service{DB: database, Cfg: cfg, Box: box, Pool: pool, Log: log}
-	s.NewPM = func(token string) purelymail.API { return purelymail.New(cfg.PurelymailAPIURL, token) }
+	s := &Service{DB: database, Cfg: cfg, Box: box, Pool: pool, Log: log,requests:map[string]accessRequest{},operationWake:make(chan struct{},1),operationErrors:make(chan error,1),submissionWake:make(chan struct{},1),submissionActive:map[int64]bool{}}
 	return s
 }
 
@@ -149,23 +156,6 @@ func (s *Service) UpdateOrg(ctx context.Context, actor int64, name string) error
 	}
 	s.audit(ctx, org.ID, actor, "org.update", "org", fmt.Sprint(org.ID), map[string]any{"name": name})
 	return nil
-}
-
-// pm returns a Purelymail client for the organisation, or ErrNoSetup.
-func (s *Service) pm(ctx context.Context, orgID int64) (purelymail.API, error) {
-	var enc string
-	err := s.DB.QueryRowContext(ctx, `SELECT api_token_enc FROM purelymail_accounts WHERE org_id = ? ORDER BY id LIMIT 1`, orgID).Scan(&enc)
-	if db.IsNotFound(err) {
-		return nil, ErrNoSetup
-	}
-	if err != nil {
-		return nil, err
-	}
-	token, err := s.Box.Open(enc)
-	if err != nil {
-		return nil, err
-	}
-	return s.NewPM(token), nil
 }
 
 // audit records an administrative action.

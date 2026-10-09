@@ -288,7 +288,7 @@ func TestSieveRules(t *testing.T) {
 	folder := "Integration"
 	h.CreateFolder(ctx, cred, folder)
 
-	script := h.InstallSieve(ctx, cred, []model.SieveRule{{
+	script,scriptName := h.InstallSieve(ctx, cred, []model.SieveRule{{
 		ID:      "r1",
 		Name:    "File integration mail",
 		Enabled: true,
@@ -306,8 +306,8 @@ func TestSieveRules(t *testing.T) {
 
 	// The provider must report our script as the active one.
 	names := h.SieveScripts(ctx, cred)
-	if !names["mailhearth"] {
-		t.Fatalf("ManageSieve does not list the mailhearth script: %v", names)
+	if !names[scriptName] {
+		t.Fatalf("ManageSieve 未确认本次测试脚本 %s 处于 active 状态：%v",scriptName,names)
 	}
 
 	msgID := h.Send(ctx, cred, []string{mb.Address}, marker+" filed", "Should land in the Integration folder.")

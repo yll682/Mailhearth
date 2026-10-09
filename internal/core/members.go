@@ -3,24 +3,28 @@ package core
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"mailhearth/internal/db"
 	"mailhearth/internal/model"
+	"mailhearth/internal/provider"
 	"mailhearth/internal/secrets"
 )
 
 const memberSelect = `SELECT m.id, m.display_name, m.login_email, m.role_id, r.key, r.name, m.title, m.department, m.status,
-	m.password_hash != '', m.created_at, m.updated_at, m.last_login_at, m.departed_at
+	m.password_hash != '', m.created_at, m.updated_at, m.last_login_at, m.departed_at, m.revision
 	FROM members m JOIN roles r ON r.id = m.role_id`
 
 func scanMember(row interface{ Scan(...any) error }) (*model.Member, error) {
 	var m model.Member
 	var last, departed sql.NullString
 	if err := row.Scan(&m.ID, &m.DisplayName, &m.LoginEmail, &m.RoleID, &m.RoleKey, &m.RoleName, &m.Title, &m.Department, &m.Status,
-		&m.HasPassword, &m.CreatedAt, &m.UpdatedAt, &last, &departed); err != nil {
+		&m.HasPassword, &m.CreatedAt, &m.UpdatedAt, &last, &departed, &m.Revision); err != nil {
 		return nil, err
 	}
 	m.LastLoginAt = nullStr(last)
@@ -66,6 +70,7 @@ func (s *Service) MemberByID(ctx context.Context, id int64) (*model.Member, erro
 
 // MemberInput is the create/update payload.
 type MemberInput struct {
+	ExpectedRevision int64 `json:"expectedRevision"`
 	DisplayName string `json:"displayName"`
 	LoginEmail  string `json:"loginEmail"`
 	RoleID      int64  `json:"roleId"`
@@ -82,8 +87,16 @@ type NewMailboxSpec struct {
 // CreateMemberRequest onboards a person.
 type CreateMemberRequest struct {
 	MemberInput
-	NewMailbox      *NewMailboxSpec `json:"newMailbox"`      // create a fresh Purelymail user
-	BindMailboxID   int64           `json:"bindMailboxId"`   // or attach an existing imported mailbox
+	RequestID string `json:"requestId"`
+	MailboxAction string `json:"mailboxAction"`
+	MailboxID int64 `json:"mailboxId,omitempty"`
+	MailboxExpectedRevision int64 `json:"mailboxExpectedRevision,omitempty"`
+	Create *ManagedMailboxCreateInput `json:"create,omitempty"`
+	Attach *AttachMailboxInput `json:"attach,omitempty"`
+	GroupExpectedRevisions map[int64]int64 `json:"groupExpectedRevisions,omitempty"`
+	SharedExpectedRevisions map[int64]int64 `json:"sharedExpectedRevisions,omitempty"`
+	NewMailbox      *NewMailboxSpec `json:"-"`
+	BindMailboxID   int64           `json:"-"`
 	SendInvite      bool            `json:"sendInvite"`      // mint an invite link
 	Password        string          `json:"password"`        // or set an initial password directly
 	GroupIDs        []int64         `json:"groupIds"`        // add to groups
@@ -92,6 +105,7 @@ type CreateMemberRequest struct {
 
 // CreateMemberResult returns the new member and any invite link.
 type CreateMemberResult struct {
+	Operation *OperationView `json:"operation,omitempty"`
 	Member     *model.Member  `json:"member"`
 	Mailbox    *model.Mailbox `json:"mailbox"`
 	InviteLink string         `json:"inviteLink,omitempty"`
@@ -100,116 +114,14 @@ type CreateMemberResult struct {
 
 // CreateMember onboards a member: record, optional mailbox, invite.
 func (s *Service) CreateMember(ctx context.Context, orgID, actor int64, req CreateMemberRequest) (*CreateMemberResult, error) {
-	name := strings.TrimSpace(req.DisplayName)
-	if name == "" {
-		return nil, invalid("display name is required")
-	}
-	if req.RoleID == 0 {
-		r, err := s.roleByKey(ctx, s.DB, orgID, model.RoleMember)
-		if err != nil {
-			return nil, err
-		}
-		req.RoleID = r.ID
-	}
-	role, err := s.Role(ctx, orgID, req.RoleID)
-	if err != nil {
-		return nil, invalid("role not found")
-	}
-	if role.Key == model.RoleOwner {
-		return nil, invalid("use ownership transfer to create another owner")
-	}
-	loginEmail := strings.ToLower(strings.TrimSpace(req.LoginEmail))
-	var mailboxAddr string
-	if req.NewMailbox != nil {
-		local := strings.ToLower(strings.TrimSpace(req.NewMailbox.LocalPart))
-		dom, err := s.Domain(ctx, orgID, req.NewMailbox.DomainID)
-		if err != nil {
-			return nil, invalid("domain not found")
-		}
-		if !validLocalPart(local) {
-			return nil, invalid("%q is not a valid mailbox name", local)
-		}
-		mailboxAddr = local + "@" + dom.Name
-	} else if req.BindMailboxID != 0 {
-		mb, err := s.Mailbox(ctx, orgID, req.BindMailboxID)
-		if err != nil {
-			return nil, invalid("mailbox not found")
-		}
-		if mb.OwnerMemberID != nil {
-			return nil, invalid("mailbox %s already belongs to another member", mb.Address)
-		}
-		if mb.Kind != model.MailboxPersonal {
-			return nil, invalid("shared mailboxes cannot be bound to a person; grant access instead")
-		}
-		mailboxAddr = mb.Address
-	}
-	if loginEmail == "" {
-		loginEmail = mailboxAddr
-	}
-	if loginEmail, err = NormalizeEmail(loginEmail); err != nil {
-		return nil, err
-	}
-	var pwHash string
-	if req.Password != "" {
-		if err := checkPasswordStrength(req.Password); err != nil {
-			return nil, err
-		}
-		if pwHash, err = secrets.HashPassword(req.Password); err != nil {
-			return nil, err
-		}
-	}
-	status := model.MemberInvited
-	if pwHash != "" {
-		status = model.MemberActive
-	}
-	now := db.Now()
-	res, err := s.DB.ExecContext(ctx, `INSERT INTO members(org_id, display_name, login_email, password_hash, role_id, title, department, status, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`, orgID, name, loginEmail, pwHash, req.RoleID, strings.TrimSpace(req.Title), strings.TrimSpace(req.Department), status, now, now)
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			return nil, fmt.Errorf("%w: a member with login %s already exists", ErrConflict, loginEmail)
-		}
-		return nil, err
-	}
-	memberID, _ := res.LastInsertId()
-	s.audit(ctx, orgID, actor, "member.create", "member", fmt.Sprint(memberID), map[string]any{"name": name, "login": loginEmail, "role": role.Key})
-
-	out := &CreateMemberResult{}
-	if req.NewMailbox != nil {
-		mb, err := s.CreateMailbox(ctx, orgID, actor, CreateMailboxRequest{Kind: model.MailboxPersonal, DomainID: req.NewMailbox.DomainID, LocalPart: req.NewMailbox.LocalPart, DisplayName: name, OwnerMemberID: memberID})
-		if err != nil {
-			out.Warnings = append(out.Warnings, "member created but mailbox creation failed: "+err.Error())
-		} else {
-			out.Mailbox = mb
-		}
-	} else if req.BindMailboxID != 0 {
-		mb, err := s.BindMailbox(ctx, orgID, actor, req.BindMailboxID, memberID, name)
-		if err != nil {
-			out.Warnings = append(out.Warnings, "member created but mailbox binding failed: "+err.Error())
-		} else {
-			out.Mailbox = mb
-		}
-	}
-	for _, gid := range req.GroupIDs {
-		if err := s.AddGroupMember(ctx, orgID, actor, gid, memberID); err != nil {
-			out.Warnings = append(out.Warnings, "group assignment failed: "+err.Error())
-		}
-	}
-	for _, mid := range req.SharedMailboxes {
-		if _, err := s.GrantAccess(ctx, orgID, actor, mid, memberID, model.AccessFull); err != nil {
-			out.Warnings = append(out.Warnings, "shared mailbox access failed: "+err.Error())
-		}
-	}
-	if req.SendInvite || pwHash == "" {
-		link, err := s.CreateInvite(ctx, orgID, actor, memberID)
-		if err != nil {
-			out.Warnings = append(out.Warnings, "invite creation failed: "+err.Error())
-		} else {
-			out.InviteLink = link
-		}
-	}
-	out.Member, err = s.Member(ctx, orgID, memberID)
-	return out, err
+	if req.MailboxAction=="" && req.NewMailbox==nil && req.BindMailboxID==0 && req.Create==nil && req.Attach==nil && req.MailboxID==0{req.MailboxAction="none"}
+	if req.RequestID==""{req.RequestID=uuid.NewString()}
+	op,_,err:=s.QueueOperation(ctx,orgID,actor,req.RequestID,OperationPayload{Kind:"member.create",MemberCreate:&req},nil);if err!=nil{return nil,err}
+	if !s.operationsStarted.Load() && op.Status=="queued"{var sealed string;if err:=s.DB.QueryRowContext(ctx,`SELECT payload_enc FROM operations WHERE id=?`,op.ID).Scan(&sealed);err!=nil{return nil,err};if err:=s.executeOperation(ctx,orgID,actor,op.ID,sealed);err!=nil{return nil,err};op,err=s.Operation(ctx,orgID,op.ID);if err!=nil{return nil,err}}
+	var body string;if err:=s.DB.QueryRowContext(ctx,`SELECT result_json FROM operation_steps WHERE operation_id=? AND step_key='member.prepare'`,op.ID).Scan(&body);err!=nil{return nil,err};var plan memberCreationPlan;if err:=json.Unmarshal([]byte(body),&plan);err!=nil{return nil,err}
+	member,err:=s.Member(ctx,orgID,plan.MemberID);if err!=nil{return nil,err};out:=&CreateMemberResult{Member:member,Operation:op}
+	if op.Status=="succeeded"{var result struct{MailboxID int64 `json:"mailboxId"`;InviteLink string `json:"inviteLink"`};if err:=json.Unmarshal(op.Result,&result);err!=nil{return nil,err};out.InviteLink=result.InviteLink;if result.MailboxID>0{out.Mailbox,err=s.Mailbox(ctx,orgID,result.MailboxID);if err!=nil{return nil,err}}}
+	return out,nil
 }
 
 func checkPasswordStrength(pw string) error {
@@ -224,10 +136,12 @@ func checkPasswordStrength(pw string) error {
 
 // UpdateMember edits profile fields and role.
 func (s *Service) UpdateMember(ctx context.Context, orgID, actor, id int64, in MemberInput) (*model.Member, error) {
+	if err:=requireManagementPermission(ctx,s.DB,orgID,actor,model.PermMembersManage);err!=nil{return nil,err}
 	m, err := s.Member(ctx, orgID, id)
 	if err != nil {
 		return nil, err
 	}
+	if in.ExpectedRevision<1 || in.ExpectedRevision!=m.Revision{return nil,provider.Errorf("revision_conflict","需要成员当前 expectedRevision")}
 	name := strings.TrimSpace(in.DisplayName)
 	if name == "" {
 		name = m.DisplayName
@@ -252,8 +166,11 @@ func (s *Service) UpdateMember(ctx context.Context, orgID, actor, id int64, in M
 		}
 		roleID = in.RoleID
 	}
-	if _, err := s.DB.ExecContext(ctx, `UPDATE members SET display_name = ?, login_email = ?, role_id = ?, title = ?, department = ?, updated_at = ? WHERE id = ?`,
-		name, login, roleID, strings.TrimSpace(in.Title), strings.TrimSpace(in.Department), db.Now(), id); err != nil {
+	err=s.DB.Tx(ctx,func(tx *sql.Tx)error{
+		if err:=requireManagementPermission(ctx,tx,orgID,actor,model.PermMembersManage);err!=nil{return err}
+		if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(id),"member-login:"+login);err!=nil{return err}
+		res,err:=tx.ExecContext(ctx, `UPDATE members SET display_name = ?, login_email = ?, role_id = ?, title = ?, department = ?, revision=revision+1,updated_at = ? WHERE id = ? AND org_id=? AND revision=?`,name,login,roleID,strings.TrimSpace(in.Title),strings.TrimSpace(in.Department),db.Now(),id,orgID,in.ExpectedRevision);if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return provider.Errorf("revision_conflict","成员已经更新")};return nil
+	});if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return nil, fmt.Errorf("%w: login %s is already used", ErrConflict, login)
 		}
@@ -269,31 +186,13 @@ func (s *Service) SetMemberStatus(ctx context.Context, orgID, actor, id int64, e
 	if err != nil {
 		return nil, err
 	}
-	if m.RoleKey == model.RoleOwner && !enable {
-		return nil, invalid("the owner cannot be disabled")
-	}
-	if actor == id && !enable {
-		return nil, invalid("you cannot disable yourself")
-	}
-	status := model.MemberDisabled
-	if enable {
-		status = model.MemberActive
-		if !m.HasPassword {
-			status = model.MemberInvited
-		}
-	}
-	if _, err := s.DB.ExecContext(ctx, `UPDATE members SET status = ?, updated_at = ? WHERE id = ?`, status, db.Now(), id); err != nil {
-		return nil, err
-	}
-	if !enable {
-		s.RevokeSessions(ctx, id)
-	}
-	s.audit(ctx, orgID, actor, "member.status", "member", fmt.Sprint(id), map[string]any{"status": status})
+	in:=MemberStatusInput{ExpectedRevision:m.Revision,Enabled:&enable};if _,err:=s.runLocalManagementOperation(ctx,orgID,actor,"",OperationPayload{Kind:"member.status",MemberID:id,MemberStatus:&in});err!=nil{return nil,err}
 	return s.Member(ctx, orgID, id)
 }
 
 // CreateInvite mints a single-use invite link for a member.
 func (s *Service) CreateInvite(ctx context.Context, orgID, actor, memberID int64) (string, error) {
+	if err:=requireManagementPermission(ctx,s.DB,orgID,actor,model.PermMembersManage);err!=nil{return "",err}
 	m, err := s.Member(ctx, orgID, memberID)
 	if err != nil {
 		return "", err
@@ -303,13 +202,13 @@ func (s *Service) CreateInvite(ctx context.Context, orgID, actor, memberID int64
 	}
 	token := secrets.RandomToken(32)
 	now := time.Now().UTC()
-	if _, err := s.DB.ExecContext(ctx, `DELETE FROM invites WHERE member_id = ? AND accepted_at IS NULL`, memberID); err != nil {
-		return "", err
-	}
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO invites(org_id, member_id, token_hash, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?)`,
-		orgID, memberID, secrets.HashToken(token), actor, now.Format(time.RFC3339), now.Add(s.Cfg.InviteTTL).Format(time.RFC3339)); err != nil {
-		return "", err
-	}
+	err=s.DB.Tx(ctx,func(tx *sql.Tx)error{
+		if err:=requireManagementPermission(ctx,tx,orgID,actor,model.PermMembersManage);err!=nil{return err}
+		if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(memberID));err!=nil{return err}
+		var current bool;if err:=tx.QueryRowContext(ctx,`SELECT EXISTS(SELECT 1 FROM members WHERE org_id=? AND id=? AND revision=? AND status IN ('active','invited'))`,orgID,memberID,m.Revision).Scan(&current);err!=nil{return err};if !current{return invalid("成员状态或版本已经更新")}
+		if _,err:=tx.ExecContext(ctx,`DELETE FROM invites WHERE member_id=? AND accepted_at IS NULL`,memberID);err!=nil{return err}
+		_,err:=tx.ExecContext(ctx,`INSERT INTO invites(org_id,member_id,token_hash,created_by,created_at,expires_at) VALUES (?,?,?,?,?,?)`,orgID,memberID,secrets.HashToken(token),actor,now.Format(time.RFC3339),now.Add(s.Cfg.InviteTTL).Format(time.RFC3339));return err
+	});if err!=nil{return "",err}
 	s.audit(ctx, orgID, actor, "member.invite", "member", fmt.Sprint(memberID), nil)
 	return s.inviteLink(token), nil
 }
@@ -371,20 +270,22 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, displayName
 	}
 	now := db.Now()
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `UPDATE invites SET accepted_at = ? WHERE id = ?`, now, inviteID); err != nil {
+		var orgID int64;if err:=tx.QueryRowContext(ctx,`SELECT org_id FROM members WHERE id=?`,memberID).Scan(&orgID);err!=nil{return err};if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(memberID));err!=nil{return err}
+		res,err:=tx.ExecContext(ctx, `UPDATE invites SET accepted_at = ? WHERE id = ? AND member_id=? AND accepted_at IS NULL AND expires_at>?`, now, inviteID,memberID,now);if err != nil {
 			return err
 		}
-		q := `UPDATE members SET password_hash = ?, status = 'active', updated_at = ? WHERE id = ? AND status IN ('invited','active')`
+		n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return invalid("邀请已经使用或过期")}
+		q := `UPDATE members SET password_hash = ?, status = 'active',revision=revision+1, updated_at = ? WHERE id = ? AND status IN ('invited','active')`
 		args := []any{hash, now, memberID}
 		if n := strings.TrimSpace(displayName); n != "" {
-			q = `UPDATE members SET password_hash = ?, status = 'active', updated_at = ?, display_name = ? WHERE id = ? AND status IN ('invited','active')`
+			q = `UPDATE members SET password_hash = ?, status = 'active',revision=revision+1, updated_at = ?, display_name = ? WHERE id = ? AND status IN ('invited','active')`
 			args = []any{hash, now, n, memberID}
 		}
-		res, err := tx.ExecContext(ctx, q, args...)
+		res, err = tx.ExecContext(ctx, q, args...)
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
+		if n, err := res.RowsAffected(); err!=nil{return err}else if n == 0 {
 			return invalid("this account can no longer be activated")
 		}
 		return nil
@@ -404,16 +305,14 @@ func (s *Service) SetPassword(ctx context.Context, orgID, actor, memberID int64,
 	if err != nil {
 		return err
 	}
-	res, err := s.DB.ExecContext(ctx, `UPDATE members SET password_hash = ?, status = CASE WHEN status = 'invited' THEN 'active' ELSE status END, updated_at = ? WHERE id = ? AND org_id = ?`, hash, db.Now(), memberID, orgID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	if revokeOthers {
-		s.RevokeSessions(ctx, memberID)
-	}
+	err=s.DB.Tx(ctx,func(tx *sql.Tx)error{
+		if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(memberID));err!=nil{return err}
+		res,err:=tx.ExecContext(ctx,`UPDATE members SET password_hash=?,status=CASE WHEN status='invited' THEN 'active' ELSE status END,revision=revision+1,updated_at=? WHERE id=? AND org_id=? AND status!='departed'`,hash,db.Now(),memberID,orgID);if err!=nil{return err}
+		n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return ErrNotFound}
+		if revokeOthers{if _,err:=tx.ExecContext(ctx,`DELETE FROM sessions WHERE member_id=?`,memberID);err!=nil{return err}}
+		return nil
+	});if err!=nil{return err}
+	if revokeOthers{s.cancelMailRequests(memberID,0)}
 	s.audit(ctx, orgID, actor, "member.password", "member", fmt.Sprint(memberID), map[string]any{"self": actor == memberID})
 	return nil
 }
@@ -429,7 +328,7 @@ func (s *Service) VerifyLogin(ctx context.Context, email, password string) (*mod
 	}
 	// Also allow logging in with any owned mailbox address.
 	if db.IsNotFound(err) {
-		err = s.DB.QueryRowContext(ctx, `SELECT m.id, m.password_hash, m.status FROM members m JOIN mailboxes b ON b.owner_member_id = m.id WHERE b.pm_user = ?`, email).Scan(&id, &hash, &status)
+		err = s.DB.QueryRowContext(ctx, `SELECT m.id,m.password_hash,m.status FROM members m WHERE m.id=(SELECT MIN(b.owner_member_id) FROM mailboxes b WHERE LOWER(b.address)=? HAVING COUNT(DISTINCT b.owner_member_id)=1)`, email).Scan(&id, &hash, &status)
 		if db.IsNotFound(err) {
 			secrets.VerifyPassword("$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", password) // constant-time-ish
 			return nil, ErrForbidden
@@ -463,15 +362,13 @@ func (s *Service) CreateSession(ctx context.Context, memberID int64, ip, ua stri
 	if len(ua) > 300 {
 		ua = ua[:300]
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions(member_id, token_hash, created_at, expires_at, last_seen_at, ip, user_agent) VALUES (?,?,?,?,?,?,?)`,
-		memberID, secrets.HashToken(token), now.Format(time.RFC3339), now.Add(s.Cfg.SessionTTL).Format(time.RFC3339), now.Format(time.RFC3339), ip, ua)
+	err := s.DB.Tx(ctx,func(tx *sql.Tx)error{
+		res,err:=tx.ExecContext(ctx,`INSERT INTO sessions(member_id,token_hash,created_at,expires_at,last_seen_at,ip,user_agent) SELECT id,?,?,?,?,?,? FROM members WHERE id=? AND status='active'`,secrets.HashToken(token),now.Format(time.RFC3339),now.Add(s.Cfg.SessionTTL).Format(time.RFC3339),now.Format(time.RFC3339),ip,ua,memberID);if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return ErrForbidden}
+		_,err=tx.ExecContext(ctx,`UPDATE members SET last_login_at=? WHERE id=? AND status='active'`,db.Now(),memberID);return err
+	})
 	if err != nil {
 		return "", err
 	}
-	// Every route into the product issues a session here, so this is the one
-	// place that knows a member actually signed in. Setup and invite
-	// acceptance never call VerifyLogin.
-	s.DB.ExecContext(ctx, `UPDATE members SET last_login_at = ? WHERE id = ?`, db.Now(), memberID)
 	return token, nil
 }
 
@@ -509,12 +406,15 @@ func (s *Service) LookupSession(ctx context.Context, token string) (*model.Membe
 // DeleteSession logs a session out.
 func (s *Service) DeleteSession(ctx context.Context, token string) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, secrets.HashToken(token))
+	if err==nil{s.requestMu.Lock();for _,request:=range s.requests{if request.sessionHash==secrets.HashToken(token){request.cancel()}};s.requestMu.Unlock()}
 	return err
 }
 
 // RevokeSessions logs a member out everywhere.
-func (s *Service) RevokeSessions(ctx context.Context, memberID int64) {
-	s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE member_id = ?`, memberID)
+func (s *Service) RevokeSessions(ctx context.Context, memberID int64) error {
+	s.cancelMailRequests(memberID,0)
+	_,err:=s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE member_id = ?`, memberID)
+	return err
 }
 
 // Permissions returns the member's permission list and role key.
@@ -548,11 +448,12 @@ func (s *Service) TransferOwnership(ctx context.Context, orgID, actor, toMemberI
 		return err
 	}
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `UPDATE members SET role_id = ?, updated_at = ? WHERE id = ?`, admin.ID, db.Now(), actor); err != nil {
+		if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(actor),"member:"+fmtID(toMemberID));err!=nil{return err}
+		res,err:=tx.ExecContext(ctx,`UPDATE members SET role_id=?,revision=revision+1,updated_at=? WHERE id=? AND org_id=? AND revision=? AND status='active' AND role_id=?`,admin.ID,db.Now(),actor,orgID,from.Revision,owner.ID);if err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `UPDATE members SET role_id = ?, updated_at = ? WHERE id = ?`, owner.ID, db.Now(), toMemberID)
-		return err
+		n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return fmt.Errorf("%w: 所有者状态或版本已经更新",ErrConflict)}
+		res,err=tx.ExecContext(ctx,`UPDATE members SET role_id=?,revision=revision+1,updated_at=? WHERE id=? AND org_id=? AND revision=? AND status='active'`,owner.ID,db.Now(),toMemberID,orgID,to.Revision);if err!=nil{return err};n,err=res.RowsAffected();if err!=nil{return err};if n!=1{return fmt.Errorf("%w: 接收成员状态或版本已经更新",ErrConflict)};return nil
 	})
 	if err != nil {
 		return err
@@ -561,8 +462,9 @@ func (s *Service) TransferOwnership(ctx context.Context, orgID, actor, toMemberI
 	return nil
 }
 
-// DeleteMember removes a departed/invited member with no mailboxes.
-func (s *Service) DeleteMember(ctx context.Context, orgID, actor, id int64) error {
+// DeleteMember 删除没有关联资源或历史的离职、受邀成员。
+func (s *Service) DeleteMember(ctx context.Context, orgID, actor, id int64, expectedRevision ...int64) error {
+	if err:=requireManagementPermission(ctx,s.DB,orgID,actor,model.PermMembersManage);err!=nil{return err}
 	m, err := s.Member(ctx, orgID, id)
 	if err != nil {
 		return err
@@ -573,14 +475,20 @@ func (s *Service) DeleteMember(ctx context.Context, orgID, actor, id int64) erro
 	if actor == id {
 		return invalid("you cannot delete yourself")
 	}
-	var owned int
-	s.DB.QueryRowContext(ctx, `SELECT COUNT(1) FROM mailboxes WHERE owner_member_id = ?`, id).Scan(&owned)
-	if owned > 0 {
-		return invalid("offboard this member first so their %d mailbox(es) are handed over", owned)
-	}
-	if _, err := s.DB.ExecContext(ctx, `DELETE FROM members WHERE id = ?`, id); err != nil {
-		return err
-	}
-	s.audit(ctx, orgID, actor, "member.delete", "member", fmt.Sprint(id), map[string]any{"name": m.DisplayName, "login": m.LoginEmail})
-	return nil
+	if len(expectedRevision)!=1 || expectedRevision[0]<1 || expectedRevision[0]!=m.Revision{return provider.Errorf("revision_conflict","需要成员当前 expectedRevision")}
+	if m.Status!=model.MemberInvited && m.Status!=model.MemberDeparted{return provider.Errorf("invalid","只能删除受邀或离职成员")}
+	err=s.DB.Tx(ctx,func(tx *sql.Tx)error{
+		if err:=requireManagementPermission(ctx,tx,orgID,actor,model.PermMembersManage);err!=nil{return err}
+		if err:=requireResourceAvailable(ctx,tx,orgID,"member:"+fmtID(id),"member-login:"+m.LoginEmail);err!=nil{return err}
+		var dependencies struct{
+			Mailboxes int `json:"mailboxes"`
+			Groups int `json:"groups"`
+			SharedAccess int `json:"sharedAccess"`
+			History int `json:"history"`
+		}
+		if err:=tx.QueryRowContext(ctx,`SELECT (SELECT COUNT(*) FROM mailboxes WHERE owner_member_id=?),(SELECT COUNT(*) FROM group_members WHERE member_id=?),(SELECT COUNT(*) FROM mailbox_access WHERE member_id=?),(SELECT COUNT(*) FROM message_state WHERE assignee_member_id=?)+(SELECT COUNT(*) FROM mail_activity WHERE member_id=?)+(SELECT COUNT(*) FROM operations WHERE actor_member_id=?)+(SELECT COUNT(*) FROM submissions WHERE member_id=?)`,id,id,id,id,id,id,id).Scan(&dependencies.Mailboxes,&dependencies.Groups,&dependencies.SharedAccess,&dependencies.History);err!=nil{return err}
+		if dependencies.Mailboxes+dependencies.Groups+dependencies.SharedAccess+dependencies.History>0{failure:=provider.Errorf("member_in_use","成员仍有关联资源或历史记录");failure.Details=dependencies;return failure}
+		res,err:=tx.ExecContext(ctx,`DELETE FROM members WHERE id=? AND org_id=? AND revision=? AND status IN ('invited','departed')`,id,orgID,expectedRevision[0]);if err!=nil{return err};n,err:=res.RowsAffected();if err!=nil{return err};if n!=1{return provider.Errorf("revision_conflict","成员状态或版本已经更新")}
+		_,err=tx.ExecContext(ctx,`INSERT INTO audit_log(org_id,actor_member_id,action,target_type,target_id,detail_json,created_at) VALUES (?,?,'member.delete','member',?,?,?)`,orgID,actor,fmtID(id),toJSON(map[string]any{"name":m.DisplayName,"login":m.LoginEmail}),db.Now());return err
+	});if err==nil{s.cancelMailRequests(id,0)};return err
 }

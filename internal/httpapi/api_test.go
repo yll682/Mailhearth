@@ -22,7 +22,6 @@ import (
 	"mailhearth/internal/devstack"
 	"mailhearth/internal/httpapi"
 	"mailhearth/internal/mailproto/imappool"
-	"mailhearth/internal/purelymail"
 	"mailhearth/internal/purelymail/fake"
 	"mailhearth/internal/secrets"
 )
@@ -103,7 +102,6 @@ func TestEndToEnd(t *testing.T) {
 	pool := imappool.New(imappool.Config{Addr: cfg.IMAPAddr, TLSMode: imappool.TLSNone, MaxConns: 8})
 	defer pool.Close()
 	svc := core.New(database, cfg, box, pool, slog.Default())
-	svc.NewPM = func(token string) purelymail.API { return purelymail.New(stack.APIURL, token) }
 	api := httpapi.New(cfg, svc, pool, nil, []byte("sign-key"), slog.Default())
 	srv := httptest.NewServer(api.Handler())
 	defer srv.Close()

@@ -2,17 +2,23 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"mailhearth/internal/core"
 	"mailhearth/internal/mailproto/mailops"
 	"mailhearth/internal/mailproto/mimeutil"
 	"mailhearth/internal/model"
+	"mailhearth/internal/provider"
+	"mailhearth/internal/secrets"
 )
 
 func newJSONEncoder(w io.Writer) *json.Encoder {
@@ -23,6 +29,7 @@ func newJSONEncoder(w io.Writer) *json.Encoder {
 
 // composeRequest is the payload for send and draft.
 type composeRequest struct {
+	RequestID string `json:"requestId"`
 	IdentityID    int64               `json:"identityId"`
 	To            []mailops.Recipient `json:"to"`
 	Cc            []mailops.Recipient `json:"cc"`
@@ -64,6 +71,14 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		s.fail(m.w, m.r, err)
 		return
 	}
+	var requestDigest string
+	if send {
+		requestID:=in.RequestID;in.RequestID=""
+		body,err:=json.Marshal(in);in.RequestID=requestID;if err!=nil{s.fail(m.w,m.r,err);return}
+		requestDigest=s.Svc.Box.RequestDigest(body)
+		prior,err:=s.Svc.SubmissionByRequest(m.ctx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID,requestID,requestDigest);if err!=nil{s.fail(m.w,m.r,err);return}
+		if prior!=nil{writeJSON(m.w,http.StatusOK,prior);return}
+	}
 	identities, err := s.Svc.Identities(m.ctx, m.mc.Mailbox.ID)
 	if err != nil {
 		s.fail(m.w, m.r, err)
@@ -80,6 +95,7 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		s.fail(m.w, m.r, &core.ValidationError{Msg: "choose a valid sender identity"})
 		return
 	}
+	if send && identity.AuthorizationStatus!="allowed"{s.fail(m.w,m.r,core.ErrForbidden);return}
 	clean := func(list []mailops.Recipient) ([]mailops.Recipient, error) {
 		out := list[:0]
 		for _, r := range list {
@@ -111,6 +127,10 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		s.fail(m.w, m.r, &core.ValidationError{Msg: "too many recipients (max 100)"})
 		return
 	}
+	if m.conn==nil {
+		endpoint,err:=s.Svc.ResolveEndpoint(m.ctx,m.p.OrgID,m.mc.Mailbox.ID,provider.ProtocolIMAP);if err!=nil{s.fail(m.w,m.r,err);return}
+		conn,err:=s.Pool.Get(m.ctx,endpoint.IMAPCredential());if err!=nil{s.fail(m.w,m.r,err);return};defer s.Pool.Put(conn);m.conn=conn
+	}
 	htmlBody := ""
 	if strings.TrimSpace(in.HTML) != "" {
 		htmlBody = mimeutil.SanitizeSignature(in.HTML)
@@ -127,6 +147,9 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		Date:        time.Now(),
 		Attachments: nil,
 	}
+	_,senderDomain:=core.SplitAddress(identity.Address)
+	draft.MessageID=mailops.NewMessageID(senderDomain)
+	if send{draft.SubmissionID=uuid.NewString()}
 	if identity.ReplyTo != "" {
 		draft.ReplyTo = []mailops.Recipient{{Address: identity.ReplyTo}}
 	}
@@ -185,10 +208,10 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		s.fail(m.w, m.r, err)
 		return
 	}
-	messageID := extractMessageID(raw)
+	messageID,err:=extractMessageID(raw);if err!=nil{s.fail(m.w,m.r,err);return}
 
 	if !send {
-		draftsFolder, err := mailops.EnsureFolder(m.ctx, m.conn, folders, mailops.RoleDrafts)
+		draftsFolder, err := mailops.ResolveSpecialFolder(folders,mailops.RoleDrafts,m.mc.Mailbox.FolderMapping.Drafts)
 		if err != nil {
 			s.fail(m.w, m.r, err)
 			return
@@ -211,56 +234,35 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 			rcpts = append(rcpts, r.Address)
 		}
 	}
-	smtpCfg := mailops.SMTPConfig{Addr: s.Cfg.SMTPAddr, TLSMode: string(s.Cfg.SMTPTLS)}
-	if err := mailops.Send(m.ctx, smtpCfg, m.mc.Cred.User, m.mc.Cred.Pass, identity.Address, rcpts, raw); err != nil {
-		s.fail(m.w, m.r, err)
-		return
-	}
-	result := map[string]any{"ok": true, "messageId": messageID}
-	if sent, err := mailops.EnsureFolder(m.ctx, m.conn, folders, mailops.RoleSent); err == nil {
-		if uid, err := mailops.Append(m.ctx, m.conn, sent, []string{`\Seen`}, time.Now(), raw); err == nil {
-			result["sentFolder"], result["sentUid"] = sent, uid
-		} else {
-			result["warning"] = "sent, but could not save a copy to the Sent folder"
-		}
-	}
-	for _, id := range in.AttachmentIDs {
-		s.uploads.delete(m.ctx, m.p.Member.ID, id)
-	}
-	if in.Draft != nil && in.Draft.UID != 0 {
-		mailops.Delete(m.ctx, m.conn, in.Draft.Folder, []uint32{in.Draft.UID}, "", true)
-	}
-	if in.InReplyTo != nil && in.InReplyTo.UID != 0 {
-		flag, action := `\Answered`, "replied"
-		if in.InReplyTo.Forward {
-			flag, action = `$Forwarded`, "forwarded"
-		}
-		mailops.StoreFlags(m.ctx, m.conn, in.InReplyTo.Folder, []uint32{in.InReplyTo.UID}, []string{flag}, nil)
-		sel, _ := m.conn.Select(m.ctx, in.InReplyTo.Folder, true)
-		var uidv uint32
-		if sel != nil {
-			uidv = sel.UIDValidity
-		}
-		key := core.MessageKey(in.InReplyTo.MessageID, in.InReplyTo.Folder, uidv, in.InReplyTo.UID)
-		detail := draft.Subject
-		if len(rcpts) > 0 {
-			detail = "to " + strings.Join(rcpts, ", ")
-		}
-		s.Svc.RecordActivity(m.ctx, m.mc.Mailbox.ID, m.p.Member.ID, key, action, detail)
-		result["key"] = key
-	}
-	writeJSON(m.w, http.StatusOK, result)
+	var sentFolder string
+	if m.mc.Mailbox.SentCopyMode=="append"{sentFolder,err=mailops.ResolveSpecialFolder(folders,mailops.RoleSent,m.mc.Mailbox.FolderMapping.Sent);if err!=nil{s.fail(m.w,m.r,err);return}}
+	stagingFolder,err:=mailops.ResolveSpecialFolder(folders,mailops.RoleDrafts,m.mc.Mailbox.FolderMapping.Drafts);if err!=nil{s.fail(m.w,m.r,err);return}
+	smtpEndpoint,err:=s.Svc.ResolveEndpoint(m.ctx,m.p.OrgID,m.mc.Mailbox.ID,provider.ProtocolSMTP)
+	if err!=nil{s.fail(m.w,m.r,err);return}
+	envelope:=core.SubmissionEnvelope{IdentityID:identity.ID,EnvelopeFrom:identity.Address,Recipients:rcpts}
+	if in.Draft!=nil && in.Draft.UID!=0{selected,err:=m.conn.Select(m.ctx,in.Draft.Folder,true);if err!=nil{s.fail(m.w,m.r,err);return};envelope.OriginalDraft=&mailops.MessageLocator{Folder:in.Draft.Folder,UID:in.Draft.UID,UIDValidity:selected.UIDValidity}}
+	if in.InReplyTo!=nil && in.InReplyTo.UID!=0{reply:=in.InReplyTo;selected,err:=m.conn.Select(m.ctx,reply.Folder,true);if err!=nil{s.fail(m.w,m.r,err);return};envelope.ReplyContext=&core.SubmissionReplyContext{MessageLocator:mailops.MessageLocator{Folder:reply.Folder,UID:reply.UID,UIDValidity:selected.UIDValidity},MessageID:reply.MessageID,Forward:reply.Forward}}
+	var sent *string;if sentFolder!=""{sent=&sentFolder}
+	view,repeated,err:=s.Svc.ReserveSubmission(m.ctx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID,core.ReserveSubmissionInput{ID:draft.SubmissionID,RequestID:in.RequestID,RequestDigest:requestDigest,MessageID:messageID,Raw:raw,Envelope:envelope,SessionHash:secrets.HashToken(m.p.Token),SMTP:smtpEndpoint,AccessRevision:m.mc.Mailbox.AccessRevision,IdentityRevision:identity.Revision,SentCopyMode:m.mc.Mailbox.SentCopyMode,StagingFolder:stagingFolder,SentFolder:sent})
+	if err!=nil{s.fail(m.w,m.r,err);return};if repeated{writeJSON(m.w,http.StatusOK,view);return}
+	locator,stageErr:=mailops.AppendSubmissionMessage(m.ctx,m.conn,stagingFolder,view.ID,[]string{`\Draft`,`\Seen`},raw,s.Cfg.MaxMessageBytes)
+	persistCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel()
+	if err:=s.Svc.CompleteSubmissionStaging(persistCtx,view.ID,locator,stageErr);err!=nil{s.fail(m.w,m.r,err);return}
+	view,err=s.Svc.Submission(persistCtx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID,view.ID);if err!=nil{s.fail(m.w,m.r,err);return}
+	status:=http.StatusAccepted;if stageErr!=nil{status=http.StatusOK}
+	writeJSON(m.w,status,view)
 }
 
-func extractMessageID(raw []byte) string {
-	head := raw
-	if i := bytes.Index(raw, []byte("\r\n\r\n")); i > 0 {
-		head = raw[:i]
-	}
-	for _, line := range bytes.Split(head, []byte("\r\n")) {
-		if len(line) > 11 && strings.EqualFold(string(line[:11]), "Message-ID:") {
-			return strings.TrimSpace(string(line[11:]))
-		}
-	}
-	return ""
+func (s *Server) composeSubmission(w http.ResponseWriter,r *http.Request) {
+	p:=principalFrom(r);id,err:=pathInt(r,"id");if err!=nil{s.fail(w,r,err);return}
+	ctx,cancel:=s.Svc.RegisterMailRequest(r.Context(),p.Member.ID,id,p.Token);defer cancel()
+	ctx,timeoutCancel:=context.WithTimeout(ctx,90*time.Second);defer timeoutCancel()
+	active,err:=s.Svc.SessionHashActive(ctx,p.Member.ID,secrets.HashToken(p.Token));if err!=nil{s.fail(w,r,err);return};if !active{s.fail(w,r,core.ErrForbidden);return}
+	mc,err:=s.Svc.CheckMailboxAccess(ctx,p.OrgID,p.Member.ID,id);if err!=nil{s.fail(w,r,err);return}
+	s.handleCompose(&mailReq{w:w,r:r.WithContext(ctx),p:p,mc:mc,ctx:ctx},true)
+}
+
+func extractMessageID(raw []byte) (string,error) {
+	message,err:=mail.ReadMessage(bytes.NewReader(raw));if err!=nil{return "",err}
+	return message.Header.Get("Message-ID"),nil
 }

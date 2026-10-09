@@ -10,14 +10,17 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-sasl"
+	"mailhearth/internal/provider"
 )
 
 // TLS modes (mirrors config.TLSMode).
@@ -31,11 +34,23 @@ const (
 type Cred struct {
 	User string
 	Pass string
+	OrgID int64
+	ConnectionID int64
+	MailboxID int64
+	ConnectionRevision int64
+	EndpointRevision int64
+	CredentialID int64
+	CredentialGeneration int64
+	Addr string
+	TLSMode string
+	TLSConfig *tls.Config
+	Dialer *net.Dialer
 }
 
 func (c Cred) key() string {
+	if c.MailboxID>0 { return fmt.Sprintf("%d/%d/%d/imap/%d/%d/%d/%d",c.OrgID,c.ConnectionID,c.MailboxID,c.ConnectionRevision,c.EndpointRevision,c.CredentialID,c.CredentialGeneration) }
 	sum := sha256.Sum256([]byte(c.Pass))
-	return strings.ToLower(c.User) + "|" + hex.EncodeToString(sum[:8])
+	return c.Addr+"|"+c.TLSMode+"|"+c.User + "|" + hex.EncodeToString(sum[:])
 }
 
 // Config configures the pool.
@@ -60,6 +75,14 @@ type Pool struct {
 	mu   sync.Mutex
 	idle map[string][]*Conn
 	wtch map[string]*watcher
+	all map[*Conn]struct{}
+	connectionUse map[int64]int
+	mailboxUse map[int64]int
+	capacity chan struct{}
+	connectionEpoch map[int64]uint64
+	mailboxEpoch map[int64]uint64
+	pending map[uint64]pendingDial
+	nextDial uint64
 
 	closed bool
 	stop   chan struct{}
@@ -76,13 +99,14 @@ type Conn struct {
 	readOnly bool
 	selData  *imap.SelectData
 	lastUsed time.Time
-	broken   bool
+	broken   atomic.Bool
+	closeOnce sync.Once
 }
 
 // New creates a pool.
 func New(cfg Config) *Pool {
-	if cfg.MaxConns <= 0 {
-		cfg.MaxConns = 16
+	if cfg.MaxConns <= 0 || cfg.MaxConns>24 {
+		cfg.MaxConns = 24
 	}
 	if cfg.PerCredIdle <= 0 {
 		cfg.PerCredIdle = 2
@@ -100,6 +124,8 @@ func New(cfg Config) *Pool {
 		idle: map[string][]*Conn{},
 		wtch: map[string]*watcher{},
 		stop: make(chan struct{}),
+		all:map[*Conn]struct{}{},connectionUse:map[int64]int{},mailboxUse:map[int64]int{},capacity:make(chan struct{}),
+		connectionEpoch:map[int64]uint64{},mailboxEpoch:map[int64]uint64{},pending:map[uint64]pendingDial{},
 	}
 	p.wg.Add(1)
 	go p.reaper()
@@ -117,51 +143,41 @@ func (p *Pool) Stats() (open, idle, watchers int) {
 }
 
 func (p *Pool) dial(ctx context.Context, cred Cred, handler *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
-	host, _, _ := net.SplitHostPort(p.cfg.Addr)
-	tlsCfg := p.cfg.TLSConfig
+	addr,mode:=cred.Addr,cred.TLSMode
+	if addr==""{addr,mode=p.cfg.Addr,p.cfg.TLSMode}
+	host, _, _ := net.SplitHostPort(addr)
+	tlsCfg := cred.TLSConfig
+	if tlsCfg==nil{tlsCfg=p.cfg.TLSConfig}
 	if tlsCfg == nil {
 		tlsCfg = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 	}
+	tlsCfg=tlsCfg.Clone();tlsCfg.ServerName=host;tlsCfg.InsecureSkipVerify=false
+	if tlsCfg.MinVersion<tls.VersionTLS12{tlsCfg.MinVersion=tls.VersionTLS12}
 	opts := &imapclient.Options{
 		TLSConfig:             tlsCfg,
 		UnilateralDataHandler: handler,
-		Dialer:                &net.Dialer{Timeout: 20 * time.Second},
+		Dialer:                cred.Dialer,
 	}
-	var (
-		c   *imapclient.Client
-		err error
-	)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		switch p.cfg.TLSMode {
-		case TLSStart:
-			c, err = imapclient.DialStartTLS(p.cfg.Addr, opts)
-		case TLSNone:
-			c, err = imapclient.DialInsecure(p.cfg.Addr, opts)
-		default:
-			c, err = imapclient.DialTLS(p.cfg.Addr, opts)
-		}
-		if err != nil {
-			return
-		}
-		if lerr := c.Login(cred.User, cred.Pass).Wait(); lerr != nil {
-			c.Close()
-			c, err = nil, &AuthError{Err: lerr}
-		}
-	}()
-	select {
-	case <-done:
-		return c, err
-	case <-ctx.Done():
-		go func() {
-			<-done
-			if c != nil {
-				c.Close()
-			}
-		}()
-		return nil, ctx.Err()
+	if opts.Dialer==nil{opts.Dialer=&net.Dialer{Timeout:10*time.Second}}
+	raw,err:=opts.Dialer.DialContext(ctx,"tcp",addr);if err!=nil{return nil,err}
+	closeOnCancel:=context.AfterFunc(ctx,func(){raw.Close()});defer closeOnCancel()
+	deadline:=time.Now().Add(30*time.Second);if requested,ok:=ctx.Deadline();ok && requested.Before(deadline){deadline=requested}
+	if err:=raw.SetDeadline(deadline);err!=nil{raw.Close();return nil,err}
+	var c *imapclient.Client
+	switch mode{
+	case TLSStart:c,err=imapclient.NewStartTLS(raw,opts)
+	case TLSNone:c=imapclient.New(raw,opts)
+	case TLSImplicit:
+		secure:=tls.Client(raw,tlsCfg)
+		if err=secure.HandshakeContext(ctx);err==nil{c=imapclient.New(secure,opts)}
+	default:err=provider.Errorf("invalid","IMAP TLS 模式无效")
 	}
+	if err!=nil{raw.Close();return nil,err}
+	if c.Caps().Has(imap.Cap("AUTH=PLAIN")){err=c.Authenticate(sasl.NewPlainClient("",cred.User,cred.Pass))}else if !c.Caps().Has(imap.Cap("LOGINDISABLED")){err=c.Login(cred.User,cred.Pass).Wait()}else{err=provider.Errorf("unsupported_auth_mechanism","IMAP 没有共同认证机制")}
+	if err!=nil{c.Close();var response *imap.Error;if errors.As(err,&response) && response.Type==imap.StatusResponseTypeNo && response.Code==imap.ResponseCodeAuthenticationFailed{return nil,&AuthError{Err:err}};return nil,err}
+	if ctx.Err()!=nil{c.Close();return nil,ctx.Err()}
+	if err:=raw.SetDeadline(time.Time{});err!=nil{c.Close();return nil,err}
+	return c,nil
 }
 
 // AuthError marks a failed IMAP login (credential rotated or revoked).
@@ -172,13 +188,24 @@ func (e *AuthError) Unwrap() error { return e.Err }
 
 // Get returns a connection for cred, reusing an idle one when possible.
 func (p *Pool) Get(ctx context.Context, cred Cred) (*Conn, error) {
+	return p.get(ctx,cred,true)
+}
+
+// GetFresh 使用独立认证连接，归还时关闭该连接。
+func (p *Pool) GetFresh(ctx context.Context,cred Cred) (*Conn,error) {
+	return p.get(ctx,cred,false)
+}
+
+func (p *Pool) get(ctx context.Context,cred Cred,reuse bool) (*Conn,error) {
+	if ctx.Err()!=nil{return nil,ctx.Err()}
 	key := cred.key()
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
-	if l := p.idle[key]; len(l) > 0 {
+	connectionEpoch,mailboxEpoch:=p.connectionEpoch[cred.ConnectionID],p.mailboxEpoch[cred.MailboxID]
+	if l := p.idle[key]; reuse && len(l) > 0 {
 		c := l[len(l)-1]
 		p.idle[key] = l[:len(l)-1]
 		p.mu.Unlock()
@@ -190,17 +217,21 @@ func (p *Pool) Get(ctx context.Context, cred Cred) (*Conn, error) {
 	}
 	p.mu.Unlock()
 
-	select {
-	case p.sem <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	client, err := p.dial(ctx, cred, nil)
+	if err:=p.reserve(ctx,cred,false);err!=nil{return nil,err}
+	dialCtx,cancel:=context.WithCancel(ctx)
+	p.mu.Lock()
+	if p.closed || p.connectionEpoch[cred.ConnectionID]!=connectionEpoch || p.mailboxEpoch[cred.MailboxID]!=mailboxEpoch{p.mu.Unlock();cancel();p.release(cred);return nil,provider.Errorf("revision_conflict","邮箱连接配置已变化")}
+	p.nextDial++;dialID:=p.nextDial;p.pending[dialID]=pendingDial{cred:cred,cancel:cancel};p.wg.Add(1);p.mu.Unlock()
+	defer func(){cancel();p.mu.Lock();delete(p.pending,dialID);p.mu.Unlock();p.wg.Done()}()
+	client, err := p.dial(dialCtx, cred, nil)
 	if err != nil {
-		<-p.sem
+		p.release(cred)
 		return nil, err
 	}
-	return &Conn{C: client, cred: cred, key: key, pool: p, lastUsed: time.Now()}, nil
+	conn:=&Conn{C: client, cred: cred, key: key, pool: p, lastUsed: time.Now()}
+	if !reuse{conn.MarkBroken()}
+	p.mu.Lock();if p.closed || dialCtx.Err()!=nil || p.connectionEpoch[cred.ConnectionID]!=connectionEpoch || p.mailboxEpoch[cred.MailboxID]!=mailboxEpoch{p.mu.Unlock();conn.close();return nil,provider.Errorf("revision_conflict","邮箱连接配置已变化")};p.all[conn]=struct{}{};p.mu.Unlock()
+	return conn, nil
 }
 
 func isClosed(c *imapclient.Client) bool {
@@ -217,12 +248,12 @@ func (p *Pool) Put(c *Conn) {
 	if c == nil {
 		return
 	}
-	if c.broken || isClosed(c.C) {
+	if c.broken.Load() || isClosed(c.C) {
 		c.close()
 		return
 	}
 	p.mu.Lock()
-	if p.closed || len(p.idle[c.key]) >= p.cfg.PerCredIdle {
+	if p.closed || c.broken.Load() || isClosed(c.C) || len(p.idle[c.key]) >= p.cfg.PerCredIdle {
 		p.mu.Unlock()
 		c.close()
 		return
@@ -233,12 +264,48 @@ func (p *Pool) Put(c *Conn) {
 }
 
 func (c *Conn) close() {
-	c.C.Close()
-	<-c.pool.sem
+	c.closeOnce.Do(func(){c.broken.Store(true);c.C.Close();c.pool.mu.Lock();delete(c.pool.all,c);c.pool.mu.Unlock();c.pool.release(c.cred)})
 }
 
+func (p *Pool) reserve(ctx context.Context,cred Cred,watch bool) error {
+	ctx,cancel:=context.WithTimeout(ctx,10*time.Second);defer cancel()
+	for {
+		p.mu.Lock()
+		if p.closed{p.mu.Unlock();return ErrPoolClosed}
+		globalMax,connectionMax:=p.cfg.MaxConns,8
+		if watch{globalMax-=4;connectionMax-=2}
+		if len(p.sem)<globalMax && (cred.ConnectionID==0 || p.connectionUse[cred.ConnectionID]<connectionMax) && (cred.MailboxID==0 || p.mailboxUse[cred.MailboxID]<3){
+			p.sem<-struct{}{};p.connectionUse[cred.ConnectionID]++;p.mailboxUse[cred.MailboxID]++;p.mu.Unlock();return nil
+		}
+		changed:=p.capacity;p.mu.Unlock()
+		if watch{return provider.Errorf("notification_capacity_reached","邮件通知连接额度已满")}
+		select{case <-changed:case <-ctx.Done():return provider.Errorf("mail_connection_capacity","邮件连接额度已满")}
+	}
+}
+
+func (p *Pool) release(cred Cred) {
+	p.mu.Lock();defer p.mu.Unlock()
+	<-p.sem;p.connectionUse[cred.ConnectionID]--;p.mailboxUse[cred.MailboxID]--
+	close(p.capacity);p.capacity=make(chan struct{})
+}
+
+type pendingDial struct {cred Cred;cancel context.CancelFunc}
+
+func (p *Pool) invalidate(match func(Cred)bool,connectionID,mailboxID int64) {
+	p.mu.Lock();var conns []*Conn;var watchers []*watcher
+	if connectionID>0{p.connectionEpoch[connectionID]++};if mailboxID>0{p.mailboxEpoch[mailboxID]++}
+	for _,dial:=range p.pending{if match(dial.cred){dial.cancel()}}
+	for c:=range p.all{if match(c.cred){conns=append(conns,c);delete(p.idle,c.key)}}
+	for _,w:=range p.wtch{if match(w.cred){watchers=append(watchers,w)}}
+	p.mu.Unlock()
+	for _,c:=range conns{c.close()};for _,w:=range watchers{w.shutdown()}
+}
+
+func (p *Pool) InvalidateConnection(id int64){p.invalidate(func(c Cred)bool{return c.ConnectionID==id},id,0)}
+func (p *Pool) InvalidateMailbox(id int64){p.invalidate(func(c Cred)bool{return c.MailboxID==id},0,id)}
+
 // MarkBroken tells the pool not to reuse this connection.
-func (c *Conn) MarkBroken() { c.broken = true }
+func (c *Conn) MarkBroken() { c.broken.Store(true) }
 
 // Cred returns the credential used by this connection.
 func (c *Conn) Cred() Cred { return c.cred }
@@ -246,7 +313,7 @@ func (c *Conn) Cred() Cred { return c.cred }
 // Select ensures mailbox is selected in the requested mode and returns the
 // (possibly cached) selection data with an up-to-date message count.
 func (c *Conn) Select(ctx context.Context, mailbox string, readOnly bool) (*imap.SelectData, error) {
-	if c.selected == mailbox && c.selData != nil && (c.readOnly == readOnly || !readOnly) {
+	if c.selected == mailbox && c.selData != nil && c.readOnly == readOnly {
 		if mb := c.C.Mailbox(); mb != nil {
 			c.selData.NumMessages = mb.NumMessages
 		}
@@ -278,16 +345,9 @@ func (c *Conn) Run(ctx context.Context, fn func()) { c.run(ctx, fn) }
 
 func (c *Conn) run(ctx context.Context, fn func()) {
 	done := make(chan struct{})
-	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			c.broken = true
-			c.C.Close()
-		}
-	}()
+	stop:=context.AfterFunc(ctx,func(){c.broken.Store(true);c.C.Close();close(done)})
+	defer func(){if !stop(){<-done}}()
 	fn()
-	close(done)
 }
 
 func (p *Pool) reaper() {
@@ -337,9 +397,10 @@ func (p *Pool) Close() {
 	}
 	p.closed = true
 	close(p.stop)
+	for _,dial:=range p.pending{dial.cancel()}
 	var all []*Conn
-	for _, l := range p.idle {
-		all = append(all, l...)
+	for c := range p.all {
+		all = append(all, c)
 	}
 	p.idle = map[string][]*Conn{}
 	ws := make([]*watcher, 0, len(p.wtch))
@@ -377,31 +438,48 @@ type watcher struct {
 	subs    map[chan Event]struct{}
 	stop    chan struct{}
 	stopped bool
+	client *imapclient.Client
+	dialCancel context.CancelFunc
 }
 
 // Subscribe starts (or joins) an IDLE watcher for mailbox and returns a
 // channel of events plus a cancel function. The channel is closed when the
 // watcher shuts down.
 func (p *Pool) Subscribe(cred Cred, mailbox string) (<-chan Event, func()) {
+	ch,cancel,err:=p.SubscribeChecked(cred,mailbox)
+	if err!=nil{failed:=make(chan Event,1);failed<-Event{Mailbox:mailbox,At:time.Now(),Err:err.Error()};close(failed);return failed,func(){}}
+	return ch,cancel
+}
+
+func (p *Pool) SubscribeChecked(cred Cred, mailbox string) (<-chan Event, func(),error) {
 	key := cred.key() + "|" + mailbox
 	ch := make(chan Event, 8)
+	started:=false
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		close(ch)
-		return ch, func() {}
+		return ch, func() {},ErrPoolClosed
 	}
+	connectionEpoch,mailboxEpoch:=p.connectionEpoch[cred.ConnectionID],p.mailboxEpoch[cred.MailboxID]
 	w := p.wtch[key]
 	if w == nil {
+		p.mu.Unlock()
+		if err:=p.reserve(context.Background(),cred,true);err!=nil{return nil,nil,err}
+		p.mu.Lock()
+		if p.closed || p.connectionEpoch[cred.ConnectionID]!=connectionEpoch || p.mailboxEpoch[cred.MailboxID]!=mailboxEpoch{p.mu.Unlock();p.release(cred);return nil,nil,provider.Errorf("revision_conflict","邮箱连接配置已变化")}
+		if existing:=p.wtch[key];existing!=nil{p.mu.Unlock();p.release(cred);return p.SubscribeChecked(cred,mailbox)}
 		w = &watcher{pool: p, cred: cred, mailbox: mailbox, key: key, events: make(chan Event, 16), subs: map[chan Event]struct{}{}, stop: make(chan struct{})}
 		p.wtch[key] = w
 		p.wg.Add(1)
-		go w.run()
+		started=true
 	}
 	p.mu.Unlock()
 	w.mu.Lock()
+	if w.stopped{w.mu.Unlock();if started{go w.run()};return nil,nil,provider.Errorf("notification_capacity_reached","邮件通知连接已经结束")}
 	w.subs[ch] = struct{}{}
 	w.mu.Unlock()
+	if started{go w.run()}
 	return ch, func() {
 		w.mu.Lock()
 		if _, ok := w.subs[ch]; ok {
@@ -420,7 +498,7 @@ func (p *Pool) Subscribe(cred Cred, mailbox string) (<-chan Event, func()) {
 				}
 			})
 		}
-	}
+	},nil
 }
 
 func (w *watcher) broadcast(ev Event) {
@@ -441,12 +519,16 @@ func (w *watcher) shutdown() {
 		return
 	}
 	w.stopped = true
+	client:=w.client
+	dialCancel:=w.dialCancel
 	close(w.stop)
 	for ch := range w.subs {
 		delete(w.subs, ch)
 		close(ch)
 	}
 	w.mu.Unlock()
+	if dialCancel!=nil{dialCancel()}
+	if client!=nil{client.Close()}
 	w.pool.mu.Lock()
 	if w.pool.wtch[w.key] == w {
 		delete(w.pool.wtch, w.key)
@@ -457,43 +539,13 @@ func (w *watcher) shutdown() {
 func (w *watcher) run() {
 	defer w.pool.wg.Done()
 	defer w.shutdown()
-	backoff := 2 * time.Second
-	for {
-		select {
-		case <-w.stop:
-			return
-		default:
-		}
-		err := w.session()
-		if err == nil {
-			return
-		}
-		var ae *AuthError
-		if errors.As(err, &ae) {
-			w.broadcast(Event{Mailbox: w.mailbox, At: time.Now(), Err: "auth"})
-			return
-		}
-		w.pool.log.Debug("imap watcher reconnect", "mailbox", w.mailbox, "err", err)
-		select {
-		case <-w.stop:
-			return
-		case <-time.After(backoff):
-		}
-		if backoff < time.Minute {
-			backoff *= 2
-		}
-	}
+	defer w.pool.release(w.cred)
+	if err:=w.session();err!=nil{w.broadcast(Event{Mailbox:w.mailbox,At:time.Now(),Err:"upstream_failed"})}
 }
 
 // session runs one IDLE connection until stop or a connection error.
 func (w *watcher) session() error {
-	select {
-	case w.pool.sem <- struct{}{}:
-	case <-w.stop:
-		return nil
-	}
-	defer func() { <-w.pool.sem }()
-
+	w.mu.Lock();stopped:=w.stopped;w.mu.Unlock();if stopped{return nil}
 	notify := make(chan Event, 16)
 	handler := &imapclient.UnilateralDataHandler{
 		Mailbox: func(data *imapclient.UnilateralDataMailbox) {
@@ -512,19 +564,21 @@ func (w *watcher) session() error {
 		},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	w.mu.Lock();if w.stopped{w.mu.Unlock();cancel();return nil};w.dialCancel=cancel;w.mu.Unlock()
 	client, err := w.pool.dial(ctx, w.cred, handler)
 	cancel()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
+	w.mu.Lock();if w.stopped{w.mu.Unlock();return nil};w.client=client;w.mu.Unlock()
 	sel, err := client.Select(w.mailbox, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
 		return err
 	}
 	last := sel.NumMessages
 	if !client.Caps().Has(imap.CapIdle) {
-		// Fallback: poll with NOOP.
+		// 服务器未提供 IDLE 时使用 45 秒 NOOP 轮询。
 		t := time.NewTicker(45 * time.Second)
 		defer t.Stop()
 		for {

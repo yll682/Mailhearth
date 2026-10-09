@@ -2,129 +2,106 @@
 
 [English](architecture.md) · [简体中文](architecture.zh-CN.md) · [繁體中文](architecture.zh-TW.md) · **日本語** · [Español](architecture.es.md)
 
-## 目標と非目標
+## 配置とコンポーネント
 
-Mailhearth は、Purelymail の信頼性が高く安価なメール基盤を、小規模な組織が導入し、
-管理し、日々使える製品として包み込む。SMTP サーバーの運用、メールの一次コピーの
-保存、スパムのフィルター処理、DLP / eDiscovery / MDM の実装を意図的に**行わない**。
-Purelymail ポータルや別の Roundcube の見た目を変えたものでもない。管理の単位は
-組織に属する一人の人物であり、アカウント上の「ユーザー」ではない。
+Mailhearth は Preact の静的ファイルを組み込んだ単一の Go バイナリと SQLite
+（modernc、cgo 不使用）で動作します。メールサーバーが本文、配信、フィルタリングを
+担当します。SQLite は組織データ、暗号化された認証情報、リソース関連付け、操作、
+送信リクエストと共同作業メタデータを保存します。Node はフロントエンドのビルドに使用します。
 
-設計を形づくった制約:
+- `cmd/mailhearth`：設定、マスターキー、データベース、IMAP プール、ワーカー、HTTP server。
+- `internal/config`、`internal/secrets`：環境設定、AES-256-GCM/HKDF、argon2id、token。
+- `internal/db`、`internal/model`：組み込み migration、関連付け検証、永続化モデル。
+- `internal/provider`：共通管理インターフェースと Purelymail、Migadu、manual アダプター。
+- `internal/purelymail`：対応するアダプター用の Purelymail API クライアント。
+- `internal/core`：接続、検出と取り込み、組織、リソースのライフサイクル、Operation、Submission。
+- `internal/mailproto/imappool`：接続上限、endpoint バージョンの無効化、IDLE 監視。
+- `internal/mailproto/mailops`、`mimeutil`、`sieve`：IMAP/SMTP、MIME サニタイズ、Sieve、ManageSieve。
+- `internal/httpapi`、`internal/web`、`web/`：権限検証、JSON/SSE、組み込みファイル、メール・管理・設定 UI。
 
-- **極小のホスト。** 対象となるデプロイは、入手できる最も安価な VPS 上で動作する。
-  サーバーは単一の静的 Go バイナリで、SQLite、プロセス内の上限付き IMAP
-  コネクションプール、51 KB（gzip 圧縮後）の Preact フロントエンドで構成される。
-  実行時に Redis も Postgres も Node も不要で、少数のゴルーチン以外にバックグラウンド
-  ワーカーはない。
-- **メールの正は Purelymail にある。** メッセージが Mailhearth のデータベースに
-  コピーされることはない。クライアントが表示するものはすべて IMAP 経由で
-  オンデマンドに取得し、データベースが保持するのは組織モデルと、`Message-ID` を
-  キーとする少量の共同作業メタデータだけである。
-- **ブラウザーに秘密は置かない。** API トークンとメールボックスのアプリパスワードは
-  暗号化された状態で SQLite に保存される。ブラウザーが通信するのは Mailhearth
-  だけである。
+## 組織とリソースの所属
 
-## コンポーネント
+各配置に一つの Organization があり、Member はロール、部署と `invited`、`active`、
+`disabled`、`departed` の状態を持ちます。Role は名前付き権限を含みます。personal
+Mailbox の所有権と shared Mailbox の明示的な権限（`full`、`send`、`read`）がメール
+アクセスを制御します。管理権限はメールアクセスを付与しません。
 
-| パッケージ | 責務 |
-|---|---|
-| `cmd/mailhearth` | エントリーポイント: 設定、マスターキー、データベース、IMAP プール、HTTP サーバー |
-| `internal/config` | 環境設定 |
-| `internal/db` | SQLite（modernc、cgo 不使用）と埋め込みマイグレーション |
-| `internal/secrets` | AES-256-GCM ボックス（マスターキーからの HKDF）、argon2id、トークン |
-| `internal/purelymail` | 型付き API クライアント。`fake/` はインメモリの Purelymail |
-| `internal/model` | サービスと API が共有する組織の型 |
-| `internal/core` | サービス: セットアップ/インポート、メンバー、ロール、ドメイン、メールボックス、アドレス、グループ、オフボーディング、チーム状態 |
-| `internal/mailproto/imappool` | 上限付き IMAP コネクションプールと IDLE ウォッチャー |
-| `internal/mailproto/mailops` | フォルダー、一覧、レンダリング、操作、作成、SMTP |
-| `internal/mailproto/mimeutil` | HTML サニタイザー、テキスト/HTML 変換、デコード |
-| `internal/mailproto/sieve` | ルールモデルから Sieve へのコンパイラー。ManageSieve クライアント |
-| `internal/httpapi` | JSON API、セッション、CSRF、アップロード、SSE、サンドボックス化されたメッセージ表示 |
-| `internal/web` | gzip と immutable キャッシュを備えた埋め込み SPA |
-| `internal/devstack` | 開発とテスト用の偽の Purelymail、IMAP、SMTP |
-| `web/` | Preact + Vite のシングルページアプリ（メール、管理、設定） |
+MailConnection は組織に属し、プロバイダー種類、名称、管理 API 認証、ドメイン範囲、
+三つのプロトコルの既定設定を持ちます。Domain は論理名で、DomainBinding は接続、
+プロバイダー設定と DNS 状態を関連付けます。Mailbox のアドレスは接続内で一意です。
+別の接続の同一アドレスは独立して保持されます。
 
-## 組織モデル
+Address は `primary`、`alias`、`forward`、`group`、`catchall`、`prefix` と外部管理の
+`external_rule` を表します。転送は独立した `mailbox_forwardings` に保存し、取り込み時も
+primary アドレスを保持します。Identity の表示設定と SMTP の送信者認可は独立しています。
+受信エイリアスは From の使用を許可しません。Group は適格な personal メールボックスを
+すべて計算し、接続・ドメイン制限を検証してから宛先の重複を除きます。
 
-| 概念 | 意味 | 保存先 |
-|---|---|---|
-| **Organization** | インストールの唯一のテナント。 | `organizations` |
-| **Member** | Mailhearth にサインインする実在の人物。ロール、状態（invited/active/disabled/departed）、役職、部署を持つ。 | `members` |
-| **Role** | 名前を付けた権限の集合（`members.manage`、`shared.manage`、…）。組み込み: owner、admin、member。カスタムロールも可能。 | `roles` |
-| **Domain** | Purelymail アカウント上のドメイン。DNS の健全性を伴う。 | `domains` ↔ Purelymail ドメイン |
-| **Mailbox** | メールを保存するログインアカウント。`personal`（1 人のメンバーが所有）または `shared`（組織が所有し、複数のメンバーが共同で扱う）。 | `mailboxes` ↔ Purelymail ユーザー |
-| **Address** | メールを受け取るもの: メールボックス自身のアドレス（`primary`）、1 つのメールボックスへの `alias`、任意の宛先への `forward`、`group` の配布アドレス、`catchall` または `prefix` ルール。 | `addresses` ↔ Purelymail ルーティングルール |
-| **Identity** | メールボックスが送信元として使える From アドレス + 表示名 + 署名。 | `identities` |
-| **Group** | メンバーの集合。任意で、メンバーシップに従って宛先が決まる配布アドレスを持つ。 | `groups`、`group_members` |
-| **Access grant** | メンバー → メールボックス。レベルは `full`/`send`/`read`。 | `mailbox_access` |
+ProviderResource は各リモート参照を一つのローカルオブジェクトと用途に関連付け、
+所有、リモート状態と安全な構造化観測結果を記録します。参照制約と revision 検証が
+組織・接続の境界と履歴を保護します。
 
-1 人のメンバーが複数のメールボックスを所有できる。1 つのメールボックスは複数の
-アドレスを持てる。1 つのアドレスは（転送やグループを通じて）複数のメンバーに届く。
-人のロールが変わったり、離職したりしても、メールボックスとアドレスは組織に残る。
-所有権は再割り当てされ、暗黙に削除されることはない。
+## プロトコル設定
 
-## Purelymail へのマッピング
+Mailbox は独立した IMAP、SMTP、ManageSieve endpoint を持ちます。network mode は
+`inherit`、`override`、`disabled` です。有効な endpoint は username と暗号化された
+Credential を個別指定します。認証情報は `managed` または明示入力です。候補設定は
+すべての有効なプロトコルで認証を通過してから単一トランザクションで確定します。
+endpoint、接続、認証情報、アクセスのバージョン変更は古い接続を閉じます。
 
-| Mailhearth の操作 | Purelymail API 呼び出し |
-|---|---|
-| 接続 | `checkAccountCredit`（トークンを検証） |
-| インポート / 同期 | `listDomains`、`listUser`、`listRoutingRules` — 読み取り専用、冪等 |
-| メールボックスの作成 | `createUser`（ランダムなパスワード、ウェルカムメールなし）+ `createAppPassword` |
-| インポート済みメールボックスの接続 | `createAppPassword`（既存のパスワードは不要） |
-| 認証情報のローテーション | `createAppPassword` の後に古いものを `deleteAppPassword` |
-| 外部クライアント向けのパスワードリセット | `modifyUser{newPassword}` + ローテーション |
-| 停止 / オフボーディング時のロックアウト | `modifyUser{newPassword}` + `deleteAppPassword` |
-| エイリアス / 転送 / キャッチオール / 接頭辞 / グループアドレス | `createRoutingRule` / `deleteRoutingRule` |
-| メールボックスでの転送 | メールボックス自身のアドレスに対するルーティングルール（Purelymail の意味論: ルールが配送より優先される） |
-| ドメインの追加 / DNS の再確認 / 設定 | `addDomain`、`updateDomainSettings`、`getOwnershipCode` |
+Purelymail の既定値は IMAP `imap.purelymail.com:993` TLS、SMTP
+`smtp.purelymail.com:465` TLS、ManageSieve `mailserver.purelymail.com:4190` STARTTLS。
+Migadu は IMAP `imap.migadu.com:993` TLS、SMTP `smtp.migadu.com:465` TLS、ManageSieve
+無効です。手動接続は明示設定まで全項目無効です。TLS はシステム証明書または明示的な
+プライベート CA 証明書セットで hostname を検証します。
 
-Mailhearth はメールボックスごとに「Mailhearth」という名前のアプリパスワードを
-ちょうど 1 つ保持する。メンバーがそれを見ることはない。サーバーは、そのメンバーが
-メールボックスを所有しているか許可を持っているかを確認したうえで、メンバーに代わって
-IMAP、SMTP、ManageSieve にそれを使う。管理権限はメールへのアクセスを許可しない。
-共有メールボックスの読み取りには常に明示的な許可が必要である。
+## 検出、取り込みと管理操作
 
-## メール経路
+検出は選択範囲を完全に読み、接続 revision と期限を持つスナップショットを保存します。
+取り込みは所属、バージョン、期限、依存関係を一つのローカルトランザクションで検証します。
+取り込まれた personal Mailbox は owner とログイン認証情報を持ちません。同期は登録済み
+リソースの観測を更新し、新規リソースは選択待ちにします。owner、アクセス権、共同作業、
+署名と entered 認証情報は保持します。
 
-1. `httpapi` がサインイン済みのメンバーのメールボックスを解決し
-   （`core.ResolveMailbox`）、認証情報を取得する。
-2. `imappool.Get` がプールされた接続を返す（合計の上限は
-   `MAILHEARTH_IMAP_MAX_CONNS`、認証情報ごとにアイドル 2 本、90 秒のアイドル後に
-   回収される）。
-3. `mailops` が IMAP コマンドを実行する。フォルダーには `LIST-STATUS` 付きの
-   `LIST`、ページングには envelope + flags + `BODYSTRUCTURE` のシーケンス範囲
-   `FETCH`、クエリには `UID SEARCH`、レンダリングには `BODY.PEEK[part]`、利用できる
-   場合は `MOVE`/`UIDPLUS` をフォールバック付きで使う。
-4. HTML 本文は `mimeutil.SanitizeHTML`（bluemonday の許可リスト、CSS のクリーニング、
-   `cid:` の解決、リモート画像のブロック）を通り、`default-src 'none'` CSP を付けた
-   別のドキュメントとして配信され、サンドボックス化された iframe に表示される。
-5. 送信は go-message で RFC 5322 を組み立て、同じ認証情報で SMTP 経由で送信し、
-   その後 Sent に追加して元のメッセージを返信済み/転送済みにする。
-6. IDLE ウォッチャー（メールボックス + フォルダーごとに 1 つ、開いているすべての
-   タブで共有される）が変更を Server-Sent Events でブラウザーにプッシュする。
+転送の取り込みは転送元、選択した宛先、リモート参照と `active`、`pending_confirmation`、
+`blocked`、`unknown` の確認状態を保持します。観測された宛先・配信方式と希望設定を
+個別保存します。未検証の方式は `unverified` のままです。API 上の存在と管理者報告は
+実配信を証明しません。Migadu の転送書き込みには引き続き V03 検証が必要です。
 
-## 共有メールボックスの共同作業
+Operation は requestId、内容ハッシュ、暗号化ペイロード、リソース占有と各ステップを
+保存します。重複送信は同じ操作を返し、revision 変更や権限失効は古い設定の実行を防ぎます。
+不明なリモート書き込みは照合が必要で、確認済みステップを繰り返しません。外部処理は
+管理者報告と `systemVerified=false` を記録します。認証情報作成の応答が失われリモート ID
+がない場合は明示的な削除報告が必要です。停止は直ちにローカルアクセスを失効し、アーカイブは
+履歴を保持します。退職処理は移管、グループ、認証情報失効を個別に記録します。
 
-共同作業の状態は `mid:<message-id>` をキーとするため、フォルダー間の移動後も残る。
-`message_state` は担当者と対応中/解決済みの状態を保持する。`mail_activity` は
-追記専用のログ（返信、転送、担当者の割り当て、メモ …）で、明示的なチーム操作からも、
-メンバーが共有メールボックスから送信したときにも書き込まれる。メッセージ一覧は行に
-「返信者」、担当者、状態のバッジを付ける。
+## メールと送信経路
 
-## ルール
+1. HTTP が現在の所有権・権限と対象プロトコル endpoint を検証します。
+2. IMAP の既定上限は全体 24、接続ごと 8、Mailbox ごと 3 です。IDLE 監視中も通常リクエスト
+   用に全体 4、接続ごと 2 の接続枠を確保します。
+3. `mailops` は IMAP でフォルダー、ページング、検索と MIME を読みます。明示マッピング、
+   一意の SPECIAL-USE、一意の名前で特殊フォルダーを選びます。
+4. `mimeutil` が HTML/CSS をサニタイズし、`cid:` を解決してリモート画像をブロックします。
+   厳格な CSP の独立文書をスクリプトなしの sandbox iframe に表示します。
+5. Submission は requestId、固定 Message-ID、ハッシュ、暗号化 envelope を保存し、本文は
+   サーバー Drafts に保持します。SMTP accepted と Sent コピーを個別記録し、不明な配信は
+   自動再試行しません。コピー再試行は SMTP を保持し、下書き削除には UID EXPUNGE が必要です。
+6. 共有 IDLE 監視が SSE で通知します。共同作業は `mid:<message-id>` を使用し、
+   `message_state` が担当・状態、`mail_activity` が返信・転送・割り当て・メモを保存して、
+   フォルダー移動後も保持します。
 
-メンバーはルールを構造化された条件とアクションとして編集する。`sieve.Compile` は
-それら（および休暇の自動返信）を、Purelymail が告知している拡張機能
-（`fileinto imap4flags copy body vacation`）を備えた Sieve スクリプトに変換する。
-スクリプトは ManageSieve（`mailserver.purelymail.com:4190`、STARTTLS）経由で
-`mailhearth` としてアップロードされ、有効化される。構造化された形式は
-`mailboxes.settings_json` に保存される。
+## ルールとフロントエンド
 
-## フロントエンド
+構造化ルールはサーバーが宣言する拡張機能に合わせて Sieve にコンパイルします。
+ManageSieve は Mailbox endpoint と go-managesieve を使用します。有効化前に現行スクリプトの
+hash を確認し、引き継ぎの承認、独立候補の読み戻し、有効化の検証後にローカル設定を更新します。
+既存スクリプトは保持します。ルールと自動返信は有効な endpoint と必要な拡張機能に依存します。
 
-Preact + `@preact/signals`、60 行の history router を使い、UI フレームワークは
-使わない。ルート: `/mail/:mailbox/:folder/:uid`、`/admin/:section/:id`、
-`/settings/:tab`、`/login`、`/invite/:token`、`/setup`。文字列は英語のキーで、
-zh-CN の辞書を伴う。レイアウトは 860 px 以上では 3 ペインのメールクライアント、
-それ未満ではドロワー + 単一ペインになる。
+Preact、`@preact/signals` と history router が `/mail`、`/admin`、`/settings`、`/login`、
+`/invite/:token`、`/setup` を提供します。860 px より広い画面は三つのペイン、それ以下は
+ドロワーと一つのペインです。English のキーに zh-CN、zh-TW、日本語、Español の辞書を
+用意し、TypeScript AST で網羅性と補間を検証します。ビルドは既存の hash ファイルを保持します。
+
+ローカルのデータベース、HTTP とビルド検証は[結合テスト](integration-testing.ja.md)を
+参照してください。実際のプロバイダーでの受け入れ検証は未完了です。

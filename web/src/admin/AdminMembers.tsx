@@ -1,11 +1,13 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { useOperationRequests } from "@/lib/useOperationRequests";
 import { t } from "@/lib/i18n";
-import { get, post, patch, del, type Member, type Role, type Domain, type Mailbox, type Group, type AccessibleMailbox } from "@/lib/api";
+import { get, post, patch, del, type ResourceOptions, type Operation, type Member, type Role, type Mailbox, type Group, type AccessibleMailbox } from "@/lib/api";
 import { toast, errorToast, can, me, refreshMailboxes } from "@/lib/state";
 import { fmtDate, copyText } from "@/lib/format";
 import { Button, Field, Icon, useAsync, Spinner, ErrorBox, Modal, StatusBadge, Avatar, Confirm, Menu, Toggle, Badge } from "@/ui";
 import { PageHead } from "./AdminOrg";
 import { go } from "@/lib/router";
+import { MailboxAttachForm } from "./AdminConnections";
 
 export function MembersPage() {
   const { data, error, loading, reload } = useAsync(() => get<Member[]>("/api/admin/members"), []);
@@ -65,45 +67,40 @@ export function MembersPage() {
 
 function useRefData() {
   return useAsync(async () => {
-    const [roles, domains, mailboxes, groups] = await Promise.all([get<Role[]>("/api/admin/roles"), get<Domain[]>("/api/admin/domains"), get<Mailbox[]>("/api/admin/mailboxes"), get<Group[]>("/api/admin/groups")]);
-    return { roles, domains: domains.filter((d) => d.status === "active"), mailboxes, groups };
+    const [roles, options, mailboxes, groups] = await Promise.all([get<Role[]>("/api/admin/roles"), get<ResourceOptions>("/api/admin/resource-options"), get<Mailbox[]>("/api/admin/mailboxes"), get<Group[]>("/api/admin/groups")]);
+    return { roles, options, mailboxes, groups };
   }, []);
 }
 
 function AddMemberModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const ref = useRefData();
   const [f, setF] = useState({ displayName: "", loginEmail: "", roleId: 0, title: "", department: "" });
-  const [mbMode, setMbMode] = useState<"new" | "bind" | "none">("new");
-  const [domainId, setDomainId] = useState(0);
-  const [local, setLocal] = useState("");
+  const [mbMode, setMbMode] = useState<"create" | "attach" | "bind" | "none">("none");
+  const [connectionId, setConnectionId] = useState(0);
   const [bindId, setBindId] = useState(0);
   const [shared, setShared] = useState<Set<number>>(new Set());
   const [groups, setGroups] = useState<Set<number>>(new Set());
   const [auth, setAuth] = useState<"invite" | "password">("invite");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ inviteLink?: string; warnings?: string[]; member: Member } | null>(null);
+  const request = useRef<{ body: string; id: string } | null>(null);
   useEffect(() => {
     if (ref.data) {
-      if (!domainId && ref.data.domains[0]) setDomainId(ref.data.domains[0].id);
       if (!f.roleId) setF((x) => ({ ...x, roleId: ref.data!.roles.find((r) => r.key === "member")?.id ?? 0 }));
     }
   }, [ref.data]);
   const unassigned = (ref.data?.mailboxes ?? []).filter((m) => m.kind === "personal" && !m.ownerMemberId && m.status === "active");
   const sharedBoxes = (ref.data?.mailboxes ?? []).filter((m) => m.kind === "shared" && m.status === "active");
   const canMailbox = can("mailboxes.manage");
-  if (result) {
-    return (
-      <Modal title={t("Member created.")} onClose={() => { onDone(); onClose(); }} footer={<Button kind="primary" onClick={() => { onDone(); onClose(); go(`/admin/members/${result.member.id}`); }}>{t("Done")}</Button>}>
-        {result.inviteLink ? <InviteLinkBox link={result.inviteLink} name={result.member.displayName} /> : null}
-        {result.warnings?.length ? (
-          <div class="notice warn">
-            <ul>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-          </div>
-        ) : null}
-      </Modal>
-    );
-  }
+  const connection = ref.data?.options.connections.find((item) => item.id === connectionId);
+  const saveMember = async (mailbox?: Record<string, unknown>) => {
+    const body: Record<string, unknown> = { ...f, mailboxAction: canMailbox ? mbMode : "none", sendInvite: auth === "invite", password: auth === "password" ? password : "", groupIds: [...groups].sort((a, b) => a - b), sharedMailboxes: [...shared].sort((a, b) => a - b), groupExpectedRevisions: Object.fromEntries((ref.data?.groups ?? []).filter((item) => groups.has(item.id)).map((item) => [item.id, item.revision])), sharedExpectedRevisions: Object.fromEntries(sharedBoxes.filter((item) => shared.has(item.id)).map((item) => [item.id, item.revision])) };
+    if (mbMode === "bind" && canMailbox) { body.mailboxId = bindId; body.mailboxExpectedRevision = unassigned.find((item) => item.id === bindId)?.revision; }
+    if (mailbox && (mbMode === "create" || mbMode === "attach")) { const { requestId, ...configuration } = mailbox; body[mbMode] = configuration; }
+    const serialized = JSON.stringify(body); if (request.current?.body !== serialized) request.current = { body: serialized, id: crypto.randomUUID() };
+    const operation = await post<Operation>("/api/admin/members", { ...body, requestId: request.current!.id });
+    onDone(); onClose(); go(`/admin/operations/${operation.operationId}`);
+  };
   return (
     <Modal
       title={t("Onboard a new member")}
@@ -115,14 +112,11 @@ function AddMemberModal({ onClose, onDone }: { onClose: () => void; onDone: () =
           <Button
             kind="primary"
             busy={busy}
+            disabled={mbMode === "create" || mbMode === "attach" || ref.loading || !!ref.error}
             onClick={async () => {
               setBusy(true);
               try {
-                const body: Record<string, unknown> = { ...f, sendInvite: auth === "invite", password: auth === "password" ? password : "", groupIds: [...groups], sharedMailboxes: [...shared] };
-                if (mbMode === "new" && canMailbox) body.newMailbox = { domainId, localPart: local };
-                if (mbMode === "bind" && canMailbox) body.bindMailboxId = bindId;
-                setResult(await post("/api/admin/members", body));
-                refreshMailboxes();
+                await saveMember();
               } catch (e) {
                 errorToast(e);
               } finally {
@@ -136,6 +130,7 @@ function AddMemberModal({ onClose, onDone }: { onClose: () => void; onDone: () =
       }
     >
       {ref.loading ? <Spinner /> : null}
+      {ref.error ? <ErrorBox error={ref.error} onRetry={ref.reload} /> : null}
       <div class="grid2">
         <Field label={t("Name")}>
           <input value={f.displayName} onInput={(e) => setF({ ...f, displayName: (e.target as HTMLInputElement).value })} autoFocus />
@@ -156,23 +151,16 @@ function AddMemberModal({ onClose, onDone }: { onClose: () => void; onDone: () =
         <fieldset class="fieldset">
           <legend>{t("Mailbox")}</legend>
           <div class="radio-row">
-            <label><input type="radio" checked={mbMode === "new"} onChange={() => setMbMode("new")} /> {t("Create a new mailbox")}</label>
+            <label><input type="radio" checked={mbMode === "create"} onChange={() => setMbMode("create")} /> {t("Create a new mailbox")}</label>
+            <label><input type="radio" checked={mbMode === "attach"} onChange={() => setMbMode("attach")} /> {t("Register existing mailbox")}</label>
             <label><input type="radio" checked={mbMode === "bind"} onChange={() => setMbMode("bind")} disabled={!unassigned.length} /> {t("Use an existing mailbox")}</label>
             <label><input type="radio" checked={mbMode === "none"} onChange={() => setMbMode("none")} /> {t("No mailbox for now")}</label>
           </div>
-          {mbMode === "new" ? (
-            <div class="row gap addr-row">
-              <input placeholder={t("Mailbox name")} value={local} onInput={(e) => setLocal((e.target as HTMLInputElement).value.toLowerCase())} />
-              <span>@</span>
-              <select value={domainId} onChange={(e) => setDomainId(Number((e.target as HTMLSelectElement).value))}>
-                {(ref.data?.domains ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </div>
-          ) : null}
+          {mbMode === "create" || mbMode === "attach" ? <Field label={t("Mail connection")}><select value={connectionId} onChange={(event) => setConnectionId(Number(event.currentTarget.value))}><option value={0}>—</option>{(ref.data?.options.connections ?? []).filter((item) => item.enabled && (mbMode !== "create" || item.providerKind !== "manual")).map((item) => <option key={item.id} value={item.id}>{item.label} · #{item.id}</option>)}</select></Field> : null}
           {mbMode === "bind" ? (
             <select value={bindId} onChange={(e) => setBindId(Number((e.target as HTMLSelectElement).value))}>
               <option value={0}>—</option>
-              {unassigned.map((m) => <option key={m.id} value={m.id}>{m.address}</option>)}
+              {unassigned.map((m) => <option key={m.id} value={m.id}>{m.address} · {m.connectionLabel} · #{m.id}</option>)}
             </select>
           ) : null}
         </fieldset>
@@ -218,6 +206,7 @@ function AddMemberModal({ onClose, onDone }: { onClose: () => void; onDone: () =
           </Field>
         ) : null}
       </fieldset>
+      {connection && (mbMode === "create" || mbMode === "attach") ? <MailboxAttachForm key={`${connection.id}/${mbMode}`} connection={connection} mode={mbMode} bindings={ref.data?.options.bindings} initialKind="personal" fixedKind onPrepared={saveMember} onSaved={() => {}} /> : null}
     </Modal>
   );
 }
@@ -237,6 +226,7 @@ export function InviteLinkBox({ link, name }: { link: string; name: string }) {
 }
 
 export function MemberDetail({ id }: { id: number }) {
+  const requests = useOperationRequests();
   const { data, error, loading, reload } = useAsync(() => get<{ member: Member; mailboxes: AccessibleMailbox[]; groupIds: number[] }>(`/api/admin/members/${id}`), [id]);
   const roles = useAsync(() => get<Role[]>("/api/admin/roles"), []);
   const [edit, setEdit] = useState(false);
@@ -267,10 +257,10 @@ export function MemberDetail({ id }: { id: number }) {
             { label: t("New invite link"), icon: "link", onClick: () => act(async () => setInvite((await post<{ inviteLink: string }>(`/api/admin/members/${m.id}/invite`)).inviteLink)), disabled: m.status === "departed" },
             { label: t("Reset password"), icon: "key", onClick: () => setPw(""), disabled: m.status === "departed" },
             m.status === "disabled"
-              ? { label: t("Enable"), icon: "check", onClick: () => act(() => post(`/api/admin/members/${m.id}/status`, { enabled: true })) }
-              : { label: t("Disable"), icon: "lock", onClick: () => act(() => post(`/api/admin/members/${m.id}/status`, { enabled: false })), disabled: isSelf || m.roleKey === "owner" || m.status === "departed" },
+              ? { label: t("Enable"), icon: "check", onClick: () => act(async () => { const operation = await post<Operation>(`/api/admin/members/${m.id}/status`, requests.prepare(`status/${m.id}`, { expectedRevision: m.revision, enabled: true })); go(`/admin/operations/${operation.operationId}`); }) }
+              : { label: t("Disable"), icon: "lock", onClick: () => act(async () => { const operation = await post<Operation>(`/api/admin/members/${m.id}/status`, requests.prepare(`status/${m.id}`, { expectedRevision: m.revision, enabled: false })); go(`/admin/operations/${operation.operationId}`); }), disabled: isSelf || m.roleKey === "owner" || m.status === "departed" },
             { label: t("Offboard"), icon: "logout", onClick: () => setOffboard(true), danger: true, disabled: isSelf || m.roleKey === "owner" || m.status === "departed" },
-            { label: t("Delete member"), icon: "trash", onClick: () => setConfirmDelete(true), danger: true, disabled: isSelf || m.roleKey === "owner" || data.mailboxes.some((b) => b.ownerMemberId === m.id) },
+            { label: t("Delete member"), icon: "trash", onClick: () => setConfirmDelete(true), danger: true, disabled: isSelf || m.roleKey === "owner" || (m.status !== "invited" && m.status !== "departed") || data.mailboxes.some((b) => b.ownerMemberId === m.id) },
           ]}
         />
       </PageHead>
@@ -301,7 +291,7 @@ export function MemberDetail({ id }: { id: number }) {
                   <Icon name={b.kind === "shared" ? "users" : "mail"} size={15} class="muted" />
                   <a href={`/admin/mailboxes/${b.id}`} class="grow">{b.displayName || b.address} <span class="muted small">{b.address}</span></a>
                   <Badge tone={b.ownerMemberId === m.id ? "good" : "neutral"}>{b.ownerMemberId === m.id ? t("Owner") : t(b.level)}</Badge>
-                  {!b.hasCredential ? <Badge tone="warn">{t("Not connected")}</Badge> : null}
+                  {b.protocols.imap?.readiness !== "ready" ? <Badge tone="warn">IMAP · {b.protocols.imap?.readiness ?? "unconfigured"}</Badge> : null}
                 </li>
               ))}
             </ul>
@@ -316,13 +306,13 @@ export function MemberDetail({ id }: { id: number }) {
         </Modal>
       ) : null}
       {offboard ? <OffboardModal member={m} mailboxes={data.mailboxes.filter((b) => b.ownerMemberId === m.id)} onClose={() => setOffboard(false)} onDone={reload} /> : null}
-      {confirmDelete ? <Confirm title={t("Delete member")} text={m.displayName} danger onClose={() => setConfirmDelete(false)} onConfirm={async () => { await del(`/api/admin/members/${m.id}`); go("/admin/members"); }} /> : null}
+      {confirmDelete ? <Confirm title={t("Delete member")} text={m.displayName} danger onClose={() => setConfirmDelete(false)} onConfirm={async () => { await del(`/api/admin/members/${m.id}`, { expectedRevision: m.revision }); go("/admin/members"); }} /> : null}
     </div>
   );
 }
 
 function EditMemberModal({ member, roles, onClose, onSaved }: { member: Member; roles: Role[]; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ displayName: member.displayName, loginEmail: member.loginEmail, roleId: member.roleId, title: member.title, department: member.department });
+  const [f, setF] = useState({ expectedRevision: member.revision, displayName: member.displayName, loginEmail: member.loginEmail, roleId: member.roleId, title: member.title, department: member.department });
   const [busy, setBusy] = useState(false);
   const isSelf = me.value?.member.id === member.id;
   return (
@@ -342,19 +332,19 @@ function EditMemberModal({ member, roles, onClose, onSaved }: { member: Member; 
   );
 }
 
-interface Plan { mailboxId: number; action: "handover" | "shared" | "keep" | "suspend"; newOwnerId: number; grantMemberIds: number[]; forwardTo: string }
+interface Plan { mailboxId: number; expectedRevision: number; action: "handover" | "shared" | "keep" | "suspend"; newOwnerId: number; grantMemberIds: number[]; forwardTo: string }
 
 function OffboardModal({ member, mailboxes, onClose, onDone }: { member: Member; mailboxes: AccessibleMailbox[]; onClose: () => void; onDone: () => void }) {
+  const requests = useOperationRequests();
   const members = useAsync(() => get<Member[]>("/api/admin/members"), []);
   const others = (members.data ?? []).filter((m) => m.id !== member.id && m.status === "active");
-  const [plans, setPlans] = useState<Plan[]>(mailboxes.map((b) => ({ mailboxId: b.id, action: "handover", newOwnerId: 0, grantMemberIds: [], forwardTo: "" })));
+  const [plans, setPlans] = useState<Plan[]>(mailboxes.map((b) => ({ mailboxId: b.id, expectedRevision: b.revision, action: "handover", newOwnerId: 0, grantMemberIds: [], forwardTo: "" })));
   const [removeGroups, setRemoveGroups] = useState(true);
-  const [revokeShared, setRevokeShared] = useState(true);
   const [busy, setBusy] = useState(false);
   const upd = (i: number, p: Partial<Plan>) => setPlans(plans.map((x, j) => (j === i ? { ...x, ...p } : x)));
   return (
-    <Modal title={t("Offboard {name}", { name: member.displayName })} wide onClose={onClose} footer={<><Button onClick={onClose}>{t("Cancel")}</Button><Button kind="danger" busy={busy} onClick={async () => { setBusy(true); try { const r = await post<{ warnings: string[] }>(`/api/admin/members/${member.id}/offboard`, { plans: plans.map((p) => ({ ...p, forwardTo: p.forwardTo.split(/[,\s;]+/).filter(Boolean) })), removeFromGroups: removeGroups, revokeShared }); toast(t("Offboarding complete."), "success"); r.warnings?.forEach((w) => toast(w, "error", undefined, 9000)); refreshMailboxes(); onDone(); onClose(); } catch (e) { errorToast(e); } finally { setBusy(false); } }}>{t("Complete offboarding")}</Button></>}>
-      <p class="muted">{t("Access ends immediately and every credential is rotated.")}</p>
+    <Modal title={t("Offboard {name}", { name: member.displayName })} wide onClose={onClose} footer={<><Button onClick={onClose}>{t("Cancel")}</Button><Button kind="danger" busy={busy} onClick={async () => { setBusy(true); try { const operation = await post<Operation>(`/api/admin/members/${member.id}/offboard`, requests.prepare("offboard", { expectedRevision: member.revision, plans: plans.map((p) => ({ ...p, forwardTo: p.forwardTo.split(/[,\s;]+/).filter(Boolean) })), removeFromGroups: removeGroups })); refreshMailboxes(); onDone(); onClose(); go(`/admin/operations/${operation.operationId}`); } catch (e) { errorToast(e); } finally { setBusy(false); } }}>{t("Complete offboarding")}</Button></>}>
+      <p class="muted">{t("Offboarding immediately revokes local sessions and mailbox access. Handover and remote access actions remain visible in the operation.")}</p>
       {mailboxes.length === 0 ? <p class="muted">{t("No mailboxes")}</p> : null}
       {mailboxes.map((b, i) => {
         const p = plans[i];
@@ -393,7 +383,7 @@ function OffboardModal({ member, mailboxes, onClose, onDone }: { member: Member;
         );
       })}
       <Toggle checked={removeGroups} onChange={setRemoveGroups} label={t("Remove from groups")} />
-      <Toggle checked={revokeShared} onChange={setRevokeShared} label={t("Revoke shared mailbox access")} />
+      <p class="muted small">{t("All shared mailbox access is revoked during offboarding.")}</p>
     </Modal>
   );
 }

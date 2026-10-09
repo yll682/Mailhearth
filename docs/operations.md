@@ -12,13 +12,14 @@ Mailhearth is built for the smallest hosts money can buy.
 | RSS idle | 25–40 MB | `GOMEMLIMIT` defaults to 160 MiB |
 | RSS busy (10 users) | 60–120 MB | dominated by IMAP fetch buffers |
 | CPU | negligible | argon2id on login is the heaviest step |
-| Disk | a few MB | SQLite: organisation model + collaboration metadata; mail stays on Purelymail |
-| Front end | 51 KB gzipped | one JS chunk, one CSS file, cached immutable |
+| Disk | grows with organisation data | SQLite stores operations, submissions and collaboration metadata; mail remains on its IMAP service |
+| Front end | about 100 KB gzipped | JS and CSS measured on 2026-10-09; content-addressed asset names |
 
 Tune `MAILHEARTH_IMAP_MAX_CONNS` (default 24) to roughly `2 × concurrent
 users + number of mailboxes people keep open`. Each IDLE watcher holds one
-connection. Purelymail allows plenty of IMAP connections per user but there
-is no reason to hold more than needed.
+connection. The global default is 24; limits are 8 per connection and 3 per mailbox.
+IDLE has separate quotas and ordinary requests retain connection capacity.
+Respect each provider's actual connection limits.
 
 ## Backups
 
@@ -37,7 +38,8 @@ location. Restoring on a new host: place both files, start the binary.
 
 ## Upgrades
 
-Migrations run automatically at start-up and are additive. Pull the new
+Migrations run automatically at start-up, including table conversions and
+reference checks. Save a consistent database and master-key backup. Pull the new
 image, `docker compose up -d`. Downgrading across a migration is not
 supported; restore a backup instead.
 
@@ -59,22 +61,41 @@ for attachments.
 
 ## Troubleshooting
 
-**"Purelymail rejected this API token"** — the token was revoked or mistyped.
-Replace it under Admin → Connection.
+**`provider_auth_failed`** — update management authentication for the identified
+connection under Admin → Connections. Failed candidate authentication preserves
+the active configuration. Mail protocol authentication is checked separately.
 
-**A mailbox shows "not connected"** — imported mailboxes get an app password
-only when someone binds them (onboarding) or an admin presses *Connect*. If
-Purelymail refuses (`createAppPassword` failing), check that the user still
-exists on the account and run *Sync now*.
+**Mailbox protocols are unconfigured** — import registers selected resources.
+Configure IMAP, SMTP, ManageSieve and entered credentials explicitly, or use a
+managed-credential capability provided by that connection. Enabled protocols
+must authenticate before configuration is committed. SMTP and ManageSieve can
+be disabled independently.
 
-**"the mail server rejected this mailbox credential"** — the app password was
-deleted in the Purelymail portal or the user's password was reset outside
-Mailhearth. Use *Rotate credential* on the mailbox.
+**`mailbox_auth_failed`** — check the affected protocol's username and password.
+Update entered credentials through protocol configuration; rotate managed
+credentials through their operation. Network failures, temporary rejection and
+unclassified ManageSieve responses remain unconfirmed. Verify remote revocation
+using a fresh connection.
 
-**Rules cannot be saved** — ManageSieve at `mailserver.purelymail.com:4190`
-must be reachable from the host (STARTTLS). Some VPS providers block outbound
-ports; test with `openssl s_client -starttls sieve -connect
-mailserver.purelymail.com:4190`.
+**Rules cannot be saved** — inspect the mailbox's ManageSieve endpoint, TLS and
+server extensions. Purelymail defaults to `mailserver.purelymail.com:4190` with
+STARTTLS. Migadu's template starts disabled; use the account's actual settings.
+Taking over an existing active script requires explicit consent and its current
+content hash. Vacation also requires the `vacation` extension.
+
+**An Operation is `unknown`** — inspect its steps and reconcile remote results
+before explicit retry. Resource locks remain held. If a credential-create response
+was lost without a saved remote ID, resolve the credential in the provider portal
+and submit an administrator cleanup report. The report cancels the operation and
+retains created resources: `external_reported`, `systemVerified: false`.
+
+**A Submission is `sent_copy_failed`** — SMTP has accepted the message; retry
+only the Sent copy. For SMTP or APPEND `unknown`, inspect the Submission and its
+unique marker. Preserve the original requestId.
+
+**Sync finds new resources** — select resources to import from that connection's
+sync result. Sync preserves credentials, access and history. Failed reads cannot
+establish that a resource was deleted.
 
 **No live updates** — SSE is being buffered by a proxy; see above. The client
 falls back to manual refresh and still polls folders when actions happen.
@@ -89,10 +110,19 @@ creates.
 Structured text logs on stderr. `MAILHEARTH_LOG_LEVEL=debug` adds per-request
 lines and IMAP watcher reconnects. Nothing in the logs contains credentials.
 
-## Development stack
+## Checks
 
-`MAILHEARTH_DEV_STACK=1` swaps Purelymail, IMAP and SMTP for in-process
-fakes. `-seed-demo` adds two domains, five users, routing rules and sample
-mail. The fake API token is `dev-token`; users authenticate with
-`<name>-pass`. The Go tests use the same fakes, so `go test ./...` exercises
-the whole stack including IMAP IDLE, SMTP submission and HTML sanitisation.
+```powershell
+go test ./... -run '^$'
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+go vet ./...
+npm --prefix web run test
+npm --prefix web run build
+```
+
+Disable `MAILHEARTH_DEV_STACK` for real integration tests. Keep authentication
+configuration under `data/integration/multi-provider/`, set
+`MAILHEARTH_MULTIPROVIDER_TEST_CONFIG`, and run
+`go test -count=1 -v ./internal/integration/multiprovider`. Missing configuration
+fails explicitly. Record local checks separately from real acceptance; unexecuted
+acceptance cases remain incomplete.

@@ -186,46 +186,28 @@ func (s *Server) routesSetup(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("POST /api/setup/connect", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		p := principalFrom(r)
-		var in struct {
-			APIToken string `json:"apiToken"`
-		}
-		if err := readJSON(r, &in); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		d, err := s.Svc.Connect(r.Context(), p.OrgID, p.Member.ID, in.APIToken)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, d)
+		writeJSON(w,http.StatusGone,apiError{Error:"请使用 /api/admin/connections",Code:"api_replaced"})
 	}))
 
 	mux.HandleFunc("GET /api/setup/discover", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		p := principalFrom(r)
-		d, err := s.Svc.Discover(r.Context(), p.OrgID)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, d)
+		writeJSON(w,http.StatusGone,apiError{Error:"请通过 connectionId 发现资源",Code:"api_replaced"})
 	}))
 
 	mux.HandleFunc("POST /api/setup/complete", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
 		var in struct {
-			BindMailbox string `json:"bindMailbox"`
+			ConnectionID int64 `json:"connectionId"`
+			BindMailboxID *int64 `json:"bindMailboxId"`
 		}
 		if err := readJSON(r, &in); err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		res, err := s.Svc.CompleteSetup(r.Context(), p.OrgID, p.Member.ID, in.BindMailbox)
+		err := s.Svc.CompleteConnectionSetup(r.Context(),p.OrgID,p.Member.ID,in.ConnectionID,in.BindMailboxID)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, res)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok":true})
 	}))
 }

@@ -4,12 +4,13 @@
 
 ## Threat model
 
-Mailhearth sits between staff browsers and Purelymail with an API token that
-can create, delete and reset every mailbox on the account. The assets, in
+Mailhearth sits between staff browsers and Purelymail, Migadu or manual mail
+servers. Management credentials can affect account resources; protocol credentials
+access individual mailboxes. The assets, in
 order of sensitivity:
 
-1. The Purelymail API token.
-2. Mailbox app passwords held for IMAP/SMTP/Sieve access.
+1. Each connection's management API credentials.
+2. Independent mailbox passwords for IMAP/SMTP/ManageSieve.
 3. Mail content and the organisation directory.
 4. Member sessions.
 
@@ -23,8 +24,10 @@ radius (secrets are encrypted at rest, so a database copy alone is useless).
 **Secrets at rest.** `secrets.Box` seals values with AES-256-GCM using a key
 derived (HKDF-SHA256) from the installation master key. The master key comes
 from `MAILHEARTH_MASTER_KEY` or `<data>/master.key` (mode 0600, generated on
-first start). Different purposes use different derived keys. The API token is
-shown only as a masked hint after saving; app passwords are never shown.
+first start). Different purposes use different derived keys. Saved API and protocol
+credentials are returned only as masked metadata. A newly generated external-client
+password can be claimed explicitly once by an authorized administrator before expiry;
+the claim response uses `Cache-Control: no-store` and removes the claimable secret.
 
 **Authentication.** Member passwords are argon2id (19 MiB, t=2). Sessions are
 random 256-bit tokens stored hashed (SHA-256); cookies are `HttpOnly`,
@@ -70,13 +73,37 @@ an `Origin` header is present, it must match the host.
 no-referrer`, a CSP for the SPA (`script-src 'self'`), immutable caching only
 for hashed assets, `no-store` for API responses.
 
-**Purelymail credentials.** One app password per mailbox. Handover,
-conversion to shared, suspension and offboarding all rotate it and also reset
-the Purelymail password, so phones and desktop clients configured by the
-departed person stop working. The old app password is revoked upstream.
+**Connections and credentials.** Management authentication is separate from protocol
+authentication. Candidate settings authenticate all enabled endpoints before commit.
+Connection, endpoint, credential and access revisions invalidate old pooled connections
+and requests. Suspension revokes local access immediately and preserves saved credentials.
+Managed rotation records creation, validation, commit and revocation separately. Entered
+credentials and external clients require explicit provider-side handling. A remote
+revocation is confirmed only by the relevant verification; administrator reports use
+`systemVerified=false`. Losing a credential-creation response without a remote ID
+requires a cleanup report and does not trigger automatic creation of another credential.
+
+**Association and concurrency.** Database constraints validate organisation, connection,
+mailbox and credential ownership. requestId, resource locks and expectedRevision protect
+operations; permissions are checked at queueing, execution and control. Historical
+mailboxes remain archived when deletion would remove sending or collaboration records.
+Domain scope controls management and discovery, while mail access retains separate checks.
+
+**TLS and authorization.** Every enabled protocol validates hostname and certificates,
+using system trust or an explicitly configured private CA. No protocol has an insecure
+certificate option. Identity display settings and sender authorization are independent;
+an alias, import or forwarding registration does not authorize SMTP From.
+
+**Sending and remote observations.** Submission encrypts its envelope and retains stable
+identifiers. SMTP and Sent results are separate; unknown delivery requires investigation
+and a new explicit request for resending. Forwarding import preserves confirmation states
+and unverified delivery modes. API presence and external reports do not verify delivery.
 
 **Sieve.** Rules are compiled from a structured model with validation of
-header names, sizes, addresses and flags; users cannot submit raw Sieve.
+header names, sizes, addresses and flags; users cannot submit raw Sieve. ManageSieve
+requires advertised extensions, verifies the active-script hash, reads back a separate
+candidate and checks activation. Taking over an active script requires confirmation;
+existing scripts are retained. Ambiguous authentication refusal remains unverified.
 
 **Audit.** Every administrative change is recorded with actor, target and
 detail in `audit_log`.
@@ -88,8 +115,8 @@ detail in `audit_log`.
   only when the proxy sets `X-Forwarded-For`.
 - Back up `master.key` separately from the database; store it in your
   password manager. Without it, stored credentials must be re-created (the
-  product can do so: rotate every mailbox).
-- Use a Purelymail API token dedicated to Mailhearth so it can be revoked
+  appropriate entered or managed flow must be completed and verified).
+- Use management API credentials dedicated to Mailhearth so they can be revoked
   independently.
-- Enable two-factor authentication on the Purelymail account itself; the API
+- Enable two-factor authentication on the provider account itself; the API
   token bypasses it, which is why it is the top asset above.

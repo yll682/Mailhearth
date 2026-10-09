@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { t, kindLabel } from "@/lib/i18n";
-import { get, post, del, type AccessibleMailbox, type Message, type Addr, type Contact, type Upload, type Identity } from "@/lib/api";
+import { get, post, del, type AccessibleMailbox, type Message, type Addr, type Contact, type Upload, type Identity, type Submission } from "@/lib/api";
 import { toast, errorToast, me } from "@/lib/state";
 import { escapeHtml, fmtDate, fmtSize, stripSubjectPrefix } from "@/lib/format";
 import { Button, Icon, Confirm } from "@/ui";
@@ -86,6 +86,10 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
   const [sourceParts, setSourceParts] = useState(mode === "forward" || mode === "draft" ? (orig?.attachments ?? []).map((a) => ({ folder: init.folder!, uid: orig!.uid, path: a.path, filename: a.filename, size: a.size })) : []);
   const [uploading, setUploading] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [submission, setSubmission] = useState<Submission | null>(null);
+  const [confirmResend, setConfirmResend] = useState(false);
+  const pendingSend = useRef<{ requestId: string; body: object } | null>(null);
+  const submissionAbort = useRef<AbortController | null>(null);
   const [dirty, setDirty] = useState(false);
   const [priority, setPriority] = useState("");
   const [minimized, setMinimized] = useState(false);
@@ -94,6 +98,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
   const editor = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const base = `/api/mail/mailboxes/${mailbox.id}`;
+  useEffect(() => () => submissionAbort.current?.abort(), []);
 
   useEffect(() => {
     if (editor.current) editor.current.innerHTML = initial.html;
@@ -131,10 +136,33 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
   // Autosave every 30s while dirty.
   useEffect(() => {
     const id = setInterval(() => {
-      if (dirty && !busy) saveDraft(true);
+      if (dirty && !busy && !pendingSend.current) saveDraft(true);
     }, 30000);
     return () => clearInterval(id);
   }, [dirty, busy, to, cc, bcc, subject, uploads, sourceParts, identityId, draftRef]);
+
+  const followSubmission = async (initial: Submission) => {
+    submissionAbort.current?.abort();
+    const controller = new AbortController();
+    submissionAbort.current = controller;
+    let current = initial;
+    setSubmission(current);
+    while (current.status === "queued" || current.status === "running" || current.status === "preparing") {
+      await new Promise<void>((resolve, reject) => {
+        if (controller.signal.aborted) { reject(controller.signal.reason); return; }
+        const abort = () => { clearTimeout(timer); reject(controller.signal.reason); };
+        const timer = setTimeout(() => { controller.signal.removeEventListener("abort", abort); resolve(); }, 1000);
+        controller.signal.addEventListener("abort", abort, { once: true });
+      });
+      current = await get<Submission>(`${base}/submissions/${current.submissionId}`, controller.signal);
+      setSubmission(current);
+    }
+    if (current.status === "sent") {
+      toast(t("Sent."), "success");
+      onSent();
+      onClose();
+    }
+  };
 
   const send = async () => {
     if (to.length + cc.length + bcc.length === 0) {
@@ -143,10 +171,11 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
     }
     setBusy(true);
     try {
-      await post(`${base}/send`, payload());
-      toast(t("Sent."), "success");
-      onSent();
-      onClose();
+      if (!pendingSend.current) pendingSend.current = { requestId: crypto.randomUUID(), body: payload() };
+      const result = submission
+        ? await get<Submission>(`${base}/submissions/${submission.submissionId}`)
+        : await post<Submission>(`${base}/send`, { ...pendingSend.current.body, requestId: pendingSend.current.requestId });
+      await followSubmission(result);
     } catch (e) {
       errorToast(e);
     } finally {
@@ -154,7 +183,16 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
     }
   };
 
+  const retrySentCopy = async () => {
+    if (!submission) return;
+    setBusy(true);
+    try { await followSubmission(await post<Submission>(`${base}/submissions/${submission.submissionId}/retry-sent-copy`)); }
+    catch (error) { errorToast(error); }
+    finally { setBusy(false); }
+  };
+
   const upload = async (files: FileList | File[]) => {
+    if (pendingSend.current || busy) return;
     const fd = new FormData();
     for (const f of Array.from(files)) fd.append("file", f, f.name);
     setUploading((n) => n + 1);
@@ -170,6 +208,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
   };
 
   const exec = (cmd: string, value?: string) => {
+    if (pendingSend.current || busy) return;
     editor.current?.focus();
     document.execCommand(cmd, false, value);
     setDirty(true);
@@ -181,6 +220,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
   };
 
   const totalSize = uploads.reduce((n, u) => n + u.size, 0) + sourceParts.reduce((n, s) => n + s.size, 0);
+  const locked = busy || !!pendingSend.current;
 
   return (
     <div class={"composer" + (minimized ? " minimized" : "")} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (e.dataTransfer?.files.length) upload(e.dataTransfer.files); }}>
@@ -196,6 +236,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
       </header>
       {!minimized ? (
         <>
+          <fieldset disabled={locked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <div class="composer-fields">
             <div class="crow">
               <label>{t("From")}</label>
@@ -251,19 +292,20 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
             <button title={t("Attach files")} onClick={() => fileInput.current?.click()}><Icon name="paperclip" size={15} /></button>
             <input ref={fileInput} type="file" multiple hidden onChange={(e) => { const f = (e.target as HTMLInputElement).files; if (f?.length) upload(f); (e.target as HTMLInputElement).value = ""; }} />
           </div>
-          <div ref={editor} class="editor" contentEditable onInput={() => setDirty(true)} data-placeholder={t("Write your message…")} />
+          </fieldset>
+          <div ref={editor} class="editor" contentEditable={!locked} onInput={() => setDirty(true)} data-placeholder={t("Write your message…")} />
           {uploads.length || sourceParts.length || uploading ? (
             <div class="composer-att">
               {sourceParts.map((s) => (
                 <span key={s.path} class="chip">
                   <Icon name="paperclip" size={12} /> {s.filename} <span class="muted">{fmtSize(s.size)}</span>
-                  <button onClick={() => { setSourceParts(sourceParts.filter((x) => x !== s)); setDirty(true); }} aria-label={t("Remove")}><Icon name="x" size={12} /></button>
+                  <button disabled={locked} onClick={() => { setSourceParts(sourceParts.filter((x) => x !== s)); setDirty(true); }} aria-label={t("Remove")}><Icon name="x" size={12} /></button>
                 </span>
               ))}
               {uploads.map((u) => (
                 <span key={u.id} class="chip">
                   <Icon name="paperclip" size={12} /> {u.filename} <span class="muted">{fmtSize(u.size)}</span>
-                  <button onClick={() => { del(`/api/mail/uploads/${u.id}`).catch(() => {}); setUploads(uploads.filter((x) => x.id !== u.id)); }} aria-label={t("Remove")}><Icon name="x" size={12} /></button>
+                  <button disabled={locked} onClick={() => { del(`/api/mail/uploads/${u.id}`).catch(errorToast); setUploads(uploads.filter((x) => x.id !== u.id)); }} aria-label={t("Remove")}><Icon name="x" size={12} /></button>
                 </span>
               ))}
               {uploading ? <span class="chip muted">{t("Uploading…")}</span> : null}
@@ -274,15 +316,27 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
             <Button kind="primary" icon="send" busy={busy} onClick={send} disabled={uploading > 0}>
               {busy ? t("Sending…") : t("Send")}
             </Button>
-            <Button onClick={() => saveDraft()} disabled={busy}>
+            <Button onClick={() => saveDraft()} disabled={busy || !!pendingSend.current}>
               {t("Save draft")}
             </Button>
             <div class="spacer" />
             {draftRef && !dirty ? <span class="muted small">{t("Draft saved")}</span> : null}
-            <button class="btn btn-icon" title={t("Discard")} onClick={() => setConfirmDiscard(true)}>
+            <button disabled={locked} class="btn btn-icon" title={t("Discard")} onClick={() => setConfirmDiscard(true)}>
               <Icon name="trash" size={16} />
             </button>
           </footer>
+          {submission && submission.status !== "sent" ? <div class="notice" role="status">
+            <p>{submission.status === "sent_copy_failed" ? t("Sent, but saving the copy failed.") : submission.status === "unknown" ? t("Delivery result unknown. Sending again may deliver a duplicate.") : submission.status === "failed" ? t("Submission failed.") : t("Submission queued.")}</p>
+            <p class="small">{submission.messageId} · {submission.createdAt} · {submission.errorCode ?? submission.status}</p>
+            {submission.status === "sent_copy_failed" ? <Button onClick={retrySentCopy} disabled={busy}>{t("Retry saving the sent copy")}</Button> : null}
+            {submission.status === "unknown" || submission.status === "failed" ? <Button onClick={() => setConfirmResend(true)} disabled={busy}>{t("Create a new sending request")}</Button> : null}
+          </div> : null}
+          {pendingSend.current && !submission && !busy ? <div class="notice" role="status">
+            <p>{t("Sending request result unavailable. Retry keeps the same request ID.")}</p>
+            <p class="small">{pendingSend.current.requestId}</p>
+            <a href="/settings/submissions">{t("Sending requests")}</a>
+            <Button onClick={() => setConfirmResend(true)}>{t("Create a new sending request")}</Button>
+          </div> : null}
         </>
       ) : null}
       {confirmDiscard ? (
@@ -299,6 +353,7 @@ export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit
           }}
         />
       ) : null}
+      {confirmResend ? <Confirm title={t("Create a new sending request")} text={t("Delivery result unknown. Sending again may deliver a duplicate.")} onClose={() => setConfirmResend(false)} onConfirm={() => { pendingSend.current = null; setSubmission(null); setConfirmResend(false); }} /> : null}
     </div>
   );
 }

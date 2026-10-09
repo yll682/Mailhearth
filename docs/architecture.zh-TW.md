@@ -2,117 +2,97 @@
 
 [English](architecture.md) · [简体中文](architecture.zh-CN.md) · **繁體中文** · [日本語](architecture.ja.md) · [Español](architecture.es.md)
 
-## 目標與非目標
+## 部署與元件
 
-Mailhearth 把 Purelymail 可靠且價格低廉的郵件基礎設施，包裝成一套小型組織能夠
-部署、管理並且每天使用的產品。它刻意**不**執行 SMTP 伺服器、不儲存郵件的主要
-副本、不過濾垃圾郵件，也不實作 DLP / eDiscovery / MDM。它同樣不是把 Purelymail
-入口網站或另一個 Roundcube 重新包裝而成的產品：管理的基本單位是組織中的一個人，
-帳號上的「使用者」並非管理單位。
+Mailhearth 使用單一 Go 執行檔、內嵌 Preact 資源和 SQLite（modernc，無 cgo）。
+郵件伺服器保存內文並負責投遞和篩選。SQLite 保存組織資料、加密憑證、資源關聯、
+管理操作、寄送請求和協作資料。Node 用於前端建置。
 
-影響設計的各種限制：
+- `cmd/mailhearth`：設定、主金鑰、資料庫、IMAP 連線池、執行器及 HTTP server。
+- `internal/config`、`internal/secrets`：環境設定、AES-256-GCM/HKDF、argon2id 和 token。
+- `internal/db`、`internal/model`：內嵌 migration、關聯檢查及持久化模型。
+- `internal/provider`：共用管理介面及 Purelymail、Migadu、manual 配接器。
+- `internal/purelymail`：供對應配接器使用的 Purelymail API 用戶端。
+- `internal/core`：連線、探索與匯入、組織、資源生命週期、Operation 和 Submission。
+- `internal/mailproto/imappool`：連線額度、endpoint 版本失效處理及 IDLE 監聽。
+- `internal/mailproto/mailops`、`mimeutil`、`sieve`：IMAP/SMTP、MIME 淨化、Sieve 編譯和 ManageSieve。
+- `internal/httpapi`、`internal/web`、`web/`：權限檢查、JSON/SSE、內嵌資源及郵件、管理、設定介面。
 
-- **極小型主機。** 目標部署環境執行在能取得的最便宜 VPS 上。伺服器是單一靜態 Go
-  執行檔，搭配 SQLite、行程內具上限的 IMAP 連線池，以及 51 KB（gzip 壓縮後）的
-  Preact 前端。執行時期不需要 Redis、不需要 Postgres、不需要 Node，除了少數協程
-  之外沒有背景工作程式。
-- **Purelymail 是郵件的真實來源。** 郵件永遠不會複製到 Mailhearth 的資料庫。用戶端
-  顯示的一切都透過 IMAP 隨需取得；資料庫只保存組織模型，以及以 `Message-ID` 為
-  索引的少量協作中繼資料。
-- **瀏覽器裡沒有機密。** API 權杖與信箱應用程式密碼以加密形式存放在 SQLite 中。
-  瀏覽器只與 Mailhearth 通訊。
+## 組織與資源歸屬
 
-## 元件
+每次部署有一個 Organization。Member 保存角色、部門及 `invited`、`active`、
+`disabled`、`departed` 狀態。Role 包含具名權限。personal Mailbox 的所有權及 shared
+Mailbox 的明確授權（`full`、`send`、`read`）決定郵件存取；管理權限不授予郵件存取。
 
-| 套件 | 職責 |
-|---|---|
-| `cmd/mailhearth` | 進入點：組態、主金鑰、資料庫、IMAP 連線池、HTTP 伺服器 |
-| `internal/config` | 環境組態 |
-| `internal/db` | SQLite（modernc，不使用 cgo）與內嵌移轉 |
-| `internal/secrets` | AES-256-GCM 加密盒（由主金鑰透過 HKDF 衍生）、argon2id、權杖 |
-| `internal/purelymail` | 具型別的 API 用戶端；`fake/` 是記憶體中的 Purelymail |
-| `internal/model` | 服務與 API 共用的組織型別 |
-| `internal/core` | 服務：初始設定/匯入、成員、角色、網域、信箱、地址、群組、離職處理、團隊狀態 |
-| `internal/mailproto/imappool` | 具上限的 IMAP 連線池與 IDLE 監看程式 |
-| `internal/mailproto/mailops` | 資料夾、列表、呈現、動作、撰寫、SMTP |
-| `internal/mailproto/mimeutil` | HTML 淨化器、文字/HTML 轉換、解碼 |
-| `internal/mailproto/sieve` | 規則模型到 Sieve 的編譯器；ManageSieve 用戶端 |
-| `internal/httpapi` | JSON API、工作階段、CSRF、上傳、SSE、沙箱化的郵件檢視 |
-| `internal/web` | 內嵌 SPA，支援 gzip 與不可變快取 |
-| `internal/devstack` | 供開發與測試使用的模擬 Purelymail、IMAP 與 SMTP |
-| `web/` | Preact + Vite 單頁應用程式（郵件、管理、設定） |
+MailConnection 屬於組織，保存供應商類型、名稱、管理 API 驗證、網域範圍和三項協定
+預設範本。Domain 表示邏輯網域；DomainBinding 保存連線關聯、供應商設定及 DNS 狀態。
+Mailbox 地址在所屬連線內唯一，不同連線的相同地址分別保存。
 
-## 組織模型
+Address 包含 `primary`、`alias`、`forward`、`group`、`catchall`、`prefix` 和外部管理的
+`external_rule`。信箱轉寄獨立保存於 `mailbox_forwardings`，匯入保留 primary 地址。
+Identity 顯示設定和 SMTP 寄件授權分別處理；收件別名不授予對應 From 的寄送權限。
+Group 計算全部符合條件的 personal 信箱，檢查連線與網域限制後移除重複目標。
 
-| 概念 | 含義 | 儲存於 |
-|---|---|---|
-| **Organization** | 一份安裝中唯一的租戶。 | `organizations` |
-| **Member** | 實際登入 Mailhearth 的人員。具有角色、狀態（invited/active/disabled/departed）、職稱、部門。 | `members` |
-| **Role** | 具名的權限集合（`members.manage`、`shared.manage`……）。內建：owner、admin、member；允許自訂角色。 | `roles` |
-| **Domain** | Purelymail 帳號上的網域，附帶 DNS 健康狀態。 | `domains` ↔ Purelymail 網域 |
-| **Mailbox** | 儲存郵件的登入帳號。`personal`（由單一成員擁有）或 `shared`（由組織擁有，由多位成員共同處理）。 | `mailboxes` ↔ Purelymail 使用者 |
-| **Address** | 可接收郵件的對象：信箱本身的地址（`primary`）、指向單一信箱的 `alias`、轉寄到任意目標的 `forward`、`group` 的發送地址、`catchall` 或 `prefix` 規則。 | `addresses` ↔ Purelymail 路由規則 |
-| **Identity** | 信箱可用來寄件的身分：From 地址 + 顯示名稱 + 簽名檔。 | `identities` |
-| **Group** | 一組成員，可選擇搭配發送地址，其目標會跟隨成員組成。 | `groups`、`group_members` |
-| **Access grant** | 成員 → 信箱，層級為 `full`/`send`/`read`。 | `mailbox_access` |
+ProviderResource 將各遠端參照關聯至一個本地物件及用途，保存歸屬、遠端狀態和
+安全的結構化觀察結果。參照限制與 revision 檢查保護連線、組織範圍和歷史記錄。
 
-一位成員可以擁有數個信箱；一個信箱可以有多個地址；一個地址可以送達數位成員
-（透過轉寄或群組）。當人員更換角色或離職時，信箱與地址仍留在組織內：擁有權會被
-重新指派，永遠不會被隱含刪除。
+## 協定設定
 
-## 對應到 Purelymail
+每個 Mailbox 有獨立的 IMAP、SMTP 和 ManageSieve endpoint。network mode 為
+`inherit`、`override` 或 `disabled`；啟用的 endpoint 分別指定 username 和加密
+Credential。憑證使用 `managed` 或明確輸入方式。候選設定通過全部啟用協定的驗證
+之後才能在同一交易內提交。endpoint、連線、憑證及存取版本變化會關閉舊連線。
 
-| Mailhearth 動作 | Purelymail API 呼叫 |
-|---|---|
-| 連線 | `checkAccountCredit`（驗證權杖） |
-| 匯入 / 同步 | `listDomains`、`listUser`、`listRoutingRules` — 唯讀、冪等 |
-| 建立信箱 | `createUser`（隨機密碼，不寄送歡迎郵件）+ `createAppPassword` |
-| 連線已匯入的信箱 | `createAppPassword`（永遠不需要既有密碼） |
-| 輪替憑證 | `createAppPassword`，接著對舊的執行 `deleteAppPassword` |
-| 為外部用戶端重設密碼 | `modifyUser{newPassword}` + 輪替 |
-| 停權 / 離職鎖定 | `modifyUser{newPassword}` + `deleteAppPassword` |
-| 別名 / 轉寄 / 全收地址 / 前綴 / 群組地址 | `createRoutingRule` / `deleteRoutingRule` |
-| 信箱上的轉寄 | 在信箱本身地址上的路由規則（Purelymail 語意：規則優先於投遞） |
-| 網域新增 / DNS 重新檢查 / 設定 | `addDomain`、`updateDomainSettings`、`getOwnershipCode` |
+Purelymail 預設 IMAP 為 `imap.purelymail.com:993` TLS，SMTP 為
+`smtp.purelymail.com:465` TLS，ManageSieve 為 `mailserver.purelymail.com:4190` STARTTLS。
+Migadu 預設 IMAP 為 `imap.migadu.com:993` TLS，SMTP 為 `smtp.migadu.com:465` TLS，
+ManageSieve 停用。手動連線預設全部停用，需要明確設定。TLS 使用系統憑證或明確指定
+的私人 CA 憑證集合，並驗證 hostname。
 
-Mailhearth 為每個信箱保留恰好一個應用程式密碼，名稱為「Mailhearth」。成員永遠
-看不到它；伺服器在確認成員擁有該信箱或取得授權之後，代替成員將它用於 IMAP、
-SMTP 與 ManageSieve。管理權限不授予郵件存取權：讀取共用信箱一律需要明確的授權。
+## 探索、匯入與管理操作
 
-## 郵件路徑
+探索完整讀取所選範圍，產生具有期限及連線 revision 的快照。匯入在同一本地交易內
+檢查歸屬、版本、期限和相依項目。匯入的 personal 信箱沒有 owner 和登入憑證。同步
+更新已登記資源的觀察結果；新增資源等待選擇匯入。owner、存取授權、協作資料、簽名
+及 entered 憑證保留。
 
-1. `httpapi` 為已登入的成員解析信箱（`core.ResolveMailbox`），並取得憑證。
-2. `imappool.Get` 傳回連線池中的連線（總數上限為 `MAILHEARTH_IMAP_MAX_CONNS`，
-   每個憑證保留 2 條閒置連線，閒置 90 秒後回收）。
-3. `mailops` 執行 IMAP 命令：資料夾使用帶 `LIST-STATUS` 的 `LIST`，分頁使用序號
-   範圍的 `FETCH` 取得 envelope + flags + `BODYSTRUCTURE`，查詢使用 `UID SEARCH`，
-   呈現使用 `BODY.PEEK[part]`，在可用時使用 `MOVE`/`UIDPLUS`，並具備後備做法。
-4. HTML 內文會經過 `mimeutil.SanitizeHTML`（bluemonday 允許清單、CSS 清理、`cid:`
-   解析、遠端圖片封鎖），並以具備 `default-src 'none'` CSP 的獨立文件提供，顯示於
-   沙箱化的 iframe 中。
-5. 寄送時使用 go-message 建構 RFC 5322，透過 SMTP 以相同憑證提交，接著附加到寄件
-   備份並將原始郵件標記為已回覆/已轉寄。
-6. IDLE 監看程式（每個信箱+資料夾一個，由所有開啟的分頁共用）透過 Server-Sent
-   Events 將變更推送給瀏覽器。
+轉寄匯入保存來源信箱、所選目標、遠端參照及 `active`、`pending_confirmation`、
+`blocked`、`unknown` 確認狀態。觀察目標及投遞方式與期望設定分別保存。未驗證的
+方式保持 `unverified`；API 中存在資源及管理員報告均不證明實際投遞。Migadu 轉寄
+寫入持續要求 V03 驗證。
 
-## 共用信箱協作
+Operation 保存 requestId、內容摘要、加密資料、資源占用及獨立步驟。重複提交傳回
+原操作；版本變化及權限撤銷阻止舊設定執行。未知遠端寫入需要查核，已確認步驟保持
+完成。外部操作保存管理員報告及 `systemVerified=false`。憑證建立回應遺失且沒有遠端
+ID 時需要明確的清理報告。暫停立即撤銷本地存取；封存保留歷史。離職分別記錄移交、
+群組處理和憑證撤銷。
 
-協作狀態以 `mid:<message-id>` 為索引，因此在資料夾之間移動後仍然保留。
-`message_state` 保存指派對象與開啟/已解決狀態；`mail_activity` 是僅可附加的記錄
-（已回覆、已轉寄、已指派、備註……），由明確的團隊動作寫入，也會在成員從共用信箱
-寄件時自動寫入。郵件列表會在資料列上加上「已由誰回覆」、指派對象與狀態標記。
+## 郵件與寄送流程
 
-## 規則
+1. HTTP 檢查目前所有權或授權，解析對應協定 endpoint。
+2. IMAP 連線預設總上限 24、每個連線 8、每個信箱 3。IDLE 監聽執行時為一般請求保留
+   總計 4 個、每個連線 2 個名額。
+3. `mailops` 透過 IMAP 讀取資料夾、分頁、搜尋及 MIME 內容。明確映射、唯一
+   SPECIAL-USE 和唯一名稱識別用於確定特殊資料夾。
+4. `mimeutil` 清理 HTML/CSS、解析 `cid:`、阻擋遠端圖片。獨立文件使用限制性 CSP，
+   在無指令碼的沙箱 iframe 中顯示。
+5. Submission 保存 requestId、固定 Message-ID、內容摘要和加密 envelope；內文保存
+   在伺服器 Drafts。SMTP accepted 及 Sent 副本分別記錄。未知寄送結果不會自動重試。
+   重試副本保留 SMTP 狀態；草稿清理要求 UID EXPUNGE。
+6. 共用 IDLE 監聽透過 SSE 通知瀏覽器。協作使用 `mid:<message-id>`，`message_state`
+   保存負責人及狀態，`mail_activity` 保存回覆、轉寄、指派及備註，移動資料夾後保留。
 
-成員以結構化的條件/動作編輯郵件規則。`sieve.Compile` 會將它們（加上假期自動回覆）
-轉換成 Sieve 指令碼，並使用 Purelymail 宣告支援的擴充功能
-（`fileinto imap4flags copy body vacation`）。指令碼以 `mailhearth` 為名稱透過
-ManageSieve（`mailserver.purelymail.com:4190`，STARTTLS）上傳並啟用。結構化形式
-保存在 `mailboxes.settings_json`。
+## 規則與前端
 
-## 前端
+結構化規則根據伺服器宣告的擴充功能編譯為 Sieve。ManageSieve 使用信箱 endpoint 和
+go-managesieve。啟用前檢查目前指令碼 hash，接管需要確認，讀取獨立候選指令碼並查核
+啟用結果，接著更新本地設定。既有指令碼保留。規則及自動回覆能力分別依賴啟用協定
+和所需擴充功能。
 
-Preact + `@preact/signals`，一個 60 行的 history router，不使用 UI 框架。路由：
-`/mail/:mailbox/:folder/:uid`、`/admin/:section/:id`、`/settings/:tab`、`/login`、
-`/invite/:token`、`/setup`。字串是英文鍵，搭配 zh-CN 字典。佈局在 860 px 以上是
-三窗格的郵件用戶端，以下則是抽屜加單一窗格。
+Preact、`@preact/signals` 和 history router 提供 `/mail`、`/admin`、`/settings`、
+`/login`、`/invite/:token`、`/setup`。860 px 以上使用三欄，以下使用抽屜和單欄。
+English 來源文案提供 zh-CN、zh-TW、日本語和 Español 字典。TypeScript AST 檢查翻譯
+覆蓋與插值參數。正式建置保留既有 hash 資源供已開啟的用戶端使用。
+
+本地資料庫、HTTP 和建置檢查見[整合測試](integration-testing.zh-TW.md)。真實供應商
+驗收尚未完成。

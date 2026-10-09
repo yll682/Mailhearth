@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -24,6 +25,7 @@ import (
 // installation master key.
 type Box struct {
 	aead cipher.AEAD
+	requestKey []byte
 }
 
 // LoadMasterKey returns the 32-byte master key. It is read from
@@ -89,7 +91,13 @@ func NewBox(master []byte, purpose string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	requestKey,err:=hkdf.Key(sha256.New,master,nil,"mailhearth/request-digests",32)
+	if err!=nil{return nil,err}
+	return &Box{aead: aead,requestKey:requestKey}, nil
+}
+
+func (b *Box) RequestDigest(data []byte) string {
+	mac:=hmac.New(sha256.New,b.requestKey);mac.Write(data);return hex.EncodeToString(mac.Sum(nil))
 }
 
 // Seal encrypts plaintext; the output is safe to store in a TEXT column.

@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   build: {
     outDir: "../internal/web/dist",
-    emptyOutDir: true,
+    emptyOutDir: false,
     target: "es2022",
     sourcemap: false,
     cssCodeSplit: false,

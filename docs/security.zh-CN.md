@@ -4,11 +4,11 @@
 
 ## 威胁模型
 
-Mailhearth 位于员工浏览器和 Purelymail 之间，手里握着一个可以创建、删除和重置
-账户上任意邮箱的 API 令牌。按敏感程度排列，需要保护的资产是：
+Mailhearth 位于员工浏览器与 Purelymail、Migadu 或手动配置的邮件服务器之间。
+管理凭据可以操作账户资源，协议凭据访问各个邮箱。需要保护的资产包括：
 
-1. Purelymail API 令牌。
-2. 为访问 IMAP/SMTP/Sieve 而持有的邮箱应用密码。
+1. 各连接的管理 API 凭据。
+2. 用于 IMAP/SMTP/ManageSieve 的独立邮箱密码。
 3. 邮件内容和组织通讯录。
 4. 成员的会话。
 
@@ -20,8 +20,9 @@ Mailhearth 位于员工浏览器和 Purelymail 之间，手里握着一个可以
 
 **静态加密。** `secrets.Box` 用 AES-256-GCM 加密，密钥由本次部署的 master key 经
 HKDF-SHA256 派生。master key 来自 `MAILHEARTH_MASTER_KEY`，或首次启动时生成的
-`<data>/master.key`（权限 0600）。不同用途使用不同的派生密钥。API 令牌保存后只以
-掩码形式展示，应用密码从不展示。
+`<data>/master.key`（权限 0600）。不同用途使用不同的派生密钥。已保存的 API 和协议
+凭据仅返回掩码信息。新生成的外部客户端密码允许授权管理员在期限内明确领取一次；
+领取响应使用 `Cache-Control: no-store`，并移除可领取的秘密。
 
 **身份认证。** 成员密码使用 argon2id（19 MiB，t=2）。会话是 256 位随机 token，
 以 SHA-256 哈希后存储；cookie 带 `HttpOnly`、`SameSite=Lax`，在 base URL 为 HTTPS
@@ -62,12 +63,28 @@ HKDF-SHA256 派生。master key 来自 `MAILHEARTH_MASTER_KEY`，或首次启动
 针对 SPA 的 CSP（`script-src 'self'`）、只对带哈希的静态资源使用不可变缓存、
 API 响应一律 `no-store`。
 
-**Purelymail 凭据。** 每个邮箱一个应用密码。移交、转为共享、挂起和离职处理都会
-轮换它，同时重置 Purelymail 密码，这样离职者在手机和桌面客户端上配置的连接也会
-失效。旧的应用密码会在 Purelymail 侧删除。
+**连接与凭据。** 管理认证和协议认证分别配置。候选配置通过全部启用 endpoint 的认证
+之后提交。连接、endpoint、凭据和访问版本使旧连接及请求失效。暂停立即撤销本地
+访问并保留凭据。managed 轮换分别记录创建、验证、提交和撤销；entered 凭据及外部
+客户端需要明确的服务商侧处理。远程撤销只有通过相应核验才能确认；管理员报告保存
+`systemVerified=false`。凭据创建响应丢失且没有远程 ID 时需要清理报告，不会自动
+再次创建凭据。
+
+**关联与并发。** 数据库约束检查组织、连接、邮箱和凭据归属。requestId、资源占用及
+expectedRevision 保护管理操作；排队、执行及操作控制检查权限。删除会影响发送或
+协作历史的邮箱保留归档。domain scope 控制管理与发现，邮件访问另行检查。
+
+**TLS 与授权。** 每项启用协议验证 hostname 和证书，使用系统证书或明确配置的私有
+CA。协议没有忽略证书验证选项。Identity 显示设置与发件授权分别处理；别名、导入
+及转发登记不授予 SMTP From 权限。
+
+**发送与远程观察。** Submission 加密 envelope 并保留固定标识。SMTP 与 Sent 分别
+保存；未知发送结果需要核查，重新发送需要明确的新请求。转发导入保留确认状态及
+未经验证的投递方式。API 资源存在和外部报告均不确认实际投递。
 
 **Sieve。** 规则由结构化模型编译而来，编译时校验邮件头名称、大小、地址和标记；
-用户无法提交原始 Sieve 脚本。
+用户无法提交原始 Sieve 脚本。ManageSieve 检查扩展、active script hash、独立候选
+脚本的读取和启用结果。接管需要确认，已有脚本保留。未明确的认证拒绝保持尚未验证。
 
 **审计。** 每一次管理操作都记录操作者、对象和详情，写入 `audit_log`。
 
@@ -77,7 +94,6 @@ API 响应一律 `no-store`。
   才会带 `Secure`。只有在代理确实设置了 `X-Forwarded-For` 时才开启
   `MAILHEARTH_TRUST_PROXY=true`。
 - 把 `master.key` 与数据库分开备份，存进你的密码管理器。没有它，所有已保存的
-  凭据都需要重新建立（产品本身支持这样做：轮换每个邮箱的凭据）。
-- 为 Mailhearth 单独申请一个 Purelymail API 令牌，以便可以独立吊销。
-- 在 Purelymail 账户本身开启两步验证；API 令牌会绕过它，这正是它排在资产首位的
-  原因。
+  凭据需要通过适用的 entered 或 managed 流程重新配置并验证。
+- 为 Mailhearth 配置专用管理 API 凭据，以便可以独立撤销。
+- 在服务商账户本身开启两步验证；API 凭据可以独立访问账户，因此需要专门保护。

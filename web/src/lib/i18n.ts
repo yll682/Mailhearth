@@ -41,6 +41,38 @@ export function setLang(l: Lang) {
 }
 
 const zhCN: Record<string, string> = {
+  "Full mailbox address": "完整邮箱地址",
+  "Report lost credential cleanup": "报告未知凭据清理结果", "Remove the unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.": "请在服务商管理界面清理未知的应用凭据后报告。报告将取消操作，并保留已经创建的资源。",
+  "Balance and usage by connection": "各连接的余额与用量", "Values retain the provider's units and scope.": "数值保留服务商提供的单位和范围。", "Usage": "用量", "balance": "余额", "incoming": "收件数量", "outgoing": "发件数量", "storage": "存储用量", "messages": "封邮件", "provider_credit": "服务商余额单位", "current_date": "服务商当前日期",
+  "Auto-reply is not available for this server.": "当前服务器无法使用自动回复。",
+  "Operations": "管理操作",
+  "All operations": "全部操作",
+  "Cancel operation": "取消操作",
+  "Retry operation": "重试操作",
+  "Check operation result": "核查操作结果",
+  "No operations.": "暂无管理操作。",
+  "View the active operation": "查看正在进行的操作",
+  "Retries preserve the original request and operation ID. Unknown results require checking.": "重试保留原请求与操作标识。结果未知的操作需要核查。",
+  "Sending requests": "发送请求",
+  "Recent sending requests remain available after closing the composer.": "关闭撰写窗口后仍可查询最近的发送请求。",
+  "No sending requests.": "暂无发送请求。",
+  "Check the mail server using the Message-ID and creation time before sending again.": "重新发送前，请使用 Message-ID 和创建时间查询邮件服务器。",
+  "Only the Sent copy is retried. SMTP acceptance is retained.": "仅重新保存 Sent 副本。已确认的 SMTP 接受状态保持不变。",
+  "Sending request result unavailable. Retry keeps the same request ID.": "暂时无法获取发送请求结果。再次请求会使用同一个请求标识。",
+  "Special folders": "特殊文件夹",
+  "Choose existing folders. Automatic selection requires a unique match.": "请选择已有文件夹。自动选择需要唯一匹配的文件夹。",
+  "Automatic selection": "自动选择",
+  "Folder unavailable": "文件夹不可用",
+  "Folder mapping saved.": "已保存文件夹映射。",
+  "Sent copy handling": "发送副本保存方式",
+  "Mailhearth saves the Sent copy": "由 Mailhearth 保存发送副本",
+  "Mail server saves the Sent copy": "由邮件服务器保存发送副本",
+  "Archive mailbox": "归档邮箱",
+  "Unregister mailbox": "解除邮箱登记",
+  "Removes local registration. Remote mail remains on the server.": "解除本地登记。远程邮件继续保存在服务器上。",
+  "Revoke these credentials in the external mail service:": "请在外部邮件服务中撤销以下凭据：",
+  "Authorize sending": "授权发送",
+  "Revoke sending authorization": "撤销发送授权",
   // Short labels; the long form lives in an ⓘ popover.
   "Search mail": "搜索邮件",
   "Nothing on Purelymail is changed.": "不会改动 Purelymail 上的任何数据。",
@@ -190,6 +222,38 @@ const zhCN: Record<string, string> = {
 };
 
 const zhTW: Record<string, string> = {
+  "Full mailbox address": "完整信箱地址",
+  "Report lost credential cleanup": "回報未知憑證清理結果", "Remove the unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.": "請在服務商管理介面清理未知的應用程式憑證後回報。回報將取消操作，並保留已建立的資源。",
+  "Balance and usage by connection": "各連線的餘額與用量", "Values retain the provider's units and scope.": "數值保留服務商提供的單位和範圍。", "Usage": "用量", "balance": "餘額", "incoming": "收件數量", "outgoing": "寄件數量", "storage": "儲存用量", "messages": "封郵件", "provider_credit": "服務商餘額單位", "current_date": "服務商目前日期",
+  "Auto-reply is not available for this server.": "目前伺服器無法使用自動回覆。",
+  "Operations": "管理操作",
+  "All operations": "全部操作",
+  "Cancel operation": "取消操作",
+  "Retry operation": "重試操作",
+  "Check operation result": "核查操作結果",
+  "No operations.": "目前沒有管理操作。",
+  "View the active operation": "查看進行中的操作",
+  "Retries preserve the original request and operation ID. Unknown results require checking.": "重試保留原始請求與操作識別碼。結果未知的操作需要核查。",
+  "Sending requests": "寄件請求",
+  "Recent sending requests remain available after closing the composer.": "關閉撰寫視窗後仍可查詢最近的寄件請求。",
+  "No sending requests.": "目前沒有寄件請求。",
+  "Check the mail server using the Message-ID and creation time before sending again.": "重新寄送前，請使用 Message-ID 和建立時間查詢郵件伺服器。",
+  "Only the Sent copy is retried. SMTP acceptance is retained.": "僅重新儲存 Sent 副本。已確認的 SMTP 接受狀態保持不變。",
+  "Sending request result unavailable. Retry keeps the same request ID.": "暫時無法取得寄件請求結果。重試會使用同一個請求識別碼。",
+  "Special folders": "特殊資料夾",
+  "Choose existing folders. Automatic selection requires a unique match.": "請選擇現有資料夾。自動選擇需要唯一符合的資料夾。",
+  "Automatic selection": "自動選擇",
+  "Folder unavailable": "資料夾無法使用",
+  "Folder mapping saved.": "已儲存資料夾對應。",
+  "Sent copy handling": "寄件副本儲存方式",
+  "Mailhearth saves the Sent copy": "由 Mailhearth 儲存寄件副本",
+  "Mail server saves the Sent copy": "由郵件伺服器儲存寄件副本",
+  "Archive mailbox": "封存信箱",
+  "Unregister mailbox": "解除信箱登記",
+  "Removes local registration. Remote mail remains on the server.": "解除本機登記。遠端郵件繼續保存在伺服器上。",
+  "Revoke these credentials in the external mail service:": "請在外部郵件服務中撤銷以下憑證：",
+  "Authorize sending": "授權寄件",
+  "Revoke sending authorization": "撤銷寄件授權",
   // Short labels; the long form lives in an ⓘ popover.
   "Search mail": "搜尋郵件",
   "Nothing on Purelymail is changed.": "不會變更 Purelymail 上的任何資料。",
@@ -339,6 +403,38 @@ const zhTW: Record<string, string> = {
 };
 
 const ja: Record<string, string> = {
+  "Full mailbox address": "完全なメールアドレス",
+  "Report lost credential cleanup": "不明な認証情報の削除を報告", "Remove the unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.": "プロバイダーの管理画面で不明なアプリ認証情報を削除してから報告してください。操作はキャンセルされ、作成済みのリソースは保持されます。",
+  "Balance and usage by connection": "接続別の残高と使用量", "Values retain the provider's units and scope.": "数値はプロバイダーの単位と範囲で表示されます。", "Usage": "使用量", "balance": "残高", "incoming": "受信数", "outgoing": "送信数", "storage": "ストレージ使用量", "messages": "通", "provider_credit": "プロバイダーの残高単位", "current_date": "プロバイダーの現在日付",
+  "Auto-reply is not available for this server.": "このサーバーでは自動返信を利用できません。",
+  "Operations": "管理操作",
+  "All operations": "すべての操作",
+  "Cancel operation": "操作をキャンセル",
+  "Retry operation": "操作を再試行",
+  "Check operation result": "操作結果を確認",
+  "No operations.": "管理操作はありません。",
+  "View the active operation": "進行中の操作を表示",
+  "Retries preserve the original request and operation ID. Unknown results require checking.": "再試行では元のリクエストと操作 ID を維持します。結果が不明な操作は確認が必要です。",
+  "Sending requests": "送信リクエスト",
+  "Recent sending requests remain available after closing the composer.": "作成画面を閉じた後も最近の送信リクエストを確認できます。",
+  "No sending requests.": "送信リクエストはありません。",
+  "Check the mail server using the Message-ID and creation time before sending again.": "再送信する前に Message-ID と作成時刻でメールサーバーを確認してください。",
+  "Only the Sent copy is retried. SMTP acceptance is retained.": "Sent コピーの保存のみを再試行します。SMTP の受理状態は維持されます。",
+  "Sending request result unavailable. Retry keeps the same request ID.": "送信リクエストの結果を取得できません。再試行では同じ ID を使用します。",
+  "Special folders": "特殊フォルダー",
+  "Choose existing folders. Automatic selection requires a unique match.": "既存のフォルダーを選択してください。自動選択には一意の一致が必要です。",
+  "Automatic selection": "自動選択",
+  "Folder unavailable": "フォルダーを利用できません",
+  "Folder mapping saved.": "フォルダーの割り当てを保存しました。",
+  "Sent copy handling": "送信済みコピーの保存方法",
+  "Mailhearth saves the Sent copy": "Mailhearth が送信済みコピーを保存",
+  "Mail server saves the Sent copy": "メールサーバーが送信済みコピーを保存",
+  "Archive mailbox": "メールボックスをアーカイブ",
+  "Unregister mailbox": "メールボックスの登録を解除",
+  "Removes local registration. Remote mail remains on the server.": "ローカル登録を解除します。メールはサーバー上に保存されます。",
+  "Revoke these credentials in the external mail service:": "外部メールサービスで次の認証情報を取り消してください：",
+  "Authorize sending": "送信を許可",
+  "Revoke sending authorization": "送信許可を取り消す",
   // Short labels; the long form lives in an ⓘ popover.
   "Search mail": "メールを検索",
   "Nothing on Purelymail is changed.": "Purelymail 上のデータは一切変更されません。",
@@ -488,6 +584,38 @@ const ja: Record<string, string> = {
 };
 
 const es: Record<string, string> = {
+  "Full mailbox address": "Dirección completa del buzón",
+  "Report lost credential cleanup": "Informar de la eliminación de credenciales desconocidas", "Remove the unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.": "Elimina la credencial de aplicación desconocida en el proveedor antes de informar. La operación se cancela y se conservan los recursos ya creados.",
+  "Balance and usage by connection": "Saldo y uso por conexión", "Values retain the provider's units and scope.": "Los valores conservan las unidades y el alcance del proveedor.", "Usage": "Uso", "balance": "Saldo", "incoming": "Recibidos", "outgoing": "Enviados", "storage": "Almacenamiento", "messages": "mensajes", "provider_credit": "unidades de saldo del proveedor", "current_date": "fecha actual del proveedor",
+  "Auto-reply is not available for this server.": "Las respuestas automáticas no están disponibles en este servidor.",
+  "Operations": "Operaciones de administración",
+  "All operations": "Todas las operaciones",
+  "Cancel operation": "Cancelar operación",
+  "Retry operation": "Reintentar operación",
+  "Check operation result": "Comprobar resultado",
+  "No operations.": "No hay operaciones de administración.",
+  "View the active operation": "Ver operación activa",
+  "Retries preserve the original request and operation ID. Unknown results require checking.": "Los reintentos conservan la solicitud y el ID originales. Los resultados desconocidos requieren comprobación.",
+  "Sending requests": "Solicitudes de envío",
+  "Recent sending requests remain available after closing the composer.": "Las solicitudes recientes siguen disponibles después de cerrar el editor.",
+  "No sending requests.": "No hay solicitudes de envío.",
+  "Check the mail server using the Message-ID and creation time before sending again.": "Consulta el servidor con el Message-ID y la fecha de creación antes de enviar de nuevo.",
+  "Only the Sent copy is retried. SMTP acceptance is retained.": "Solo se reintenta guardar la copia Sent. Se conserva la aceptación SMTP.",
+  "Sending request result unavailable. Retry keeps the same request ID.": "El resultado del envío no está disponible. El reintento conserva el mismo ID.",
+  "Special folders": "Carpetas especiales",
+  "Choose existing folders. Automatic selection requires a unique match.": "Elige carpetas existentes. La selección automática requiere una coincidencia única.",
+  "Automatic selection": "Selección automática",
+  "Folder unavailable": "Carpeta no disponible",
+  "Folder mapping saved.": "Asignación de carpetas guardada.",
+  "Sent copy handling": "Guardado de copias enviadas",
+  "Mailhearth saves the Sent copy": "Mailhearth guarda la copia enviada",
+  "Mail server saves the Sent copy": "El servidor guarda la copia enviada",
+  "Archive mailbox": "Archivar buzón",
+  "Unregister mailbox": "Quitar registro del buzón",
+  "Removes local registration. Remote mail remains on the server.": "Quita el registro local. El correo permanece en el servidor.",
+  "Revoke these credentials in the external mail service:": "Revoca estas credenciales en el servicio de correo externo:",
+  "Authorize sending": "Autorizar envío",
+  "Revoke sending authorization": "Revocar autorización de envío",
   // Short labels; the long form lives in an ⓘ popover.
   "Search mail": "Buscar correo",
   "Nothing on Purelymail is changed.": "No se modifica nada en Purelymail.",
@@ -636,7 +764,245 @@ const es: Record<string, string> = {
   "added a domain": "añadió un dominio", "updated a domain": "actualizó un dominio", "removed a domain": "eliminó un dominio", "created a role": "creó un rol", "updated a role": "actualizó un rol", "deleted a role": "eliminó un rol",
 };
 
+Object.assign(zhCN, {
+  "Revoke all remote access": "撤销全部远程访问", "Remote access methods must be reviewed individually. Completion is recorded as an administrator report.": "需要逐项检查远程访问方式。处理完成将记录为管理员报告。",
+  "Delivery mode": "投递方式", "Redirect": "转移投递", "Keep a copy and forward": "保留副本并转发",
+  "Sent, but saving the copy failed.": "已发送，保存副本失败。",
+  "Delivery result unknown. Sending again may deliver a duplicate.": "发送结果未知。再次发送可能重复投递。",
+  "Submission failed.": "提交失败。", "Submission queued.": "提交正在等待处理。",
+  "Retry saving the sent copy": "重试保存已发送副本", "Create a new sending request": "创建新的发送请求",
+});
+Object.assign(zhTW, {
+  "Revoke all remote access": "撤銷全部遠端存取", "Remote access methods must be reviewed individually. Completion is recorded as an administrator report.": "需要逐項檢查遠端存取方式。處理完成將記錄為管理員報告。",
+  "Delivery mode": "投遞方式", "Redirect": "轉移投遞", "Keep a copy and forward": "保留副本並轉寄",
+  "Sent, but saving the copy failed.": "已傳送，儲存副本失敗。",
+  "Delivery result unknown. Sending again may deliver a duplicate.": "傳送結果未知。再次傳送可能重複投遞。",
+  "Submission failed.": "提交失敗。", "Submission queued.": "提交正在等待處理。",
+  "Retry saving the sent copy": "重試儲存已傳送副本", "Create a new sending request": "建立新的傳送請求",
+});
+Object.assign(ja, {
+  "Revoke all remote access": "すべてのリモートアクセスを取り消す", "Remote access methods must be reviewed individually. Completion is recorded as an administrator report.": "リモートアクセス方法を個別に確認してください。完了は管理者の報告として記録されます。",
+  "Delivery mode": "配信方法", "Redirect": "転送のみ", "Keep a copy and forward": "コピーを保持して転送",
+  "Sent, but saving the copy failed.": "送信済みですが、コピーの保存に失敗しました。",
+  "Delivery result unknown. Sending again may deliver a duplicate.": "送信結果が不明です。再送すると重複して配信される可能性があります。",
+  "Submission failed.": "送信要求に失敗しました。", "Submission queued.": "送信要求は処理待ちです。",
+  "Retry saving the sent copy": "送信済みコピーの保存を再試行", "Create a new sending request": "新しい送信要求を作成",
+});
+Object.assign(es, {
+  "Revoke all remote access": "Revocar todo acceso remoto", "Remote access methods must be reviewed individually. Completion is recorded as an administrator report.": "Es necesario revisar cada método de acceso remoto. La finalización se registra como un informe del administrador.",
+  "Delivery mode": "Modo de entrega", "Redirect": "Redirigir", "Keep a copy and forward": "Conservar copia y reenviar",
+  "Sent, but saving the copy failed.": "Enviado, pero no se pudo guardar la copia.",
+  "Delivery result unknown. Sending again may deliver a duplicate.": "El resultado del envío es desconocido. Volver a enviar puede duplicar la entrega.",
+  "Submission failed.": "La solicitud de envío ha fallado.", "Submission queued.": "La solicitud de envío está en espera.",
+  "Retry saving the sent copy": "Reintentar guardar la copia enviada", "Create a new sending request": "Crear una nueva solicitud de envío",
+});
+Object.assign(zhCN, {
+  "Confirm active script takeover": "确认接管当前脚本", "The existing script will be retained.": "已有脚本将被保留。", "Confirm takeover": "确认接管",
+  "The active script is verified before the new rules are activated.": "新规则启用前将核验当前脚本。", "Delete remote mailbox": "删除远程邮箱", "The remote mailbox and its messages will be deleted.": "远程邮箱及其邮件将被删除。",
+});
+Object.assign(zhTW, {
+  "Confirm active script takeover": "確認接管目前腳本", "The existing script will be retained.": "現有腳本將被保留。", "Confirm takeover": "確認接管",
+  "The active script is verified before the new rules are activated.": "新規則啟用前將驗證目前腳本。", "Delete remote mailbox": "刪除遠端信箱", "The remote mailbox and its messages will be deleted.": "遠端信箱及其郵件將被刪除。",
+});
+Object.assign(ja, {
+  "Confirm active script takeover": "有効なスクリプトの引き継ぎを確認", "The existing script will be retained.": "既存のスクリプトは保持されます。", "Confirm takeover": "引き継ぎを確認",
+  "The active script is verified before the new rules are activated.": "新しいルールの有効化前に、現在のスクリプトを検証します。", "Delete remote mailbox": "リモートメールボックスを削除", "The remote mailbox and its messages will be deleted.": "リモートメールボックスとメールが削除されます。",
+});
+Object.assign(es, {
+  "Confirm active script takeover": "Confirmar sustitución del script activo", "The existing script will be retained.": "Se conservará el script existente.", "Confirm takeover": "Confirmar sustitución",
+  "The active script is verified before the new rules are activated.": "El script activo se verifica antes de activar las nuevas reglas.", "Delete remote mailbox": "Eliminar buzón remoto", "The remote mailbox and its messages will be deleted.": "Se eliminarán el buzón remoto y sus mensajes.",
+});
 const dicts: Record<Exclude<Lang, "en">, Record<string, string>> = { "zh-CN": zhCN, "zh-TW": zhTW, ja, es };
+
+Object.assign(zhCN, {
+  "Discover resources": "发现资源", "Import selected resources": "导入所选资源", "The discovery response is incomplete.": "资源发现响应缺少必要信息。", "Select each mailbox and its domain. Configure login credentials after import.": "请选择邮箱及其所属域名。导入后请配置登录凭据。",
+  "Register existing mailbox": "登记已有邮箱", "Administrator mailbox": "管理员邮箱", "Do not bind a mailbox": "不绑定邮箱", "Complete setup": "完成初始化", "Setup complete": "初始化完成", "Open mail": "打开邮件", "Manage mail connections": "管理邮件连接",
+});
+Object.assign(zhTW, {
+  "Discover resources": "探索資源", "Import selected resources": "匯入所選資源", "The discovery response is incomplete.": "資源探索回應缺少必要資訊。", "Select each mailbox and its domain. Configure login credentials after import.": "請選擇信箱及其所屬網域。匯入後請設定登入憑證。",
+  "Register existing mailbox": "登記現有信箱", "Administrator mailbox": "管理員信箱", "Do not bind a mailbox": "不綁定信箱", "Complete setup": "完成初始化", "Setup complete": "初始化完成", "Open mail": "開啟郵件", "Manage mail connections": "管理郵件連線",
+});
+Object.assign(ja, {
+  "Discover resources": "リソースを検出", "Import selected resources": "選択したリソースを取り込む", "The discovery response is incomplete.": "リソース検出の応答に必要な情報がありません。", "Select each mailbox and its domain. Configure login credentials after import.": "メールボックスと所属ドメインを選択してください。取り込み後にログイン認証情報を設定してください。",
+  "Register existing mailbox": "既存メールボックスを登録", "Administrator mailbox": "管理者のメールボックス", "Do not bind a mailbox": "メールボックスを関連付けない", "Complete setup": "セットアップを完了", "Setup complete": "セットアップ完了", "Open mail": "メールを開く", "Manage mail connections": "メール接続を管理",
+});
+Object.assign(es, {
+  "Discover resources": "Descubrir recursos", "Import selected resources": "Importar recursos seleccionados", "The discovery response is incomplete.": "La respuesta del descubrimiento carece de información necesaria.", "Select each mailbox and its domain. Configure login credentials after import.": "Seleccione cada buzón y su dominio. Configure las credenciales de acceso después de importar.",
+  "Register existing mailbox": "Registrar buzón existente", "Administrator mailbox": "Buzón del administrador", "Do not bind a mailbox": "No vincular un buzón", "Complete setup": "Completar configuración", "Setup complete": "Configuración completada", "Open mail": "Abrir correo", "Manage mail connections": "Administrar conexiones de correo",
+});
+
+Object.assign(zhCN, {
+  "Mail connection": "邮件连接", "Select a connection": "选择邮件连接", "Action": "操作", "Register existing domain": "登记已有域名", "Create remote domain": "创建远程域名",
+  "Activate domain": "启用域名", "Unregister domain binding": "解除域名关联", "Delete remote domain": "删除远程域名", "Mailboxes and address rules must be removed first.": "需要先解除相关邮箱和地址规则。",
+  "Manage this domain in the provider console.": "请在服务商管理页面配置此域名。", "Passed": "通过", "Unverified": "尚未验证",
+});
+Object.assign(zhTW, {
+  "Mail connection": "郵件連線", "Select a connection": "選擇郵件連線", "Action": "操作", "Register existing domain": "登記現有網域", "Create remote domain": "建立遠端網域",
+  "Activate domain": "啟用網域", "Unregister domain binding": "解除網域關聯", "Delete remote domain": "刪除遠端網域", "Mailboxes and address rules must be removed first.": "需要先解除相關信箱和位址規則。",
+  "Manage this domain in the provider console.": "請在服務商管理頁面設定此網域。", "Passed": "通過", "Unverified": "尚未驗證",
+});
+Object.assign(ja, {
+  "Mail connection": "メール接続", "Select a connection": "メール接続を選択", "Action": "操作", "Register existing domain": "既存ドメインを登録", "Create remote domain": "リモートドメインを作成",
+  "Activate domain": "ドメインを有効化", "Unregister domain binding": "ドメインの関連付けを解除", "Delete remote domain": "リモートドメインを削除", "Mailboxes and address rules must be removed first.": "関連するメールボックスとアドレスルールを先に解除してください。",
+  "Manage this domain in the provider console.": "このドメインはプロバイダーの管理画面で設定してください。", "Passed": "合格", "Unverified": "未検証",
+});
+Object.assign(es, {
+  "Mail connection": "Conexión de correo", "Select a connection": "Seleccionar conexión", "Action": "Acción", "Register existing domain": "Registrar dominio existente", "Create remote domain": "Crear dominio remoto",
+  "Activate domain": "Activar dominio", "Unregister domain binding": "Desvincular dominio", "Delete remote domain": "Eliminar dominio remoto", "Mailboxes and address rules must be removed first.": "Primero se deben desvincular los buzones y las reglas de dirección relacionados.",
+  "Manage this domain in the provider console.": "Configure este dominio en la consola del proveedor.", "Passed": "Verificado", "Unverified": "Sin verificar",
+});
+
+Object.assign(zhCN, {
+  "Offboarding immediately revokes local sessions and mailbox access. Handover and remote access actions remain visible in the operation.": "离职立即撤销本地会话和邮箱访问。交接与远程访问处理进度保存在操作记录中。",
+  "All shared mailbox access is revoked during offboarding.": "离职时撤销全部共享邮箱访问授权。",
+  "Administrator reported completion": "管理员已报告完成", "Report external completion": "报告外部处理完成", "Report completion": "报告完成", "Completion note": "完成说明",
+  "This records the administrator's report. Mailhearth has not verified remote access revocation.": "此操作记录管理员的完成报告。Mailhearth 尚未验证远程访问已经撤销。",
+});
+Object.assign(zhTW, {
+  "Offboarding immediately revokes local sessions and mailbox access. Handover and remote access actions remain visible in the operation.": "離職立即撤銷本地工作階段和信箱存取。交接與遠端存取處理進度保存在操作記錄中。",
+  "All shared mailbox access is revoked during offboarding.": "離職時撤銷全部共用信箱存取授權。",
+  "Administrator reported completion": "管理員已報告完成", "Report external completion": "報告外部處理完成", "Report completion": "報告完成", "Completion note": "完成說明",
+  "This records the administrator's report. Mailhearth has not verified remote access revocation.": "此操作記錄管理員的完成報告。Mailhearth 尚未驗證遠端存取已經撤銷。",
+});
+Object.assign(ja, {
+  "Offboarding immediately revokes local sessions and mailbox access. Handover and remote access actions remain visible in the operation.": "退職処理でローカルセッションとメールボックスへのアクセスを即時失効させます。引き継ぎとリモートアクセスの処理状況は操作記録に表示されます。",
+  "All shared mailbox access is revoked during offboarding.": "退職処理で共有メールボックスへのアクセス権をすべて取り消します。",
+  "Administrator reported completion": "管理者が完了を報告", "Report external completion": "外部処理の完了を報告", "Report completion": "完了を報告", "Completion note": "完了の説明",
+  "This records the administrator's report. Mailhearth has not verified remote access revocation.": "管理者の完了報告を記録します。Mailhearth はリモートアクセスの失効を検証していません。",
+});
+Object.assign(es, {
+  "Offboarding immediately revokes local sessions and mailbox access. Handover and remote access actions remain visible in the operation.": "La baja revoca inmediatamente las sesiones locales y el acceso a los buzones. La transferencia y las acciones de acceso remoto se muestran en la operación.",
+  "All shared mailbox access is revoked during offboarding.": "La baja revoca todo acceso a los buzones compartidos.",
+  "Administrator reported completion": "El administrador informó de la finalización", "Report external completion": "Informar de la finalización externa", "Report completion": "Informar de la finalización", "Completion note": "Nota de finalización",
+  "This records the administrator's report. Mailhearth has not verified remote access revocation.": "Esto registra el informe del administrador. Mailhearth no ha verificado la revocación del acceso remoto.",
+});
+
+Object.assign(zhCN, {
+  "Desired targets": "预期目标", "Observed targets": "读取到的目标", "Management mode": "管理方式", "Manage remote rule": "管理远程规则", "Register external configuration": "登记外部配置", "No distribution targets": "没有分发目标",
+  "External registration does not verify server delivery or sender authorization.": "外部登记没有验证服务器投递或发件授权。", "Mail connection": "邮件连接", "Mailbox action": "邮箱操作", "Register existing mailbox": "登记已有邮箱", "Create remote mailbox": "创建远程邮箱", "Domain binding": "域名关联", "Credential mode": "凭据方式", "Managed credentials": "平台管理凭据", "Entered credentials": "输入已有凭据", "Mailbox address": "完整邮箱地址",
+  "Managed credentials use the enabled connection templates.": "平台管理凭据使用已启用的连接模板。", "Create and verify mailbox": "创建并验证邮箱", "Verify and register mailbox": "验证并登记邮箱",
+});
+Object.assign(zhTW, {
+  "Desired targets": "預期目標", "Observed targets": "讀取到的目標", "Management mode": "管理方式", "Manage remote rule": "管理遠端規則", "Register external configuration": "登記外部設定", "No distribution targets": "沒有分發目標",
+  "External registration does not verify server delivery or sender authorization.": "外部登記沒有驗證伺服器投遞或寄件授權。", "Mail connection": "郵件連線", "Mailbox action": "信箱操作", "Register existing mailbox": "登記現有信箱", "Create remote mailbox": "建立遠端信箱", "Domain binding": "網域關聯", "Credential mode": "憑證方式", "Managed credentials": "平台管理憑證", "Entered credentials": "輸入現有憑證", "Mailbox address": "完整信箱地址",
+  "Managed credentials use the enabled connection templates.": "平台管理憑證使用已啟用的連線範本。", "Create and verify mailbox": "建立並驗證信箱", "Verify and register mailbox": "驗證並登記信箱",
+});
+Object.assign(ja, {
+  "Desired targets": "設定予定の宛先", "Observed targets": "確認された宛先", "Management mode": "管理方法", "Manage remote rule": "リモートルールを管理", "Register external configuration": "外部設定を登録", "No distribution targets": "配信先がありません",
+  "External registration does not verify server delivery or sender authorization.": "外部登録ではサーバーの配信や送信者の権限は検証されません。", "Mail connection": "メール接続", "Mailbox action": "メールボックス操作", "Register existing mailbox": "既存のメールボックスを登録", "Create remote mailbox": "リモートメールボックスを作成", "Domain binding": "ドメイン関連付け", "Credential mode": "認証情報の方式", "Managed credentials": "管理対象の認証情報", "Entered credentials": "既存の認証情報を入力", "Mailbox address": "メールボックスの完全なアドレス",
+  "Managed credentials use the enabled connection templates.": "管理対象の認証情報には有効な接続テンプレートを使用します。", "Create and verify mailbox": "メールボックスを作成して検証", "Verify and register mailbox": "メールボックスを検証して登録",
+});
+Object.assign(es, {
+  "Desired targets": "Destinos solicitados", "Observed targets": "Destinos observados", "Management mode": "Modo de gestión", "Manage remote rule": "Gestionar regla remota", "Register external configuration": "Registrar configuración externa", "No distribution targets": "Sin destinos de distribución",
+  "External registration does not verify server delivery or sender authorization.": "El registro externo no verifica la entrega del servidor ni la autorización del remitente.", "Mail connection": "Conexión de correo", "Mailbox action": "Acción del buzón", "Register existing mailbox": "Registrar buzón existente", "Create remote mailbox": "Crear buzón remoto", "Domain binding": "Asociación de dominio", "Credential mode": "Modo de credenciales", "Managed credentials": "Credenciales gestionadas", "Entered credentials": "Introducir credenciales existentes", "Mailbox address": "Dirección completa del buzón",
+  "Managed credentials use the enabled connection templates.": "Las credenciales gestionadas utilizan las plantillas de conexión habilitadas.", "Create and verify mailbox": "Crear y verificar buzón", "Verify and register mailbox": "Verificar y registrar buzón",
+});
+
+Object.assign(zhCN, {
+  "Server hostname": "服务器 hostname", "Port": "端口", "Use a configured CA bundle ID, or leave blank to use system certificates.": "使用部署者配置的证书编号；留空使用系统证书。",
+  "Provider": "服务商", "Manual connection": "手动连接", "Manual IMAP/SMTP": "手动 IMAP/SMTP", "Connection name": "连接名称", "Migadu account email": "Migadu 账户邮箱",
+  "Domain scope": "域名范围", "Leave blank for all domains; separate domains with commas or whitespace.": "留空选择全部域名；多个域名使用逗号或空白分隔。", "Save connection": "保存连接", "Mailbox type": "邮箱类型",
+  "{protocol} username": "{protocol} 用户名", "{protocol} password or application password": "{protocol} 密码或应用密码", "Sent copy": "已发送副本", "Saved by Mailhearth": "Mailhearth 保存", "Saved by mail server": "邮件服务器保存", "Create member": "创建成员",
+  "Mail connections": "邮件连接", "Add connection": "添加连接", "Management check": "管理验证", "Configuration revision": "配置版本", "Edit connection configuration": "编辑连接配置", "Verify connection": "验证连接",
+  "Disable connection": "停用连接", "Enable connection": "启用连接", "Enter the full connection name to remove this empty connection.": "请输入完整连接名称，移除空连接。", "Remove empty connection": "移除空连接",
+  "Add mail connection": "添加邮件连接", "Edit mail connection": "编辑邮件连接", "Mailbox registered": "邮箱登记成功", "Select resources to import": "选择导入资源", "Resources imported": "资源导入成功",
+  "Changing the API username requires its API key.": "更改 API 用户名需要提供对应 API key。", "Update API key": "更新 API key", "Leave blank to keep the current API key.": "留空保留当前 API key。", "All domains": "全部域名", "Selected domains": "指定域名", "Domain list": "域名列表", "Verify and update connection": "验证并更新连接",
+  "Protocol configuration · mailbox revision {revision}": "协议配置 · 邮箱版本 {revision}", "Network configuration": "网络配置", "Inherit connection template": "继承连接模板", "Use independent network configuration": "使用独立网络配置", "Disable protocol": "停用协议",
+  "Authentication credential": "认证凭据", "Keep credential {id}": "保留凭据 {id}", "Enter a new password or application password": "输入新密码或应用密码", "Password or application password": "密码或应用密码", "Verify and update protocol configuration": "验证并更新协议配置",
+});
+Object.assign(zhTW, {
+  "Server hostname": "伺服器 hostname", "Port": "連接埠", "Use a configured CA bundle ID, or leave blank to use system certificates.": "使用部署者設定的憑證編號；留空使用系統憑證。",
+  "Provider": "服務商", "Manual connection": "手動連線", "Manual IMAP/SMTP": "手動 IMAP/SMTP", "Connection name": "連線名稱", "Migadu account email": "Migadu 帳戶信箱",
+  "Domain scope": "網域範圍", "Leave blank for all domains; separate domains with commas or whitespace.": "留空選擇全部網域；多個網域使用逗號或空白分隔。", "Save connection": "儲存連線", "Mailbox type": "信箱類型",
+  "{protocol} username": "{protocol} 使用者名稱", "{protocol} password or application password": "{protocol} 密碼或應用程式密碼", "Sent copy": "寄件副本", "Saved by Mailhearth": "Mailhearth 儲存", "Saved by mail server": "郵件伺服器儲存", "Create member": "建立成員",
+  "Mail connections": "郵件連線", "Add connection": "新增連線", "Management check": "管理驗證", "Configuration revision": "設定版本", "Edit connection configuration": "編輯連線設定", "Verify connection": "驗證連線",
+  "Disable connection": "停用連線", "Enable connection": "啟用連線", "Enter the full connection name to remove this empty connection.": "請輸入完整連線名稱，移除空連線。", "Remove empty connection": "移除空連線",
+  "Add mail connection": "新增郵件連線", "Edit mail connection": "編輯郵件連線", "Mailbox registered": "信箱登記成功", "Select resources to import": "選擇匯入資源", "Resources imported": "資源匯入成功",
+  "Changing the API username requires its API key.": "變更 API 使用者名稱需要提供對應 API key。", "Update API key": "更新 API key", "Leave blank to keep the current API key.": "留空保留目前 API key。", "All domains": "全部網域", "Selected domains": "指定網域", "Domain list": "網域清單", "Verify and update connection": "驗證並更新連線",
+  "Protocol configuration · mailbox revision {revision}": "協定設定 · 信箱版本 {revision}", "Network configuration": "網路設定", "Inherit connection template": "繼承連線範本", "Use independent network configuration": "使用獨立網路設定", "Disable protocol": "停用協定",
+  "Authentication credential": "認證憑證", "Keep credential {id}": "保留憑證 {id}", "Enter a new password or application password": "輸入新密碼或應用程式密碼", "Password or application password": "密碼或應用程式密碼", "Verify and update protocol configuration": "驗證並更新協定設定",
+});
+Object.assign(ja, {
+  "Server hostname": "サーバーの hostname", "Port": "ポート", "Use a configured CA bundle ID, or leave blank to use system certificates.": "設定済みの証明書番号を指定してください。空欄の場合はシステム証明書を使用します。",
+  "Provider": "プロバイダー", "Manual connection": "手動接続", "Manual IMAP/SMTP": "手動 IMAP/SMTP", "Connection name": "接続名", "Migadu account email": "Migadu アカウントのメールアドレス",
+  "Domain scope": "ドメインの対象範囲", "Leave blank for all domains; separate domains with commas or whitespace.": "空欄はすべてのドメインを対象にします。複数のドメインはカンマまたは空白で区切ってください。", "Save connection": "接続を保存", "Mailbox type": "メールボックスの種類",
+  "{protocol} username": "{protocol} ユーザー名", "{protocol} password or application password": "{protocol} パスワードまたはアプリパスワード", "Sent copy": "送信済みコピー", "Saved by Mailhearth": "Mailhearth が保存", "Saved by mail server": "メールサーバーが保存", "Create member": "メンバーを作成",
+  "Mail connections": "メール接続", "Add connection": "接続を追加", "Management check": "管理認証の検証", "Configuration revision": "設定リビジョン", "Edit connection configuration": "接続設定を編集", "Verify connection": "接続を検証",
+  "Disable connection": "接続を無効化", "Enable connection": "接続を有効化", "Enter the full connection name to remove this empty connection.": "この空の接続を削除するには接続名を完全に入力してください。", "Remove empty connection": "空の接続を削除",
+  "Add mail connection": "メール接続を追加", "Edit mail connection": "メール接続を編集", "Mailbox registered": "メールボックスを登録しました", "Select resources to import": "取り込むリソースを選択", "Resources imported": "リソースを取り込みました",
+  "Changing the API username requires its API key.": "API ユーザー名の変更には対応する API key が必要です。", "Update API key": "API key を更新", "Leave blank to keep the current API key.": "空欄の場合は現在の API key を保持します。", "All domains": "すべてのドメイン", "Selected domains": "指定したドメイン", "Domain list": "ドメイン一覧", "Verify and update connection": "接続を検証して更新",
+  "Protocol configuration · mailbox revision {revision}": "プロトコル設定 · メールボックスのリビジョン {revision}", "Network configuration": "ネットワーク設定", "Inherit connection template": "接続テンプレートを継承", "Use independent network configuration": "独立したネットワーク設定を使用", "Disable protocol": "プロトコルを無効化",
+  "Authentication credential": "認証情報", "Keep credential {id}": "認証情報 {id} を保持", "Enter a new password or application password": "新しいパスワードまたはアプリパスワードを入力", "Password or application password": "パスワードまたはアプリパスワード", "Verify and update protocol configuration": "プロトコル設定を検証して更新",
+});
+Object.assign(es, {
+  "Server hostname": "Hostname del servidor", "Port": "Puerto", "Use a configured CA bundle ID, or leave blank to use system certificates.": "Use un ID de certificados configurado o déjelo vacío para usar los certificados del sistema.",
+  "Provider": "Proveedor", "Manual connection": "Conexión manual", "Manual IMAP/SMTP": "IMAP/SMTP manual", "Connection name": "Nombre de la conexión", "Migadu account email": "Correo de la cuenta de Migadu",
+  "Domain scope": "Ámbito de dominios", "Leave blank for all domains; separate domains with commas or whitespace.": "Déjelo vacío para todos los dominios; sepárelos con comas o espacios.", "Save connection": "Guardar conexión", "Mailbox type": "Tipo de buzón",
+  "{protocol} username": "Usuario de {protocol}", "{protocol} password or application password": "Contraseña o contraseña de aplicación de {protocol}", "Sent copy": "Copia de enviados", "Saved by Mailhearth": "Guardada por Mailhearth", "Saved by mail server": "Guardada por el servidor de correo", "Create member": "Crear miembro",
+  "Mail connections": "Conexiones de correo", "Add connection": "Añadir conexión", "Management check": "Verificación de administración", "Configuration revision": "Revisión de configuración", "Edit connection configuration": "Editar configuración de conexión", "Verify connection": "Verificar conexión",
+  "Disable connection": "Desactivar conexión", "Enable connection": "Activar conexión", "Enter the full connection name to remove this empty connection.": "Introduzca el nombre completo para eliminar esta conexión vacía.", "Remove empty connection": "Eliminar conexión vacía",
+  "Add mail connection": "Añadir conexión de correo", "Edit mail connection": "Editar conexión de correo", "Mailbox registered": "Buzón registrado", "Select resources to import": "Seleccionar recursos para importar", "Resources imported": "Recursos importados",
+  "Changing the API username requires its API key.": "Cambiar el usuario de API requiere su API key.", "Update API key": "Actualizar API key", "Leave blank to keep the current API key.": "Déjelo vacío para conservar la API key actual.", "All domains": "Todos los dominios", "Selected domains": "Dominios seleccionados", "Domain list": "Lista de dominios", "Verify and update connection": "Verificar y actualizar conexión",
+  "Protocol configuration · mailbox revision {revision}": "Configuración de protocolos · revisión del buzón {revision}", "Network configuration": "Configuración de red", "Inherit connection template": "Heredar plantilla de conexión", "Use independent network configuration": "Usar configuración de red independiente", "Disable protocol": "Desactivar protocolo",
+  "Authentication credential": "Credencial de autenticación", "Keep credential {id}": "Conservar credencial {id}", "Enter a new password or application password": "Introducir una nueva contraseña o contraseña de aplicación", "Password or application password": "Contraseña o contraseña de aplicación", "Verify and update protocol configuration": "Verificar y actualizar configuración de protocolos",
+});
+
+Object.assign(dicts["zh-CN"], { "DNS status unverified": "DNS 状态尚未验证", "configured a mail connection": "配置了邮件连接", "synced a mail connection": "同步了邮件连接" });
+Object.assign(dicts["zh-TW"], { "DNS status unverified": "DNS 狀態尚未驗證", "configured a mail connection": "設定了郵件連線", "synced a mail connection": "同步了郵件連線" });
+Object.assign(dicts.ja, { "DNS status unverified": "DNS 状態は未検証です", "configured a mail connection": "メール接続を設定しました", "synced a mail connection": "メール接続を同期しました" });
+Object.assign(dicts.es, { "DNS status unverified": "Estado DNS sin verificar", "configured a mail connection": "configuró una conexión de correo", "synced a mail connection": "sincronizó una conexión de correo" });
+
+Object.assign(zhCN, {
+  "CA bundle ID": "CA 证书集合 ID", "Balance": "余额", "Not checked": "尚未检查", "Failed": "失败", "Check expired": "检查已过期", "Synchronized": "已同步", "Pending": "等待处理", "Error": "错误", "Awaiting confirmation": "等待确认", "Blocked": "已阻止", "Present": "存在", "Missing": "缺失", "Inaccessible": "无法访问", "Externally managed": "外部管理", "Queued": "等待执行", "Running": "正在执行", "Succeeded": "执行成功", "Action required": "需要处理", "Cancelled": "已取消", "Ready": "已就绪", "Not configured": "尚未配置", "Automatic": "自动处理", "Unsupported": "不支持", "Degraded": "部分功能不可用", "Mailbox forwarding": "邮箱转发", "Address rule": "地址规则", "External rule": "外部规则", "Identity": "发件身份",
+  "Select the source mailbox and domain for forwarding. Delivery modes remain unverified until delivery is tested.": "导入转发时请选择来源邮箱和所属域名。完成投递测试之前，投递方式保持尚未验证。",
+  "Delivery mode has not been verified by a delivery test.": "投递方式尚未通过投递测试验证。",
+  "At least 10 characters": "至少 10 个字符", "No mailboxes.": "没有邮箱。",
+  "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M": "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M",
+});
+Object.assign(zhTW, {
+  "CA bundle ID": "CA 憑證集合 ID", "Balance": "餘額", "Not checked": "尚未檢查", "Failed": "失敗", "Check expired": "檢查已過期", "Synchronized": "已同步", "Pending": "等待處理", "Error": "錯誤", "Awaiting confirmation": "等待確認", "Blocked": "已阻擋", "Present": "存在", "Missing": "缺失", "Inaccessible": "無法存取", "Externally managed": "外部管理", "Queued": "等待執行", "Running": "正在執行", "Succeeded": "執行成功", "Action required": "需要處理", "Cancelled": "已取消", "Ready": "已就緒", "Not configured": "尚未設定", "Automatic": "自動處理", "Unsupported": "不支援", "Degraded": "部分功能無法使用", "Mailbox forwarding": "信箱轉寄", "Address rule": "地址規則", "External rule": "外部規則", "Identity": "寄件身分",
+  "Select the source mailbox and domain for forwarding. Delivery modes remain unverified until delivery is tested.": "匯入轉寄時請選擇來源信箱和所屬網域。完成投遞測試之前，投遞方式保持尚未驗證。",
+  "Delivery mode has not been verified by a delivery test.": "投遞方式尚未通過投遞測試驗證。",
+  "At least 10 characters": "至少 10 個字元", "No mailboxes.": "沒有信箱。",
+  "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M": "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M",
+});
+Object.assign(ja, {
+  "CA bundle ID": "CA 証明書セット ID", "Balance": "残高", "Not checked": "未確認", "Failed": "失敗", "Check expired": "検証期限切れ", "Synchronized": "同期済み", "Pending": "処理待ち", "Error": "エラー", "Awaiting confirmation": "確認待ち", "Blocked": "ブロック済み", "Present": "存在", "Missing": "見つかりません", "Inaccessible": "アクセス不可", "Externally managed": "外部管理", "Queued": "実行待ち", "Running": "実行中", "Succeeded": "成功", "Action required": "対応が必要", "Cancelled": "キャンセル済み", "Ready": "準備完了", "Not configured": "未設定", "Automatic": "自動処理", "Unsupported": "非対応", "Degraded": "一部機能を利用できません", "Mailbox forwarding": "メールボックスの転送", "Address rule": "アドレスルール", "External rule": "外部ルール", "Identity": "送信者情報",
+  "Select the source mailbox and domain for forwarding. Delivery modes remain unverified until delivery is tested.": "転送元のメールボックスと所属ドメインを選択してください。配信テストが完了するまで配信方式は未検証のままです。",
+  "Delivery mode has not been verified by a delivery test.": "配信方式は配信テストで検証されていません。",
+  "At least 10 characters": "10 文字以上", "No mailboxes.": "メールボックスがありません。",
+  "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M": "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M",
+});
+Object.assign(es, {
+  "CA bundle ID": "ID del conjunto de certificados CA", "Balance": "Saldo", "Not checked": "Sin comprobar", "Failed": "Fallido", "Check expired": "Comprobación caducada", "Synchronized": "Sincronizado", "Pending": "Pendiente", "Error": "Error", "Awaiting confirmation": "Pendiente de confirmación", "Blocked": "Bloqueado", "Present": "Presente", "Missing": "Ausente", "Inaccessible": "Inaccesible", "Externally managed": "Administrado externamente", "Queued": "En espera", "Running": "En ejecución", "Succeeded": "Completado", "Action required": "Requiere intervención", "Cancelled": "Cancelado", "Ready": "Listo", "Not configured": "Sin configurar", "Automatic": "Automático", "Unsupported": "No compatible", "Degraded": "Algunas funciones no están disponibles", "Mailbox forwarding": "Reenvío del buzón", "Address rule": "Regla de dirección", "External rule": "Regla externa", "Identity": "Identidad de envío",
+  "Select the source mailbox and domain for forwarding. Delivery modes remain unverified until delivery is tested.": "Seleccione el buzón de origen y su dominio para importar el reenvío. Los modos de entrega permanecen sin verificar hasta completar una prueba de entrega.",
+  "Delivery mode has not been verified by a delivery test.": "El modo de entrega no se ha verificado mediante una prueba de entrega.",
+  "At least 10 characters": "Al menos 10 caracteres", "No mailboxes.": "No hay buzones.",
+  "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M": "from: to: subject: is:unread is:flagged has:attachment since:2026-01-31 larger:2M",
+});
+
+Object.assign(zhCN, { "API management": "API 管理", "Accepted": "已接受", "Not started": "尚未开始", "Sending": "正在发送", "Saving": "正在保存", "Saved": "已保存", "Skipped": "已跳过" });
+Object.assign(zhTW, { "API management": "API 管理", "Accepted": "已接受", "Not started": "尚未開始", "Sending": "正在寄送", "Saving": "正在儲存", "Saved": "已儲存", "Skipped": "已略過" });
+Object.assign(ja, { "API management": "API 管理", "Accepted": "受付済み", "Not started": "未開始", "Sending": "送信中", "Saving": "保存中", "Saved": "保存済み", "Skipped": "スキップ済み" });
+Object.assign(es, { "API management": "Administración por API", "Accepted": "Aceptado", "Not started": "Sin iniciar", "Sending": "Enviando", "Saving": "Guardando", "Saved": "Guardado", "Skipped": "Omitido" });
+
+Object.assign(zhCN, { "Protocol status": "协议状态" });
+Object.assign(zhTW, { "Protocol status": "協定狀態" });
+Object.assign(ja, { "Protocol status": "プロトコルの状態" });
+Object.assign(es, { "Protocol status": "Estado de protocolos" });
+
+Object.assign(zhCN, {
+  "This address is already registered.": "该地址已经登记。", "This identity is already registered.": "该发件身份已经登记。", "Use the current connection-specific interface.": "请使用当前指定邮件连接的接口。", "This resource has dependencies.": "该资源存在关联依赖。", "The saved credential could not be decrypted.": "无法解密已保存的凭据。", "This protocol or connection is disabled.": "该协议或连接已停用。", "Configure this protocol before using it.": "请配置该协议后再使用。", "Complete the action in the provider console and report the result.": "请在服务商管理页面完成操作并报告结果。", "Configure the required special folder.": "请配置所需的特殊文件夹。", "You do not have permission for this action.": "您没有执行该操作的权限。", "This request ID was already used for different content.": "该 requestId 已用于其他请求内容。", "Check the request fields and current resource state.": "请检查请求字段及当前资源状态。", "The operation result is incomplete.": "操作结果缺少必要信息。", "An internal error occurred.": "发生内部错误。", "Archive this mailbox to retain its history.": "请归档该邮箱以保留历史记录。", "The requested resource was not found.": "未找到请求的资源。", "Another operation is using this resource.": "另一个操作正在使用该资源。", "This operation cannot be cancelled in its current state.": "当前状态无法取消该操作。", "This operation cannot be checked in its current state.": "当前状态无法核查该操作。", "This operation cannot be retried in its current state.": "当前状态无法重试该操作。", "Management authentication failed.": "管理认证失败。", "Protocol authentication failed.": "协议认证失败。", "The server does not support the required authentication mechanism.": "服务器不支持所需的认证机制。", "The remote result requires checking.": "远程结果需要核查。", "This action requires verification.": "该操作需要验证。", "The configuration changed. Refresh before continuing.": "配置已经变化，请刷新后继续。", "This secret has already been claimed.": "该秘密已经领取。", "The secret claim has expired.": "秘密领取期限已经到期。", "The server lacks a required Sieve extension.": "服务器缺少所需的 Sieve 扩展。", "Confirm takeover of the active Sieve script.": "请确认接管当前 active Sieve script。", "The staged message is unavailable.": "暂存邮件不可用。", "The draft location changed.": "草稿位置已经变化。", "The staged message content changed.": "暂存邮件内容已经变化。", "This sending request cannot be retried in its current state.": "当前状态无法重试该发送请求。", "The targets do not meet this provider's restrictions.": "目标不符合该服务商的限制。", "The authentication mode is unsupported.": "不支持该认证方式。", "This operation is unsupported.": "不支持该操作。", "The remote service request failed.": "远程服务请求失败。",
+});
+Object.assign(zhTW, {
+  "This address is already registered.": "該地址已登記。", "This identity is already registered.": "該寄件身分已登記。", "Use the current connection-specific interface.": "請使用目前指定郵件連線的介面。", "This resource has dependencies.": "該資源存在關聯相依項目。", "The saved credential could not be decrypted.": "無法解密已保存的憑證。", "This protocol or connection is disabled.": "該協定或連線已停用。", "Configure this protocol before using it.": "請設定該協定後再使用。", "Complete the action in the provider console and report the result.": "請在供應商管理頁面完成操作並報告結果。", "Configure the required special folder.": "請設定所需的特殊資料夾。", "You do not have permission for this action.": "您沒有執行該操作的權限。", "This request ID was already used for different content.": "該 requestId 已用於其他請求內容。", "Check the request fields and current resource state.": "請檢查請求欄位及目前資源狀態。", "The operation result is incomplete.": "操作結果缺少必要資訊。", "An internal error occurred.": "發生內部錯誤。", "Archive this mailbox to retain its history.": "請封存該信箱以保留歷史記錄。", "The requested resource was not found.": "找不到請求的資源。", "Another operation is using this resource.": "另一個操作正在使用該資源。", "This operation cannot be cancelled in its current state.": "目前狀態無法取消該操作。", "This operation cannot be checked in its current state.": "目前狀態無法查核該操作。", "This operation cannot be retried in its current state.": "目前狀態無法重試該操作。", "Management authentication failed.": "管理驗證失敗。", "Protocol authentication failed.": "協定驗證失敗。", "The server does not support the required authentication mechanism.": "伺服器不支援所需的驗證機制。", "The remote result requires checking.": "遠端結果需要查核。", "This action requires verification.": "該操作需要驗證。", "The configuration changed. Refresh before continuing.": "設定已變更，請重新整理後繼續。", "This secret has already been claimed.": "該秘密已領取。", "The secret claim has expired.": "秘密領取期限已到期。", "The server lacks a required Sieve extension.": "伺服器缺少所需的 Sieve 擴充功能。", "Confirm takeover of the active Sieve script.": "請確認接管目前 active Sieve script。", "The staged message is unavailable.": "暫存郵件無法使用。", "The draft location changed.": "草稿位置已變更。", "The staged message content changed.": "暫存郵件內容已變更。", "This sending request cannot be retried in its current state.": "目前狀態無法重試該寄送請求。", "The targets do not meet this provider's restrictions.": "目標不符合該供應商的限制。", "The authentication mode is unsupported.": "不支援該驗證方式。", "This operation is unsupported.": "不支援該操作。", "The remote service request failed.": "遠端服務請求失敗。",
+});
+Object.assign(ja, {
+  "This address is already registered.": "このアドレスは登録済みです。", "This identity is already registered.": "この送信者情報は登録済みです。", "Use the current connection-specific interface.": "対象接続を指定する現行インターフェースを使用してください。", "This resource has dependencies.": "このリソースには依存関係があります。", "The saved credential could not be decrypted.": "保存した認証情報を復号できません。", "This protocol or connection is disabled.": "このプロトコルまたは接続は無効です。", "Configure this protocol before using it.": "利用前にこのプロトコルを設定してください。", "Complete the action in the provider console and report the result.": "プロバイダーの管理画面で処理を完了し、結果を報告してください。", "Configure the required special folder.": "必要な特殊フォルダーを設定してください。", "You do not have permission for this action.": "この操作の権限がありません。", "This request ID was already used for different content.": "この requestId は別の内容に使用されています。", "Check the request fields and current resource state.": "入力フィールドと現在のリソース状態を確認してください。", "The operation result is incomplete.": "操作結果に必要な情報がありません。", "An internal error occurred.": "内部エラーが発生しました。", "Archive this mailbox to retain its history.": "履歴を保持するためメールボックスをアーカイブしてください。", "The requested resource was not found.": "対象リソースが見つかりません。", "Another operation is using this resource.": "別の操作がこのリソースを使用中です。", "This operation cannot be cancelled in its current state.": "現在の状態ではキャンセルできません。", "This operation cannot be checked in its current state.": "現在の状態では結果を確認できません。", "This operation cannot be retried in its current state.": "現在の状態では再試行できません。", "Management authentication failed.": "管理認証に失敗しました。", "Protocol authentication failed.": "プロトコル認証に失敗しました。", "The server does not support the required authentication mechanism.": "必要な認証方式にサーバーが対応していません。", "The remote result requires checking.": "リモート結果の照合が必要です。", "This action requires verification.": "この操作には検証が必要です。", "The configuration changed. Refresh before continuing.": "設定が変更されています。更新してから続行してください。", "This secret has already been claimed.": "この秘密は取得済みです。", "The secret claim has expired.": "秘密の取得期限が切れています。", "The server lacks a required Sieve extension.": "必要な Sieve 拡張機能がありません。", "Confirm takeover of the active Sieve script.": "有効な Sieve スクリプトの引き継ぎを確認してください。", "The staged message is unavailable.": "一時保存したメールを利用できません。", "The draft location changed.": "下書きの位置が変わりました。", "The staged message content changed.": "一時保存したメールの内容が変わりました。", "This sending request cannot be retried in its current state.": "現在の状態ではこの送信を再試行できません。", "The targets do not meet this provider's restrictions.": "宛先がプロバイダーの制約を満たしていません。", "The authentication mode is unsupported.": "この認証方式には対応していません。", "This operation is unsupported.": "この操作には対応していません。", "The remote service request failed.": "リモートサービスへのリクエストが失敗しました。",
+});
+Object.assign(es, {
+  "This address is already registered.": "Esta dirección ya está registrada.", "This identity is already registered.": "Esta identidad ya está registrada.", "Use the current connection-specific interface.": "Use la interfaz actual que especifica la conexión.", "This resource has dependencies.": "Este recurso tiene dependencias.", "The saved credential could not be decrypted.": "No se pudo descifrar la credencial guardada.", "This protocol or connection is disabled.": "Este protocolo o conexión está deshabilitado.", "Configure this protocol before using it.": "Configure este protocolo antes de usarlo.", "Complete the action in the provider console and report the result.": "Complete la acción en la consola del proveedor e informe del resultado.", "Configure the required special folder.": "Configure la carpeta especial necesaria.", "You do not have permission for this action.": "No tiene permiso para esta acción.", "This request ID was already used for different content.": "Este requestId ya se utilizó para otro contenido.", "Check the request fields and current resource state.": "Compruebe los campos y el estado actual del recurso.", "The operation result is incomplete.": "El resultado de la operación está incompleto.", "An internal error occurred.": "Se produjo un error interno.", "Archive this mailbox to retain its history.": "Archive este buzón para conservar su historial.", "The requested resource was not found.": "No se encontró el recurso solicitado.", "Another operation is using this resource.": "Otra operación está utilizando este recurso.", "This operation cannot be cancelled in its current state.": "Esta operación no puede cancelarse en su estado actual.", "This operation cannot be checked in its current state.": "Esta operación no puede comprobarse en su estado actual.", "This operation cannot be retried in its current state.": "Esta operación no puede reintentarse en su estado actual.", "Management authentication failed.": "Falló la autenticación de administración.", "Protocol authentication failed.": "Falló la autenticación del protocolo.", "The server does not support the required authentication mechanism.": "El servidor no admite el mecanismo de autenticación necesario.", "The remote result requires checking.": "El resultado remoto requiere comprobación.", "This action requires verification.": "Esta acción requiere verificación.", "The configuration changed. Refresh before continuing.": "La configuración cambió. Actualice antes de continuar.", "This secret has already been claimed.": "Este secreto ya se ha reclamado.", "The secret claim has expired.": "El plazo para reclamar el secreto ha caducado.", "The server lacks a required Sieve extension.": "El servidor carece de una extensión Sieve necesaria.", "Confirm takeover of the active Sieve script.": "Confirme la sustitución del script Sieve activo.", "The staged message is unavailable.": "El mensaje temporal no está disponible.", "The draft location changed.": "Cambió la ubicación del borrador.", "The staged message content changed.": "Cambió el contenido del mensaje temporal.", "This sending request cannot be retried in its current state.": "Esta solicitud de envío no puede reintentarse en su estado actual.", "The targets do not meet this provider's restrictions.": "Los destinos no cumplen las restricciones del proveedor.", "The authentication mode is unsupported.": "El modo de autenticación no es compatible.", "This operation is unsupported.": "Esta operación no es compatible.", "The remote service request failed.": "Falló la solicitud al servicio remoto.",
+});
 
 export function t(key: string, vars?: Record<string, string | number>): string {
   let s = lang.value === "en" ? key : (dicts[lang.value][key] ?? key);
@@ -649,7 +1015,7 @@ export function folderLabel(display: string, role: string): string {
   return role && m[role] ? t(m[role]) : display;
 }
 
-const kindNames: Record<string, string> = { primary: "Primary", alias: "Alias", forward: "Forward", group: "Group", catchall: "Catch-all", prefix: "Prefix", member: "Member", shared: "Shared" };
+const kindNames: Record<string, string> = { primary: "Primary", alias: "Alias", forward: "Forward", group: "Group", catchall: "Catch-all", prefix: "Prefix", member: "Member", shared: "Shared", external_rule: "External rule" };
 
 // kindLabel translates an address/contact kind key.
 export function kindLabel(kind: string): string {

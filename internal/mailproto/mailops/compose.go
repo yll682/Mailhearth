@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/emersion/go-smtp"
 
 	"mailhearth/internal/mailproto/mimeutil"
+	"mailhearth/internal/provider"
 )
 
 // Recipient is a name/address pair for composing.
@@ -53,6 +55,7 @@ type Draft struct {
 	Attachments []Attachment
 	Date        time.Time
 	MessageID   string
+	SubmissionID string
 	Priority    string // "high" | "" | "low"
 }
 
@@ -108,6 +111,7 @@ func Build(d *Draft) ([]byte, error) {
 		id = NewMessageID(domain)
 	}
 	h.SetMessageID(strings.Trim(id, "<>"))
+	if d.SubmissionID != "" { h.Set("X-Mailhearth-Submission-ID", d.SubmissionID) }
 	if d.InReplyTo != "" {
 		h.SetMsgIDList("In-Reply-To", []string{strings.Trim(d.InReplyTo, "<>")})
 	}
@@ -252,67 +256,83 @@ type SMTPConfig struct {
 	TLSMode   string // tls | starttls | none
 	TLSConfig *tls.Config
 	Timeout   time.Duration
+	Dialer *net.Dialer
 }
 
 // Send submits raw via SMTP using the mailbox credential. envelopeFrom is
 // the MAIL FROM address; rcpts the full recipient list including Bcc.
 func Send(ctx context.Context, cfg SMTPConfig, user, pass, envelopeFrom string, rcpts []string, raw []byte) error {
-	if len(rcpts) == 0 {
-		return fmt.Errorf("no recipients")
-	}
-	host, _, _ := net.SplitHostPort(cfg.Addr)
+	_,err:=SubmitSMTP(ctx,cfg,user,pass,envelopeFrom,rcpts,raw)
+	return err
+}
+
+func SubmitSMTP(ctx context.Context,cfg SMTPConfig,user,pass,envelopeFrom string,rcpts []string,raw []byte) (string,error) {
+	if len(rcpts)==0{return "rejected",fmt.Errorf("no recipients")}
+	c,err:=ConnectSMTP(ctx,cfg,user,pass);if err!=nil{return "rejected",err};defer c.Close()
+	if err:=c.Mail(envelopeFrom,nil);err!=nil{return "rejected",err}
+	for _,recipient:=range rcpts{if err:=c.Rcpt(recipient,nil);err!=nil{return "rejected",err}}
+	data,err:=c.Data();if err!=nil{return smtpFailureStatus(err),err}
+	if _,err:=data.Write(raw);err!=nil{return "unknown",err}
+	if err:=data.Close();err!=nil{return smtpFailureStatus(err),err}
+	return "accepted",nil
+}
+
+func smtpFailureStatus(err error) string {
+	var response *smtp.SMTPError
+	if errors.As(err,&response) && response.Code>=400 && response.Code<600{return "rejected"}
+	return "unknown"
+}
+
+type smtpContextConn struct { net.Conn; stop func() bool }
+func (c *smtpContextConn) Close() error {c.stop();return c.Conn.Close()}
+
+func ValidateSMTP(ctx context.Context,cfg SMTPConfig,user,pass string) error {
+	c,err:=ConnectSMTP(ctx,cfg,user,pass);if err!=nil{return err};defer c.Close();return c.Quit()
+}
+
+func ConnectSMTP(ctx context.Context,cfg SMTPConfig,user,pass string) (*smtp.Client,error) {
+	host, _, err := net.SplitHostPort(cfg.Addr);if err!=nil{return nil,err}
 	tlsCfg := cfg.TLSConfig
 	if tlsCfg == nil {
 		tlsCfg = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 	}
+	tlsCfg=tlsCfg.Clone();tlsCfg.ServerName=host;tlsCfg.InsecureSkipVerify=false
+	if tlsCfg.MinVersion<tls.VersionTLS12{tlsCfg.MinVersion=tls.VersionTLS12}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	dialer := &net.Dialer{Timeout: 20 * time.Second}
-	var (
-		c   *smtp.Client
-		err error
-	)
+	dialer := cfg.Dialer
+	if dialer==nil{dialer=&net.Dialer{Timeout:10*time.Second}}
+	if cfg.TLSMode!="tls" && cfg.TLSMode!="starttls" && cfg.TLSMode!="none"{return nil,provider.Errorf("invalid","SMTP TLS 模式无效")}
+	raw,err:=dialer.DialContext(ctx,"tcp",cfg.Addr);if err!=nil{return nil,err}
+	conn:=&smtpContextConn{Conn:raw,stop:context.AfterFunc(ctx,func(){raw.Close()})}
+	deadline:=time.Now().Add(timeout);if requested,ok:=ctx.Deadline();ok && requested.Before(deadline){deadline=requested}
+	if err:=conn.SetDeadline(deadline);err!=nil{conn.Close();return nil,err}
+	var c *smtp.Client
 	switch cfg.TLSMode {
 	case "starttls":
-		var conn net.Conn
-		conn, err = dialer.DialContext(ctx, "tcp", cfg.Addr)
-		if err == nil {
-			conn.SetDeadline(time.Now().Add(timeout))
-			c, err = smtp.NewClientStartTLS(conn, tlsCfg)
-		}
+		c,err=smtp.NewClientStartTLS(conn,tlsCfg)
 	case "none":
-		var conn net.Conn
-		conn, err = dialer.DialContext(ctx, "tcp", cfg.Addr)
-		if err == nil {
-			conn.SetDeadline(time.Now().Add(timeout))
-			c = smtp.NewClient(conn)
-		}
-	default:
-		td := &tls.Dialer{NetDialer: dialer, Config: tlsCfg}
-		var conn net.Conn
-		conn, err = td.DialContext(ctx, "tcp", cfg.Addr)
-		if err == nil {
-			conn.SetDeadline(time.Now().Add(timeout))
-			c = smtp.NewClient(conn)
-		}
+		c=smtp.NewClient(conn)
+	case "tls":
+		tlsConn:=tls.Client(conn,tlsCfg);err=tlsConn.HandshakeContext(ctx)
+		if err==nil{c=smtp.NewClient(tlsConn)}
 	}
 	if err != nil {
-		return fmt.Errorf("smtp connect: %w", err)
+		conn.Close()
+		return nil,fmt.Errorf("smtp connect: %w", err)
 	}
-	defer c.Close()
+	c.CommandTimeout=timeout;c.SubmissionTimeout=timeout
 	if err := c.Hello("mailhearth"); err != nil {
-		return fmt.Errorf("smtp hello: %w", err)
+		c.Close();return nil,fmt.Errorf("smtp hello: %w", err)
 	}
-	if err := c.Auth(sasl.NewPlainClient("", user, pass)); err != nil {
-		return &SendAuthError{Err: err}
+	var auth sasl.Client
+	if c.SupportsAuth("PLAIN"){auth=sasl.NewPlainClient("",user,pass)}else if c.SupportsAuth("LOGIN"){auth=sasl.NewLoginClient(user,pass)}else{c.Close();return nil,provider.Errorf("unsupported_auth_mechanism","SMTP 没有共同认证机制")}
+	if err := c.Auth(auth); err != nil {
+		c.Close();var response *smtp.SMTPError;if errors.As(err,&response) && response.Code==535{return nil,&SendAuthError{Err:err}};return nil,err
 	}
-	if err := c.SendMail(envelopeFrom, rcpts, bytes.NewReader(raw)); err != nil {
-		return fmt.Errorf("smtp send: %w", err)
-	}
-	c.Quit()
-	return nil
+	return c,nil
 }
 
 // SendAuthError marks an SMTP authentication failure.

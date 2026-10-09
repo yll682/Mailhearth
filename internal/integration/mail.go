@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"mailhearth/internal/mailproto/imappool"
 	"mailhearth/internal/mailproto/mailops"
 	"mailhearth/internal/mailproto/sieve"
@@ -314,21 +316,25 @@ func (h *Harness) sieveClient(ctx context.Context, cred imappool.Cred) *sieve.Cl
 
 // InstallSieve compiles the rules the way the mail API does, uploads the
 // script and makes it active. It returns the compiled script.
-func (h *Harness) InstallSieve(ctx context.Context, cred imappool.Cred, rules []model.SieveRule, vacation *model.Vacation) string {
+func (h *Harness) InstallSieve(ctx context.Context, cred imappool.Cred, rules []model.SieveRule, vacation *model.Vacation) (string,string) {
 	h.T.Helper()
-	script, err := sieve.Compile(rules, vacation)
+	c := h.sieveClient(ctx, cred)
+	defer c.Close()
+	script, err := sieve.Compile(rules, vacation,strings.Fields(c.Capabilities()["SIEVE"]))
 	if err != nil {
 		h.T.Fatalf("compile sieve: %v", err)
 	}
-	c := h.sieveClient(ctx, cred)
-	defer c.Close()
+	scripts,err:=c.ListScripts();if err!=nil{h.T.Fatalf("读取服务器脚本失败：%v",err)}
+	for _,item:=range scripts{if item.Active{h.T.Fatalf("服务器存在需要保留的 active script：%s",item.Name)}}
+	scriptName:="mailhearth-"+uuid.NewString()
 	if err := c.CheckScript(script); err != nil {
 		h.T.Fatalf("provider rejected the compiled script: %v\n%s", err, script)
 	}
-	if err := c.PutScript(sieve.ScriptName, script); err != nil {
+	if err := c.PutScript(scriptName, script); err != nil {
 		h.T.Fatalf("put sieve script: %v", err)
 	}
-	if err := c.SetActive(sieve.ScriptName); err != nil {
+	stored,err:=c.GetScript(scriptName);if err!=nil || stored!=script{h.T.Fatalf("候选脚本内容未确认：%v",err)}
+	if err := c.SetActive(scriptName); err != nil {
 		h.T.Fatalf("activate sieve script: %v", err)
 	}
 	h.T.Cleanup(func() {
@@ -339,12 +345,13 @@ func (h *Harness) InstallSieve(ctx context.Context, cred imappool.Cred, rules []
 		defer cancel()
 		cl := h.sieveClient(ctx, cred)
 		defer cl.Close()
-		cl.SetActive("")
-		if err := cl.DeleteScript(sieve.ScriptName); err != nil {
-			h.T.Logf("cleanup: delete sieve script: %v", err)
+		current,err:=cl.ListScripts();if err!=nil{h.T.Errorf("清理前读取脚本失败：%v",err);return}
+		for _,item:=range current{if item.Name==scriptName && item.Active{if err:=cl.SetActive("");err!=nil{h.T.Errorf("停用本次测试脚本失败：%v",err);return}}}
+		if err := cl.DeleteScript(scriptName); err != nil {
+			h.T.Errorf("删除本次测试脚本失败：%v", err)
 		}
 	})
-	return script
+	return script,scriptName
 }
 
 // SieveScripts returns the script names the provider holds, mapped to

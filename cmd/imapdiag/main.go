@@ -19,15 +19,21 @@ import (
 	"github.com/emersion/go-imap/v2"
 
 	"mailhearth/internal/db"
+	"mailhearth/internal/config"
+	"mailhearth/internal/core"
 	"mailhearth/internal/mailproto/imappool"
 	"mailhearth/internal/mailproto/mailops"
 	"mailhearth/internal/secrets"
+	"mailhearth/internal/provider"
 )
 
 // credFromDataDir reads a mailbox app password out of an installation's own
 // database, so that diagnosing a live server never needs a password typed on
 // a command line or pasted into a chat.
-func credFromDataDir(dataDir, user string) (imappool.Cred, error) {
+func credFromDataDir(dataDir string,mailboxID int64) (imappool.Cred, error) {
+	if mailboxID<=0{return imappool.Cred{},fmt.Errorf("需要明确的 -mailbox-id")}
+	if _,err:=os.Stat(filepath.Join(dataDir,"master.key"));err!=nil{return imappool.Cred{},err}
+	if _,err:=os.Stat(filepath.Join(dataDir,"mailhearth.db"));err!=nil{return imappool.Cred{},err}
 	master, generated, err := secrets.LoadMasterKey(dataDir)
 	if err != nil {
 		return imappool.Cred{}, err
@@ -39,28 +45,26 @@ func credFromDataDir(dataDir, user string) (imappool.Cred, error) {
 	if err != nil {
 		return imappool.Cred{}, err
 	}
-	database, err := db.Open(filepath.Join(dataDir, "mailhearth.db"))
+	cfg,err:=config.Load();if err!=nil{return imappool.Cred{},err}
+	database, err := db.Open(filepath.Join(dataDir, "mailhearth.db"),db.MigrationInputs{PurelymailAPIURL:cfg.PurelymailAPIURL,IMAPAddr:cfg.IMAPAddr,IMAPTLS:string(cfg.IMAPTLS),SMTPAddr:cfg.SMTPAddr,SMTPTLS:string(cfg.SMTPTLS),SieveAddr:cfg.SieveAddr,SieveTLS:string(cfg.SieveTLS),CredentialsBox:box,AllowDevelopmentPlaintext:cfg.DevStack})
 	if err != nil {
 		return imappool.Cred{}, err
 	}
 	defer database.Close()
 
-	var addr, enc string
-	q := `SELECT pm_user, credential_enc FROM mailboxes WHERE credential_enc != '' AND (? = '' OR lower(pm_user) = lower(?)) ORDER BY id LIMIT 1`
-	if err := database.QueryRow(q, user, user).Scan(&addr, &enc); err != nil {
-		return imappool.Cred{}, fmt.Errorf("no connected mailbox found in %s: %w", dataDir, err)
-	}
-	pw, err := box.Open(enc)
-	if err != nil {
-		return imappool.Cred{}, err
-	}
-	return imappool.Cred{User: addr, Pass: pw}, nil
+	var orgID int64
+	if err:=database.QueryRow(`SELECT org_id FROM mailboxes WHERE id=?`,mailboxID).Scan(&orgID);err!=nil{return imappool.Cred{},err}
+	svc:=core.New(database,cfg,box,nil,slog.Default())
+	ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);defer cancel()
+	endpoint,err:=svc.ResolveEndpoint(ctx,orgID,mailboxID,provider.ProtocolIMAP);if err!=nil{return imappool.Cred{},err}
+	return endpoint.IMAPCredential(),nil
 }
 
 func main() {
-	addr := flag.String("addr", "imap.purelymail.com:993", "IMAP address")
+	addr := flag.String("addr", "", "IMAP 服务器地址；直接认证时必须提供")
 	tlsMode := flag.String("tls", "tls", "tls | starttls | none")
-	user := flag.String("user", "", "mailbox address (default: first connected mailbox)")
+	user := flag.String("user", "", "直接认证的 IMAP 用户名")
+	mailboxID:=flag.Int64("mailbox-id",0,"使用 -data 时必须提供邮箱 ID")
 	dataDir := flag.String("data", "", "read the app password from this installation's data dir")
 	pass := flag.String("pass", "", "password (or set IMAPDIAG_PASS); prefer -data")
 	flag.Parse()
@@ -69,7 +73,7 @@ func main() {
 	switch {
 	case *dataDir != "":
 		var err error
-		cred, err = credFromDataDir(*dataDir, *user)
+		cred, err = credFromDataDir(*dataDir, *mailboxID)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "credential:", err)
 			os.Exit(2)
@@ -79,11 +83,11 @@ func main() {
 		if password == "" {
 			password = os.Getenv("IMAPDIAG_PASS")
 		}
-		if *user == "" || password == "" {
-			fmt.Fprintln(os.Stderr, "need -data <dir>, or -user plus a password via -pass or IMAPDIAG_PASS")
+		if *user == "" || password == "" || *addr=="" {
+			fmt.Fprintln(os.Stderr, "需要 -data 和 -mailbox-id；直接认证需要 -addr、-user 和 IMAPDIAG_PASS")
 			os.Exit(2)
 		}
-		cred = imappool.Cred{User: *user, Pass: password}
+		cred = imappool.Cred{User: *user, Pass: password,Addr:*addr,TLSMode:*tlsMode}
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -103,7 +107,7 @@ func main() {
 	}
 	defer pool.Put(conn)
 
-	fmt.Printf("server %s as %s\n\n", *addr, cred.User)
+	fmt.Printf("server %s as %s\n\n", cred.Addr, cred.User)
 
 	caps := conn.C.Caps()
 	fmt.Println("=== capabilities Mailhearth branches on ===")

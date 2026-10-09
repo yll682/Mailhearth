@@ -4,13 +4,13 @@
 
 ## Modelo de amenazas
 
-Mailhearth se sitúa entre los navegadores del personal y Purelymail con un token
-de API que puede crear, eliminar y restablecer todos los buzones de la cuenta.
+Mailhearth se sitúa entre los navegadores y Purelymail, Migadu o servidores manuales.
+Las credenciales de administración afectan a los recursos de la cuenta; las de protocolos
+acceden a buzones individuales.
 Los activos, en orden de sensibilidad:
 
-1. El token de API de Purelymail.
-2. Las contraseñas de aplicación de los buzones que se guardan para el acceso
-   IMAP/SMTP/Sieve.
+1. Las credenciales de API de administración de cada conexión.
+2. Las contraseñas independientes de IMAP/SMTP/ManageSieve.
 3. El contenido del correo y el directorio de la organización.
 4. Las sesiones de los miembros.
 
@@ -26,8 +26,10 @@ de la base de datos por sí sola no sirve de nada).
 una clave derivada (HKDF-SHA256) de la clave maestra de la instalación. La clave
 maestra proviene de `MAILHEARTH_MASTER_KEY` o de `<data>/master.key` (modo 0600,
 generado en el primer arranque). Cada propósito usa una clave derivada distinta.
-El token de API solo se muestra como una pista enmascarada después de guardarlo;
-las contraseñas de aplicación nunca se muestran.
+Las credenciales API y de protocolos guardadas solo devuelven metadatos ocultos.
+Un administrador autorizado puede reclamar explícitamente una contraseña nueva para
+clientes externos una sola vez antes de caducar. La respuesta usa `Cache-Control: no-store`
+y elimina el secreto disponible para reclamar.
 
 **Autenticación.** Las contraseñas de los miembros usan argon2id (19 MiB, t=2).
 Las sesiones son tokens aleatorios de 256 bits que se guardan con hash (SHA-256);
@@ -79,15 +81,37 @@ el host.
 no-referrer`, una CSP para la SPA (`script-src 'self'`), caché inmutable solo
 para los recursos con hash, `no-store` para las respuestas de la API.
 
-**Credenciales de Purelymail.** Una contraseña de aplicación por buzón. El
-traspaso, la conversión a compartido, la suspensión y la baja rotan esa
-contraseña y además restablecen la contraseña de Purelymail, de modo que los
-teléfonos y clientes de escritorio configurados por la persona que se marcha
-dejan de funcionar. La contraseña de aplicación antigua se revoca en origen.
+**Conexiones y credenciales.** La autenticación de administración y la de protocolos
+se configuran separadamente. Los candidatos autentican todos los endpoint habilitados
+antes de confirmarse. Las versiones de conexión, endpoint, credencial y acceso invalidan
+conexiones anteriores y solicitudes. La suspensión revoca acceso local inmediatamente
+y conserva credenciales. La rotación managed registra creación, validación, confirmación
+y revocación por separado. Las credenciales entered y los clientes externos requieren
+tratamiento explícito en el proveedor. Confirmar revocación remota exige su verificación;
+los informes administrativos guardan `systemVerified=false`. Una respuesta de creación
+perdida sin ID remoto requiere un informe de limpieza y no provoca creación automática adicional.
+
+**Asociación y concurrencia.** Las restricciones de base de datos validan organización,
+conexión, buzón y credencial. requestId, ocupación de recursos y expectedRevision protegen
+operaciones; los permisos se comprueban al encolar, ejecutar y controlar. Los buzones
+con historial de envío o colaboración se archivan si su eliminación afectaría al historial.
+domain scope controla administración y descubrimiento; el correo conserva validación independiente.
+
+**TLS y autorización.** Todos los protocolos habilitados verifican hostname y certificados
+con certificados del sistema o CA privada explícita. No existe opción para ignorar la
+validación. Los ajustes de Identity y la autorización de envío son independientes;
+un alias, importación o registro de reenvío no autoriza SMTP From.
+
+**Envío y observaciones remotas.** Submission cifra envelope y conserva identificadores
+estables. SMTP y Sent se guardan por separado. Un resultado desconocido exige investigación
+y una solicitud nueva explícita para reenviar. La importación de reenvíos conserva
+confirmaciones y modos sin verificar; la presencia en API y los informes externos no prueban entrega.
 
 **Sieve.** Las reglas se compilan a partir de un modelo estructurado con
 validación de nombres de cabecera, tamaños, direcciones y marcas; los usuarios no
-pueden enviar Sieve sin procesar.
+pueden enviar Sieve sin procesar. ManageSieve comprueba extensiones, active script hash,
+lectura del candidato independiente y activación. Sustituir el activo exige confirmación
+y conserva scripts existentes. El rechazo de autenticación ambiguo permanece sin verificar.
 
 **Auditoría.** Cada cambio administrativo se registra con el actor, el objetivo y
 el detalle en `audit_log`.
@@ -100,9 +124,8 @@ el detalle en `audit_log`.
   `X-Forwarded-For`.
 - Haz una copia de seguridad de `master.key` aparte de la base de datos;
   guárdala en tu gestor de contraseñas. Sin ella, las credenciales guardadas
-  deben volver a crearse (el producto puede hacerlo: rota todos los buzones).
-- Usa un token de API de Purelymail dedicado a Mailhearth para poder revocarlo de
+  deben configurarse de nuevo y verificarse con el flujo entered o managed adecuado.
+- Usa credenciales API de administración dedicadas a Mailhearth para revocarlas de
   forma independiente.
-- Activa la autenticación en dos pasos en la propia cuenta de Purelymail; el
-  token de API la omite, y por eso es el activo más importante de la lista
-  anterior.
+- Activa autenticación en dos pasos en la cuenta del proveedor. Las credenciales API
+  permiten acceso independiente y requieren protección específica.

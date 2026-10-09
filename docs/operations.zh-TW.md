@@ -12,12 +12,12 @@ Mailhearth 是為買得到的最小主機設計的。
 | 閒置 RSS | 25–40 MB | `GOMEMLIMIT` 預設為 160 MiB |
 | 忙碌 RSS（10 位使用者） | 60–120 MB | 主要來自 IMAP 抓取緩衝區 |
 | CPU | 可忽略 | 登入時的 argon2id 是最重的一步 |
-| 磁碟 | 幾 MB | SQLite：組織模型與協作中介資料；郵件留在 Purelymail |
-| 前端 | gzip 後 51 KB | 一個 JS 分塊、一個 CSS 檔案，不可變快取 |
+| 磁碟 | 隨組織資料增加 | SQLite 儲存組織、操作、寄送狀態與協作資料；郵件儲存在所屬 IMAP 服務 |
+| 前端 | gzip 後約 100 KB | 2026-10-09 的 JS 與 CSS 建置結果；檔案名稱包含內容摘要 |
 
 把 `MAILHEARTH_IMAP_MAX_CONNS`（預設 24）調整到大約「同時使用的使用者人數 × 2
-加上大家保持開啟的信箱數量」。每個 IDLE 監看器占用一個連線。Purelymail 允許
-每位使用者建立相當多的 IMAP 連線，不過沒有理由持有超過需要的數量。
+加上大家保持開啟的信箱數量」。全域預設上限為 24，每個連線上限為 8，每個信箱
+上限為 3。IDLE 使用獨立配額，保留一般請求的連線配額。遵守各服務商的實際限制。
 
 ## 備份
 
@@ -36,7 +36,8 @@ Mailhearth 是為買得到的最小主機設計的。
 
 ## 升級
 
-移轉會在啟動時自動執行，而且都是追加式的。拉取新映像檔，執行
+migration 在啟動時自動執行，包括資料表轉換與關聯檢查。升級前保存資料庫與
+master key 的一致備份。拉取新映像檔，執行
 `docker compose up -d`。不支援跨移轉降低版本；請改為還原備份。
 
 ## 反向代理
@@ -57,21 +58,32 @@ nginx：在 `/api/mail/` 上設定 `proxy_buffering off;` 和
 
 ## 故障排除
 
-**「Purelymail 拒絕了這個 API 權杖」** — 權杖已被撤銷或輸入錯誤。請在
-管理 → 連線 底下更換。
+**`provider_auth_failed`** — 在管理 → 連線中更新所屬連線的管理認證。候選認證失敗
+時保留目前可用設定；郵件協定的認證分別檢查。
 
-**某個信箱顯示「未連接」** — 匯入的信箱只有在有人綁定（成員加入流程）或管理員
-按下 *連接* 時才會取得應用程式密碼。如果 Purelymail 拒絕
-（`createAppPassword` 失敗），請確認該使用者仍存在於帳戶中，然後執行
-*立即同步*。
+**信箱協定尚未設定** — 匯入只登記選中的資源。明確設定 IMAP、SMTP、ManageSieve
+及 entered 認證，或使用該連線提供的 managed 認證能力。每個啟用協定通過實際認證
+後才儲存設定。SMTP 與 ManageSieve 可以分別停用。
 
-**「郵件伺服器拒絕了此信箱憑證」** — 應用程式密碼已在 Purelymail 入口網站中
-刪除，或使用者的密碼在 Mailhearth 之外被重設。請對該信箱使用 *輪換憑證*。
+**`mailbox_auth_failed`** — 檢查所屬協定的使用者名稱與密碼。entered 認證透過協定
+設定更新；managed 認證透過輪換操作更新。網路錯誤、暫時拒絕及未明確分類的
+ManageSieve 回應保留未確認狀態。遠端撤銷需要使用新的連線檢查。
 
-**規則無法儲存** — 主機必須能連上 `mailserver.purelymail.com:4190` 的
-ManageSieve（STARTTLS）。部分 VPS 服務商會封鎖對外連接埠；請用
-`openssl s_client -starttls sieve -connect
-mailserver.purelymail.com:4190` 測試。
+**規則無法儲存** — 檢查信箱 ManageSieve endpoint、TLS 與伺服器擴充功能。
+Purelymail 預設使用 `mailserver.purelymail.com:4190` 和 STARTTLS；Migadu 模板
+預設停用，啟用時填寫帳戶實際設定。接管既有 active script 需要明確確認與目前內容
+摘要；自動回覆另外需要 `vacation` 擴充功能。
+
+**Operation 為 `unknown`** — 讀取步驟記錄並核查遠端結果，確認後才能明確重試。
+資源占用會保留。新增認證回應遺失且沒有遠端 ID 時，請在服務商介面處理認證，隨後
+提交管理員清理報告。報告取消原操作並保留資源：`external_reported`，
+`systemVerified: false`。
+
+**Submission 為 `sent_copy_failed`** — SMTP 已接受郵件，只重試 Sent 副本。
+SMTP 或 APPEND 結果為 `unknown` 時，查詢 Submission 與唯一提交標識，保留 requestId。
+
+**同步發現新增資源** — 在所屬連線的結果中選擇需要匯入的資源。同步保留認證、
+授權和歷史；讀取失敗不會據此判定資源已刪除。
 
 **沒有即時更新** — SSE 被代理伺服器緩衝了，請見上文。此時用戶端會退回手動
 重新整理，而且在發生操作時仍會輪詢資料夾。
@@ -85,10 +97,17 @@ Mailhearth 建立的信箱預設為開啟。
 結構化文字日誌輸出到 stderr。`MAILHEARTH_LOG_LEVEL=debug` 會加上每個請求的
 記錄行和 IMAP 監看器重新連線的訊息。日誌中沒有任何憑證。
 
-## 開發環境的模擬實作
+## 檢查命令
 
-`MAILHEARTH_DEV_STACK=1` 會把 Purelymail、IMAP 和 SMTP 換成處理程序內的模擬
-實作。`-seed-demo` 會加入兩個網域、五位使用者、路由規則和範例郵件。模擬的
-API 權杖是 `dev-token`；使用者用 `<name>-pass` 驗證。Go 測試使用同一套模擬
-實作，因此 `go test ./...` 會走過完整路徑，包括 IMAP IDLE、SMTP 提交和
-HTML 消毒。
+```powershell
+go test ./... -run '^$'
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+go vet ./...
+npm --prefix web run test
+npm --prefix web run build
+```
+
+真實環境測試需要關閉 `MAILHEARTH_DEV_STACK`。認證設定放在專案
+`data/integration/multi-provider/` 目錄，設定 `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG`，
+執行 `go test -count=1 -v ./internal/integration/multiprovider`。缺少設定會明確失敗。
+本機資料庫檢查與真實驗收分別記錄；尚未執行的真實驗收項目保持未完成狀態。

@@ -1,0 +1,13 @@
+ALTER TABLE submissions ADD COLUMN org_id INTEGER REFERENCES organizations(id);
+ALTER TABLE submissions ADD COLUMN session_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE submissions ADD COLUMN execution_member_id INTEGER REFERENCES members(id);
+UPDATE submissions SET execution_member_id=member_id;
+ALTER TABLE submissions ADD COLUMN connection_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE submissions ADD COLUMN access_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE submissions ADD COLUMN identity_revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE submissions ADD COLUMN sent_copy_mode TEXT NOT NULL DEFAULT 'append' CHECK(sent_copy_mode IN ('append','server'));
+ALTER TABLE submissions ADD COLUMN staging_folder TEXT NOT NULL DEFAULT '';
+ALTER TABLE submissions ADD COLUMN sent_folder TEXT;
+ALTER TABLE submissions ADD COLUMN cleanup_error_code TEXT;
+UPDATE submissions SET org_id=(SELECT org_id FROM mailboxes WHERE id=submissions.mailbox_id);
+CREATE INDEX idx_submissions_work ON submissions(status,mailbox_id,created_at);

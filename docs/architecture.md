@@ -2,127 +2,113 @@
 
 **English** · [简体中文](architecture.zh-CN.md) · [繁體中文](architecture.zh-TW.md) · [日本語](architecture.ja.md) · [Español](architecture.es.md)
 
-## Goals and non-goals
+## Deployment and components
 
-Mailhearth wraps Purelymail's reliable, inexpensive mail infrastructure into
-a product a small organisation can deploy, administer and use daily. It
-deliberately does **not** run an SMTP server, store the primary copy of mail,
-filter spam, or implement DLP / eDiscovery / MDM. It is also not a re-skin of
-the Purelymail portal or another Roundcube: the unit of administration is a
-person in an organisation, not a "user" on an account.
+Mailhearth runs as one Go binary with embedded Preact assets and SQLite (modernc,
+without cgo). Mail servers retain message bodies and provide delivery and filtering.
+SQLite stores organisation data, encrypted credentials, resource associations,
+operations, sending requests and collaboration metadata. Node is used during the frontend build.
 
-Constraints that shaped the design:
+- `cmd/mailhearth`: configuration, master key, database, IMAP pool, workers and HTTP server.
+- `internal/config`, `internal/secrets`: environment configuration, AES-256-GCM/HKDF, argon2id and tokens.
+- `internal/db`, `internal/model`: embedded migrations, association checks and persisted models.
+- `internal/provider`: common management interface and Purelymail, Migadu and manual adapters.
+- `internal/purelymail`: Purelymail API transport used by its adapter.
+- `internal/core`: connections, discovery/import, organisation, resource lifecycle, Operation and Submission.
+- `internal/mailproto/imappool`: bounded pooling, endpoint version invalidation and IDLE watchers.
+- `internal/mailproto/mailops`, `mimeutil`, `sieve`: IMAP/SMTP, MIME sanitisation, Sieve compilation and ManageSieve.
+- `internal/httpapi`, `internal/web`, `web/`: permission-checked JSON/SSE, embedded assets and the mail/admin/settings UI.
 
-- **Tiny hosts.** Target deployments run on the cheapest VPS available. The
-  server is a single static Go binary with SQLite, an in-process bounded IMAP
-  connection pool, and a 51 KB (gzipped) Preact front end. No Redis, no
-  Postgres, no Node at runtime, no background workers beyond a few goroutines.
-- **Purelymail is the source of truth for mail.** Messages are never copied
-  into Mailhearth's database. Everything the client shows is fetched over
-  IMAP on demand; the database only holds the organisation model and small
-  collaboration metadata keyed by `Message-ID`.
-- **No secrets in the browser.** The API token and mailbox app passwords live
-  encrypted in SQLite. The browser talks only to Mailhearth.
+## Organisation and resource ownership
 
-## Components
+Each installation has one Organization. Members have roles, departments and states
+`invited`, `active`, `disabled`, `departed`. Roles contain named permissions.
+Personal Mailbox ownership and explicit shared Mailbox grants (`full`, `send`, `read`)
+control mail access; administrative permissions do not grant mail access.
 
-| Package | Responsibility |
-|---|---|
-| `cmd/mailhearth` | Entry point: config, master key, database, IMAP pool, HTTP server |
-| `internal/config` | Environment configuration |
-| `internal/db` | SQLite (modernc, no cgo) and embedded migrations |
-| `internal/secrets` | AES-256-GCM box (HKDF from the master key), argon2id, tokens |
-| `internal/purelymail` | Typed API client; `fake/` is an in-memory Purelymail |
-| `internal/model` | Organisation types shared by the services and the API |
-| `internal/core` | Services: setup/import, members, roles, domains, mailboxes, addresses, groups, offboarding, team state |
-| `internal/mailproto/imappool` | Bounded IMAP connection pool and IDLE watchers |
-| `internal/mailproto/mailops` | Folders, listing, rendering, actions, compose, SMTP |
-| `internal/mailproto/mimeutil` | HTML sanitiser, text/HTML conversion, decoding |
-| `internal/mailproto/sieve` | Rule model to Sieve compiler; ManageSieve client |
-| `internal/httpapi` | JSON API, sessions, CSRF, uploads, SSE, sandboxed message view |
-| `internal/web` | Embedded SPA with gzip and immutable caching |
-| `internal/devstack` | Fake Purelymail, IMAP and SMTP for development and tests |
-| `web/` | Preact + Vite single-page app (mail, admin, settings) |
+A MailConnection belongs to the organisation and carries provider kind, label,
+management API authentication, domain scope and three protocol defaults.
+Domain is a logical name; DomainBinding associates it with a connection and its
+provider settings/DNS state. Mailbox addresses are unique within a connection, so
+identical addresses in different connections remain independent.
 
-## Organisation model
+Addresses represent `primary`, `alias`, `forward`, `group`, `catchall`, `prefix`
+and externally managed `external_rule`. Mailbox forwarding has its own
+`mailbox_forwardings` row; importing it preserves the primary address. Identity
+display settings and SMTP sender authorization are independent. Receiving an alias
+does not authorize its use as From. Groups calculate all eligible personal mailboxes
+and validate connection/domain restrictions before deduplicating targets.
 
-| Concept | Meaning | Backed by |
-|---|---|---|
-| **Organization** | The single tenant of an installation. | `organizations` |
-| **Member** | A real person who signs in to Mailhearth. Has a role, status (invited/active/disabled/departed), title, department. | `members` |
-| **Role** | Named set of permissions (`members.manage`, `shared.manage`, …). Built-in: owner, admin, member; custom roles allowed. | `roles` |
-| **Domain** | A domain on the Purelymail account, with DNS health. | `domains` ↔ Purelymail domain |
-| **Mailbox** | A login account that stores mail. `personal` (owned by one member) or `shared` (owned by the organisation, worked by several members). | `mailboxes` ↔ Purelymail user |
-| **Address** | Something that receives mail: the mailbox's own address (`primary`), an `alias` to one mailbox, a `forward` to arbitrary targets, a `group` distribution address, a `catchall` or `prefix` rule. | `addresses` ↔ Purelymail routing rule |
-| **Identity** | A From address + display name + signature a mailbox may send as. | `identities` |
-| **Group** | A set of members, optionally with a distribution address whose targets follow membership. | `groups`, `group_members` |
-| **Access grant** | Member → mailbox with level `full`/`send`/`read`. | `mailbox_access` |
+ProviderResource associates each remote reference with one local object and its
+purpose. It records ownership, remote state and safe typed observations. References
+and revision checks protect connection/organisation boundaries and historical records.
 
-A member can own several mailboxes; a mailbox can have several addresses; an
-address can reach several members (via a forward or group). When people
-change roles or leave, mailboxes and addresses stay with the organisation:
-ownership is reassigned, never deleted implicitly.
+## Protocol configuration
 
-## Mapping onto Purelymail
+Each Mailbox has independent IMAP, SMTP and ManageSieve endpoints. Network mode
+is `inherit`, `override` or `disabled`; enabled endpoints specify username and an
+encrypted Credential independently. Credentials are `managed` or explicitly entered.
+Candidates must authenticate on every enabled protocol before atomic configuration
+commit. Endpoint, connection, credential and access versions invalidate old connections.
 
-| Mailhearth action | Purelymail API calls |
-|---|---|
-| Connect | `checkAccountCredit` (validates token) |
-| Import / sync | `listDomains`, `listUser`, `listRoutingRules` — read-only, idempotent |
-| Create mailbox | `createUser` (random password, no welcome mail) + `createAppPassword` |
-| Connect imported mailbox | `createAppPassword` (the existing password is never needed) |
-| Rotate credential | `createAppPassword` then `deleteAppPassword` of the old one |
-| Reset password for external clients | `modifyUser{newPassword}` + rotate |
-| Suspend / offboard lock-out | `modifyUser{newPassword}` + `deleteAppPassword` |
-| Alias / forward / catch-all / prefix / group address | `createRoutingRule` / `deleteRoutingRule` |
-| Forwarding on a mailbox | routing rule on the mailbox's own address (Purelymail semantics: rule wins over delivery) |
-| Domain add / DNS recheck / settings | `addDomain`, `updateDomainSettings`, `getOwnershipCode` |
+Purelymail defaults: IMAP `imap.purelymail.com:993` TLS, SMTP
+`smtp.purelymail.com:465` TLS, ManageSieve `mailserver.purelymail.com:4190` STARTTLS.
+Migadu defaults: IMAP `imap.migadu.com:993` TLS, SMTP `smtp.migadu.com:465` TLS,
+ManageSieve disabled. Manual defaults are disabled until explicitly configured.
+TLS validates the hostname with system certificates or an explicit private CA bundle.
 
-Mailhearth holds exactly one app password per mailbox, named "Mailhearth".
-Members never see it; the server uses it for IMAP, SMTP and ManageSieve on
-their behalf, after checking that the member owns the mailbox or has a grant.
-Admin permissions do not grant mail access: reading a shared mailbox always
-needs an explicit grant.
+## Discovery, import and operations
 
-## Mail path
+Discovery reads the entire selected scope into a complete, expiring snapshot tied
+to a connection revision. Import checks ownership, revision, expiry and dependencies
+in one local transaction. Imported personal mailboxes have no owner or login credential.
+Sync updates registered observations and leaves new resources pending selection.
+It preserves owners, access grants, collaboration, signatures and entered credentials.
 
-1. `httpapi` resolves the mailbox for the signed-in member
-   (`core.ResolveMailbox`) and gets a credential.
-2. `imappool.Get` returns a pooled connection (max `MAILHEARTH_IMAP_MAX_CONNS`
-   in total, 2 idle per credential, reaped after 90 s idle).
-3. `mailops` runs the IMAP commands: `LIST` with `LIST-STATUS` for folders,
-   sequence-range `FETCH` of envelope + flags + `BODYSTRUCTURE` for paging,
-   `UID SEARCH` for queries, `BODY.PEEK[part]` for rendering, `MOVE`/`UIDPLUS`
-   where available with fallbacks.
-4. HTML bodies pass through `mimeutil.SanitizeHTML` (bluemonday allow-list,
-   CSS scrubbing, `cid:` resolution, remote-image blocking) and are served in a
-   separate document with `default-src 'none'` CSP, shown in a sandboxed iframe.
-5. Sending builds RFC 5322 with go-message, submits via SMTP with the same
-   credential, then appends to Sent and marks the original answered/forwarded.
-6. IDLE watchers (one per mailbox+folder, shared by all open tabs) push
-   changes to browsers over Server-Sent Events.
+Forwarding imports retain the source mailbox, selected targets, remote references
+and `active`/`pending_confirmation`/`blocked`/`unknown` confirmation states. Targets
+and delivery modes are observed separately from desired settings. Unverified modes
+remain `unverified`; API presence or an administrator report does not prove delivery.
+Migadu forwarding writes remain gated by V03 verification.
 
-## Shared mailbox collaboration
+Operation persists requestId, content digest, encrypted payload, resource locks and
+individual steps. Duplicate submissions return the same operation; revision changes
+and permission loss prevent stale execution. Unknown remote writes require reconciliation,
+and confirmed steps are not repeated. External actions record administrator reports
+with `systemVerified=false`. Credential responses lost without a remote ID require
+an explicit cleanup report. Suspension immediately revokes local access; archiving
+preserves history. Offboarding tracks transfer, groups and credential revocation separately.
 
-Collaboration state is keyed by `mid:<message-id>` so it survives moves
-between folders. `message_state` holds assignee and open/resolved status;
-`mail_activity` is an append-only log (replied, forwarded, assigned, note …)
-written both by explicit team actions and automatically when a member sends
-from the shared mailbox. The message list decorates rows with "replied by",
-assignee and status badges.
+## Mail and sending path
 
-## Rules
+1. HTTP resolves current ownership/grants and the selected protocol endpoint.
+2. IMAP pooling defaults to 24 global, 8 per connection and 3 per mailbox, reserving
+   4 global and 2 per connection slots for ordinary requests while watchers are active.
+3. `mailops` lists folders, pages messages, searches and reads MIME parts using IMAP.
+   Explicit folder mapping, unique SPECIAL-USE and unique names determine special folders.
+4. `mimeutil` sanitises HTML/CSS, resolves `cid:` and blocks remote images. A dedicated
+   document with restrictive CSP is rendered in a script-free sandboxed iframe.
+5. Submission retains requestId, stable Message-ID, digest and encrypted envelope;
+   message bodies remain in server Drafts. It records SMTP acceptance and Sent-copy
+   state independently. Unknown delivery is not automatically retried. Sent-copy
+   retries retain SMTP acceptance; draft cleanup requires UID EXPUNGE.
+6. Shared IDLE watchers deliver updates through SSE. Collaboration uses
+   `mid:<message-id>`; `message_state` stores assignments/status and `mail_activity`
+   records replies, forwarding, assignment and notes across folder moves.
 
-Members edit rules as structured conditions/actions. `sieve.Compile` turns
-them (plus the vacation auto-reply) into a Sieve script with the extensions
-Purelymail advertises (`fileinto imap4flags copy body vacation`). The script is
-uploaded as `mailhearth` over ManageSieve (`mailserver.purelymail.com:4190`,
-STARTTLS) and activated. The structured form is kept in `mailboxes.settings_json`.
+## Rules and frontend
 
-## Front end
+Rules are structured and compiled to Sieve using advertised extensions. ManageSieve
+uses the mailbox's endpoint and go-managesieve. Activation checks the current script
+hash, requires confirmation for takeover, reads back a separate candidate and verifies
+activation before updating local settings. Existing scripts are retained. Rule and
+vacation capabilities depend on enabled endpoints and required extensions.
 
-Preact + `@preact/signals`, a 60-line history router, no UI framework. Routes:
-`/mail/:mailbox/:folder/:uid`, `/admin/:section/:id`, `/settings/:tab`,
-`/login`, `/invite/:token`, `/setup`. Strings are English keys with a zh-CN
-dictionary. The layout is a three-pane mail client above 860 px and a
-drawer + single pane below.
+Preact, `@preact/signals` and the history router serve `/mail`, `/admin`, `/settings`,
+`/login`, `/invite/:token`, `/setup`. Layout uses three panes above 860 px and a drawer
+with one pane below. English source keys have zh-CN, zh-TW, Japanese and Spanish
+dictionaries; translation coverage and interpolation are checked with the TypeScript AST.
+Production builds preserve previous hashed assets for already opened clients.
+
+Local storage/HTTP checks and builds are documented in [integration testing](integration-testing.md).
+Real-provider acceptance remains pending.

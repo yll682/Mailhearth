@@ -3,12 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +15,7 @@ import (
 	"mailhearth/internal/mailproto/mailops"
 	"mailhearth/internal/mailproto/mimeutil"
 	"mailhearth/internal/mailproto/sieve"
-	"mailhearth/internal/model"
+	"mailhearth/internal/secrets"
 )
 
 // mailReq bundles what every mailbox handler needs.
@@ -48,15 +46,15 @@ func (s *Server) withMailbox(needConn bool, fn func(m *mailReq)) http.HandlerFun
 			s.fail(w, r, err)
 			return
 		}
-		mc, err := s.Svc.ResolveMailbox(r.Context(), p.OrgID, p.Member.ID, id)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		m := &mailReq{w: w, r: r, p: p, mc: mc}
-		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		requestCtx,requestCancel:=s.Svc.RegisterMailRequest(r.Context(),p.Member.ID,id,p.Token)
+		defer requestCancel()
+		r=r.WithContext(requestCtx)
+		ctx, cancel := context.WithTimeout(requestCtx, 90*time.Second)
 		defer cancel()
-		m.ctx = ctx
+		active,err:=s.Svc.SessionHashActive(ctx,p.Member.ID,secrets.HashToken(p.Token));if err!=nil{s.fail(w,r,err);return};if !active{s.fail(w,r,core.ErrForbidden);return}
+		mc,err:=s.Svc.CheckMailboxAccess(ctx,p.OrgID,p.Member.ID,id);if err!=nil{s.fail(w,r,err);return}
+		if needConn{mc,err=s.Svc.ResolveMailbox(ctx,p.OrgID,p.Member.ID,id);if err!=nil{s.fail(w,r,err);return}}
+		m:=&mailReq{w:w,r:r,p:p,mc:mc,ctx:ctx}
 		if needConn {
 			conn, err := s.Pool.Get(ctx, mc.Cred)
 			if err != nil {
@@ -70,28 +68,14 @@ func (s *Server) withMailbox(needConn bool, fn func(m *mailReq)) http.HandlerFun
 	})
 }
 
-func (s *Server) sieveClient(ctx context.Context, cred imappool.Cred) (*sieve.Client, error) {
-	if s.Cfg.SieveAddr == "" {
-		return nil, nil
-	}
-	var tlsCfg *tls.Config
-	c, err := sieve.Dial(ctx, s.Cfg.SieveAddr, string(s.Cfg.SieveTLS), tlsCfg)
-	if err != nil {
-		return nil, &core.UpstreamError{Op: "managesieve connect", Err: err}
-	}
-	if err := c.Authenticate(cred.User, cred.Pass); err != nil {
-		c.Close()
-		return nil, &core.UpstreamError{Op: "managesieve login", Err: err}
-	}
-	return c, nil
-}
-
 type listResponse struct {
 	*mailops.Page
 	Team map[string]*core.MessageState `json:"team"`
 }
 
 func (s *Server) routesMail(mux *http.ServeMux) {
+	s.routesSubmissions(mux)
+	s.routesFolderMapping(mux)
 	mux.HandleFunc("GET /api/mail/mailboxes", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
 		v, err := s.Svc.AccessibleMailboxes(r.Context(), p.OrgID, p.Member.ID)
@@ -228,7 +212,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		token := s.viewToken(m.p.Member.ID, m.mc.Mailbox.ID, folder, uint32(uid), 45*time.Minute)
+		token := s.viewToken(m.p.Member.ID, m.mc.Mailbox.ID, folder, uint32(uid), 45*time.Minute,secrets.HashToken(m.p.Token))
 		base := fmt.Sprintf("/api/mail/mailboxes/%d/messages/%d", m.mc.Mailbox.ID, uid)
 		msg, err := mailops.GetMessage(m.ctx, m.conn, folder, uint32(uid), mailops.RenderOptions{
 			AllowRemote: m.r.URL.Query().Get("remote") == "1",
@@ -408,7 +392,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		trash, err := mailops.EnsureFolder(m.ctx, m.conn, folders, mailops.RoleTrash)
+		trash, err := mailops.ResolveSpecialFolder(folders,mailops.RoleTrash,m.mc.Mailbox.FolderMapping.Trash)
 		if err != nil {
 			s.fail(m.w, m.r, err)
 			return
@@ -421,7 +405,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 	}))
 
 	// Compose: send & drafts
-	mux.HandleFunc("POST /api/mail/mailboxes/{id}/send", s.withMailbox(true, func(m *mailReq) { s.handleCompose(m, true) }))
+	mux.HandleFunc("POST /api/mail/mailboxes/{id}/send",s.requireAuth(s.composeSubmission))
 	mux.HandleFunc("POST /api/mail/mailboxes/{id}/drafts", s.withMailbox(true, func(m *mailReq) { s.handleCompose(m, false) }))
 
 	// Uploads
@@ -471,7 +455,9 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			return
 		}
 		folder := s.folderParam(m.r)
-		events, cancel := s.Pool.Subscribe(m.mc.Cred, folder)
+		mc,err:=s.Svc.ResolveMailbox(m.ctx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID);if err!=nil{s.fail(m.w,m.r,err);return}
+		events, cancel,err := s.Pool.SubscribeChecked(mc.Cred, folder)
+		if err!=nil{s.fail(m.w,m.r,err);return}
 		defer cancel()
 		h := m.w.Header()
 		h.Set("Content-Type", "text/event-stream")
@@ -487,12 +473,14 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		for {
 			select {
 			case <-m.r.Context().Done():
+				fmt.Fprint(m.w,"event: access_revoked\ndata: {}\n\n");flusher.Flush()
 				return
 			case <-deadline.C:
 				fmt.Fprint(m.w, "event: reconnect\ndata: {}\n\n")
 				flusher.Flush()
 				return
 			case <-ping.C:
+				if _,err:=s.Svc.CheckMailboxAccess(m.r.Context(),m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID);err!=nil{fmt.Fprint(m.w,"event: access_revoked\ndata: {}\n\n");flusher.Flush();return}
 				fmt.Fprint(m.w, ": ping\n\n")
 				flusher.Flush()
 			case ev, ok := <-events:
@@ -501,6 +489,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 					flusher.Flush()
 					return
 				}
+				if _,err:=s.Svc.CheckMailboxAccess(m.r.Context(),m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID);err!=nil{fmt.Fprint(m.w,"event: access_revoked\ndata: {}\n\n");flusher.Flush();return}
 				b, _ := jsonMarshal(ev)
 				fmt.Fprintf(m.w, "event: change\ndata: %s\n\n", b)
 				flusher.Flush()
@@ -559,89 +548,30 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 	// Rules (Sieve) and vacation
 	mux.HandleFunc("GET /api/mail/mailboxes/{id}/rules", s.withMailbox(false, func(m *mailReq) {
 		st := m.mc.Mailbox.Settings
-		script, _ := sieve.Compile(st.SieveRules, st.Vacation)
-		writeJSON(m.w, http.StatusOK, map[string]any{"rules": st.SieveRules, "vacation": st.Vacation, "script": script, "lastSync": st.SieveSync, "available": s.Cfg.SieveAddr != ""})
+		script, err := sieve.Compile(st.SieveRules, st.Vacation)
+		if err!=nil{s.fail(m.w,m.r,err);return}
+		caps,err:=s.Svc.ObjectCapabilities(m.ctx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ConnectionID,m.mc.Mailbox.ID);if err!=nil{s.fail(m.w,m.r,err);return}
+		cap:=caps["rules.manage"]
+		writeJSON(m.w, http.StatusOK, map[string]any{"rules": st.SieveRules, "vacation": st.Vacation, "script": script, "lastSync": st.SieveSync, "available": cap.Support=="automatic" && cap.Readiness=="ready" && cap.PermissionAllowed, "capability":cap,"vacationCapability":caps["vacation.manage"],"revision":m.mc.Mailbox.Revision})
 	}))
 	mux.HandleFunc("PUT /api/mail/mailboxes/{id}/rules", s.withMailbox(false, func(m *mailReq) {
 		if !m.mc.CanDelete() {
 			s.fail(m.w, m.r, core.ErrForbidden)
 			return
 		}
-		var in struct {
-			Rules    []model.SieveRule `json:"rules"`
-			Vacation *model.Vacation   `json:"vacation"`
-		}
+		var in core.RulesOperationInput
 		if err := readJSON(m.r, &in); err != nil {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		if len(in.Rules) > 100 {
-			s.fail(m.w, m.r, &core.ValidationError{Msg: "too many rules"})
-			return
-		}
-		for i := range in.Rules {
-			if in.Rules[i].ID == "" {
-				in.Rules[i].ID = strconv.FormatInt(time.Now().UnixNano()+int64(i), 36)
-			}
-		}
-		script, err := sieve.Compile(in.Rules, in.Vacation)
-		if err != nil {
-			s.fail(m.w, m.r, err)
-			return
-		}
-		settings := m.mc.Mailbox.Settings
-		settings.SieveRules = in.Rules
-		settings.Vacation = in.Vacation
-		uploaded := false
-		if c, err := s.sieveClient(m.ctx, m.mc.Cred); err != nil {
-			s.fail(m.w, m.r, err)
-			return
-		} else if c != nil {
-			defer c.Logout()
-			if err := c.PutScript(sieve.ScriptName, script); err != nil {
-				s.fail(m.w, m.r, &core.ValidationError{Msg: "the mail server rejected the rules: " + err.Error()})
-				return
-			}
-			if err := c.SetActive(sieve.ScriptName); err != nil {
-				s.fail(m.w, m.r, &core.UpstreamError{Op: "managesieve activate", Err: err})
-				return
-			}
-			settings.SieveSync = time.Now().UTC().Format(time.RFC3339)
-			uploaded = true
-		}
-		if err := s.Svc.SaveMailboxSettings(m.ctx, m.mc.Mailbox.ID, settings); err != nil {
-			s.fail(m.w, m.r, err)
-			return
-		}
-		writeJSON(m.w, http.StatusOK, map[string]any{"rules": settings.SieveRules, "vacation": settings.Vacation, "script": script, "lastSync": settings.SieveSync, "uploaded": uploaded, "available": s.Cfg.SieveAddr != ""})
+		in.SessionHash=secrets.HashToken(m.p.Token)
+		out,_,err:=s.Svc.QueueOperation(m.ctx,m.p.OrgID,m.p.Member.ID,in.RequestID,core.OperationPayload{Kind:"mailbox.rules",MailboxID:m.mc.Mailbox.ID,Rules:&in,SessionHash:in.SessionHash},nil)
+		if err!=nil{s.fail(m.w,m.r,err);return}
+		writeJSON(m.w,http.StatusAccepted,out)
 	}))
 	mux.HandleFunc("GET /api/mail/mailboxes/{id}/rules/server", s.withMailbox(false, func(m *mailReq) {
-		c, err := s.sieveClient(m.ctx, m.mc.Cred)
-		if err != nil {
-			s.fail(m.w, m.r, err)
-			return
-		}
-		if c == nil {
-			writeJSON(m.w, http.StatusOK, map[string]any{"available": false})
-			return
-		}
-		defer c.Logout()
-		scripts, err := c.ListScripts()
-		if err != nil {
-			s.fail(m.w, m.r, &core.UpstreamError{Op: "managesieve list", Err: err})
-			return
-		}
-		out := map[string]any{"available": true, "scripts": scripts, "capabilities": c.Capabilities()}
-		for _, sc := range scripts {
-			if sc.Active {
-				body, err := c.GetScript(sc.Name)
-				if err == nil {
-					out["active"] = sc.Name
-					out["activeScript"] = body
-					out["managedByMailhearth"] = sc.Name == sieve.ScriptName
-				}
-			}
-		}
+		out,err:=s.Svc.SieveServer(m.ctx,m.p.OrgID,m.p.Member.ID,m.mc.Mailbox.ID)
+		if err!=nil{s.fail(m.w,m.r,err);return}
 		writeJSON(m.w, http.StatusOK, out)
 	}))
 
@@ -656,12 +586,12 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		var in core.IdentityInput
+		var in core.IdentitySettingsInput
 		if err := readJSON(m.r, &in); err != nil {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		v, err := s.Svc.UpsertIdentity(m.ctx, m.p.OrgID, m.p.Member.ID, m.mc.Mailbox.ID, iid, in)
+		v, err := s.Svc.UpdateIdentitySettings(m.ctx, m.p.OrgID, m.p.Member.ID, m.mc.Mailbox.ID, iid, in)
 		if err != nil {
 			s.fail(m.w, m.r, err)
 			return
@@ -687,29 +617,36 @@ func (s *Server) serveWithToken(w http.ResponseWriter, r *http.Request, fn func(
 	folder := s.folderParam(r)
 	token := r.URL.Query().Get("t")
 	var memberID int64
+	var sessionHash string
 	if p := principalFrom(r); p != nil {
 		memberID = p.Member.ID
-	} else if mid, ok := s.checkViewToken(token, id, folder, uid); ok {
+		sessionHash=secrets.HashToken(p.Token)
+		token=""
+	} else if mid,hash, ok := s.checkViewToken(token, id, folder, uid); ok {
 		memberID = mid
+		sessionHash=hash
 	} else {
 		writeJSON(w, http.StatusUnauthorized, apiError{Error: "sign in required", Code: "unauthenticated"})
 		return
 	}
+	requestCtx,requestCancel:=s.Svc.RegisterMailRequestSessionHash(r.Context(),memberID,id,sessionHash)
+	defer requestCancel()
+	ctx, cancel := context.WithTimeout(requestCtx, 120*time.Second)
+	defer cancel()
+	active,err:=s.Svc.SessionHashActive(ctx,memberID,sessionHash);if err!=nil{s.fail(w,r,err);return};if !active{s.fail(w,r,core.ErrForbidden);return}
 	org, err := s.Svc.Org(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	mc, err := s.Svc.ResolveMailbox(r.Context(), org.ID, memberID, id)
+	mc, err := s.Svc.ResolveMailbox(ctx, org.ID, memberID, id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	if token == "" {
-		token = s.viewToken(memberID, id, folder, uid, 45*time.Minute)
+		token = s.viewToken(memberID, id, folder, uid, 45*time.Minute,sessionHash)
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
-	defer cancel()
 	conn, err := s.Pool.Get(ctx, mc.Cred)
 	if err != nil {
 		s.fail(w, r, err)
