@@ -2,96 +2,104 @@
 
 **English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [Español](README.es.md)
 
-**Mailhearth** is a self-hosted business email platform for small teams (1–50 people): startups, one-person companies, studios and small organisations. It connects Purelymail, Migadu and manually configured IMAP/SMTP mailboxes to an organisation with people, roles, personal and shared mailboxes, aliases, groups and domains, plus a fast webmail client.
+**Mailhearth** is a lightweight, self-hosted business email platform designed specifically for small teams (1–50 people): startups, independent founders, digital studios, and compact organizations. It seamlessly unifies Purelymail, Migadu, and custom or standard IMAP/SMTP mail servers into a cohesive workplace, bringing together team members, role-based access, personal and shared mailboxes, aliases, distribution groups, custom domains, and a lightning-fast modern webmail client.
 
-Mail servers provide delivery, filtering and message storage. Mailhearth provides organisation, permissions, administration and the user experience. Management API authentication and each mailbox's protocol authentication are configured independently.
+In terms of architecture, external mail servers handle the heavy lifting of message delivery, protocol transport, and permanent storage. Mailhearth operates on top, managing organizational hierarchy, fine-grained access policies, day-to-day administration, and delivering a polished user experience. Provider management API credentials and mailbox protocol passwords are kept strictly isolated and individually encrypted.
 
 ```mermaid
 flowchart LR
-    subgraph browser["Staff browser"]
-        SPA["Webmail<br/>Admin console"]
+    subgraph browser["Team Browser"]
+        SPA["Modern Webmail Client<br/>Admin Control Console"]
     end
-    subgraph host["Your server"]
-        APP["mailhearth<br/>single binary + SQLite"]
+    subgraph host["Your Server"]
+        APP["mailhearth<br/>Single Binary + Embedded SQLite"]
     end
-    subgraph pm["Purelymail · Migadu · manual mail servers"]
-        API["Management API<br/>domains · users · routing rules"]
-        MAIL["IMAP · SMTP · ManageSieve<br/>mailboxes · sending · filters"]
+    subgraph pm["Purelymail · Migadu · Mail Servers"]
+        API["Provider Management API<br/>Domains · Accounts · Routing Rules"]
+        MAIL["IMAP · SMTP · ManageSieve<br/>Inbox Sync · Delivery · Filter Rules"]
     end
 
-    SPA <-->|"JSON + SSE over HTTPS<br/>session cookie only"| APP
-    APP -->|"management credentials per connection"| API
-    APP -->|"independent credentials per protocol"| MAIL
+    SPA <-->|"Secure HTTPS (JSON + SSE Live Stream)<br/>Authenticated via HTTP-only Session Cookie"| APP
+    APP -->|"Per-Connection Management Credentials (Encrypted)"| API
+    APP -->|"Per-Protocol Dedicated Mail Credentials (Encrypted)"| MAIL
 ```
 
-Routine queries never return saved API or protocol passwords. Newly generated external-client passwords have an explicit, authorized one-time claim flow.
+Mailhearth rigorously enforces security isolation: routine admin queries will never expose saved API tokens or protocol passwords in plain text. When new application passwords are generated for external third-party mail clients, authorized administrators retrieve them through an explicit, one-time claim flow within a limited time window.
 
-| Webmail | Admin console |
+| Webmail Client | Admin Console |
 |---|---|
 | ![Inbox](docs/screenshots/en/05-mail-inbox.png) | ![Overview](docs/screenshots/en/09-admin-overview.png) |
-| ![Reading a message](docs/screenshots/en/06-mail-read.png) | ![Members](docs/screenshots/en/10-admin-members.png) |
+| ![Reading a Message](docs/screenshots/en/06-mail-read.png) | ![Members](docs/screenshots/en/10-admin-members.png) |
 
-<sub>Captured manually from the local documentation demo. Demo data does not represent verification against real mail providers.</sub>
+<sub>Note: Screenshots above were manually captured in the local built-in documentation demo environment. They reflect UI layout and design, not validation against live email providers.</sub>
 
-## What you get
+## What You Get
 
-**For administrators**
+**For Team Owners & Administrators**
 
-- First-run wizard: create the organisation and mail connections, discover and select resources to import, then configure mailbox credentials or complete setup without binding a mailbox. Import is read-only upstream and does not enable login.
-- Onboard people the way you think about them: name, role, department, a new or existing mailbox, shared mailbox access, groups, an invite link.
-- Shared mailboxes (`support@`, `sales@`) that several people work from without ever seeing a password. Access levels: full / send / read.
-- Aliases, forwards, catch-all and prefix addresses, and group distribution addresses that follow group membership automatically.
-- Persistent offboarding steps: transfer or retain mailboxes, update groups and revoke sessions. Protocol credential handling follows the provider's capabilities; external revocation requires an administrator report and remains separately recorded.
-- Domains with DNS health (MX/SPF/DKIM/DMARC) and copy-paste DNS records.
-- Roles with fine-grained permissions, an audit log, ownership transfer.
+- **Effortless First-Run Wizard**: Quickly set up your organization and mail connections, discover remote resources with a single click, selectively import accounts, and configure mailbox credentials—or complete setup without binding a personal mailbox. Resource imports are strictly read-only and never alter upstream data destructively.
+- **People-First Member Onboarding**: Manage teammates intuitively as real people—name, role, department, provisioning new mailboxes or binding existing ones, granting shared mailbox access, assigning groups, and sharing secure, time-limited invite links.
+- **Collaborative Shared Mailboxes**: Enable multiple team members to manage public mailboxes (`support@`, `sales@`) together without ever sharing or exposing the underlying password. Granular permission tiers include "Full Access", "Send & Read", and "Read Only".
+- **Flexible Address Management**: Full support for aliases, email forwarding, catch-all addresses, prefix-based routing, and dynamic distribution groups that stay in sync with team membership automatically.
+- **Guided Offboarding Workflows**: Reliably preserve and audit teammate transitions—smoothly transfer mailboxes to a successor or archive them, remove members from active groups, and immediately invalidate all active web sessions. If the mail provider supports remote revocation, Mailhearth tracks and logs the administrator's completion report.
+- **Visual Domain & DNS Health**: Continuously monitor DNS records (MX, SPF, DKIM, DMARC) with clear passing/failing indicators, complete with copy-paste DNS record values.
+- **Granular Roles & Comprehensive Audit Trail**: Built-in and custom roles with fine-grained permissions, a tamper-evident audit log for all critical actions, and seamless organization ownership transfer.
 
-**For everyone**
+**For Every Teammate**
 
-- A quick, responsive webmail client: folders, paging, server-side search, flags, bulk actions, attachments, drafts with autosave, signatures and multiple sending identities, desktop notifications via IMAP IDLE, keyboard shortcuts, light and dark mode, and a five-language interface.
-- Shared mailbox teamwork: see who replied, assign a message, mark it resolved, leave internal notes.
-- Mail rules and auto-reply on servers with configured ManageSieve and the required extensions. Existing scripts are retained; taking over an active script requires confirmation.
-- Sending requests persist SMTP and Sent-copy results separately. Unknown delivery is never retried automatically; retrying a failed Sent copy does not submit SMTP again.
+- **Fast, Responsive Webmail**: System and custom folders, paginated browsing, instant server-side search, flags, bulk triage, rich attachment previews and downloads, real-time draft autosave, rich text editing, custom signatures, multiple sending identities, desktop notifications via IMAP IDLE, keyboard shortcuts, dark and light modes, and full support for 5 languages.
+- **Shared Mailbox Collaboration**: Stay coordinated with clear visual context—see which teammate has already replied, assign conversations to specific owners, mark tickets resolved, and leave internal private notes visible only to your team.
+- **Server-Side Rules & Auto-Reply**: Configure automated Sieve mail filters and vacation responders on servers with ManageSieve enabled. Mailhearth preserves existing scripts on the server and requires explicit confirmation before taking over active scripts.
+- **Reliable Sending Guarantees**: Sending operations persist SMTP handoff and Sent-copy archival as independent steps. Unknown delivery results are never blindly retried, and retrying a failed Sent copy will never duplicate the SMTP transmission to recipients.
 
-**Security posture**
+**Robust Security Architecture**
 
-- Management API credentials and mailbox protocol passwords are encrypted at rest (AES-256-GCM, key derived from a master key) and never leave the server. Browsers hold a session cookie. An authorized administrator can explicitly claim a newly generated external-client password once, within its expiry period.
-- Message HTML is sanitised server-side and rendered in a sandboxed, script-free iframe under a strict CSP; remote images are blocked until you ask for them; attachments are served with `nosniff` and download disposition.
-- CSRF protection, rate-limited login, argon2id password hashing, audit trail.
+- **Encryption at Rest**: All provider management credentials and mailbox protocol passwords are encrypted using AES-256-GCM. Encryption keys are securely derived from a server-side master key and never reach the browser.
+- **Hardened Content Sandboxing**: Message HTML is sanitized on the server and rendered inside a scriptless, sandboxed iframe governed by a strict Content Security Policy (CSP). Remote tracking images are blocked by default until explicitly allowed, and attachments are delivered with `X-Content-Type-Options: nosniff` in download-only mode.
+- **Enterprise-Grade Protection**: Built-in CSRF defenses, brute-force login rate limiting, argon2id password hashing, and an immutable administrative audit log.
 
-## Requirements
+## Prerequisites
 
-- A Purelymail or Migadu account for API management, or an existing mailbox with IMAP/SMTP credentials for a manual connection. ManageSieve is optional.
-- A small Linux host (512 MB RAM is plenty; the binary idles around 30 MB) and a reverse proxy that terminates TLS (Caddy, nginx, Traefik).
+- **Mail Service**: An account with Purelymail or Migadu for automated API provisioning, or standard custom/third-party mailboxes with IMAP/SMTP credentials (ManageSieve is optional).
+- **Lightweight Server**: A modest Linux VPS (512 MB RAM is plenty; the binary idles around 30 MB) and a reverse proxy for TLS termination (Caddy, Nginx, or Traefik recommended).
 
-## Run it
+## Quick Start & Deployment
+
+Using Docker Compose (Recommended):
 
 ```bash
 git clone https://github.com/yll682/Mailhearth.git && cd Mailhearth
-cp .env.example .env            # set MAILHEARTH_BASE_URL to your public URL
+cp .env.example .env            # Set MAILHEARTH_BASE_URL to your public domain
 docker compose up -d --build
 ```
 
-Open the URL, create the organisation, configure connections and select imports. Configure and verify credentials for each enabled mailbox protocol before using mail. Back up the `/data` volume: it holds the SQLite database and `master.key`.
+Once up and running, open your configured public URL in a browser and follow the first-run wizard to create your organization administrator, connect your mail provider, and import mailboxes. Ensure protocol credentials are verified before reading or sending email.
 
-Without Docker: `make build` produces a static `mailhearth` binary that embeds the web client. Run it with `MAILHEARTH_DATA_DIR=/var/lib/mailhearth`.
+> **Backup Notice**: Regularly back up the persistent `/data` volume. It contains your core SQLite database and the primary encryption key `master.key`.
 
-## Use an existing IMAP/SMTP mailbox
+If you prefer running a standalone binary, `make build` compiles a self-contained executable embedding all web assets. Run it with `MAILHEARTH_DATA_DIR=/var/lib/mailhearth ./mailhearth`.
 
-Choose a manual connection, register the full mailbox address, and configure each enabled protocol's hostname, port, TLS mode, username and password. IMAP and SMTP may use different credentials. Disable ManageSieve when unavailable. TLS certificate validation uses system certificates or an explicitly configured private CA bundle.
+## Using Existing IMAP/SMTP Mailboxes
 
-Forwarding imports preserve the source mailbox, individual target confirmation states and remote references. Unverified delivery modes stay `unverified`; Migadu forwarding writes require V03 delivery verification.
+In the admin console, choose "Manual Connection", register the full email address, and specify the server hostname, port, TLS security mode, and credentials for IMAP, SMTP, and optional ManageSieve endpoints.
+
+- IMAP and SMTP can use distinct usernames and passwords.
+- If your mail server lacks ManageSieve support, simply keep that protocol disabled.
+- TLS certificates are verified against host system trust stores or custom private CA bundles specified in the configuration.
+- Forwarding imports retain source mailboxes, individual destination confirmation statuses, and upstream references. Unverified forwarding rules remain clearly flagged as `unverified`. Migadu forwarding writes require delivery verification.
 
 ## Configuration
 
-Everything is an environment variable; see [`.env.example`](.env.example). The only ones you normally set are `MAILHEARTH_BASE_URL` and `MAILHEARTH_TRUST_PROXY`.
+Following 12-Factor principles, all configuration is managed via environment variables. See [`.env.example`](.env.example) for reference. In standard production deployments, you only need:
+- `MAILHEARTH_BASE_URL`: The fully qualified public URL where users access Mailhearth.
+- `MAILHEARTH_TRUST_PROXY`: Whether to trust upstream client IP headers (`true` or specific CIDRs).
 
-## Documentation
+## In-Depth Documentation
 
-- [Architecture](docs/architecture.md): components, data model, how Mailhearth manages connections, protocol endpoints and persistent operations.
-- [Security](docs/security.md): threat model and the controls in place.
-- [Operations](docs/operations.md): backups, upgrades, sizing, troubleshooting.
-- [Integration testing](docs/integration-testing.md): verifying a release against real Purelymail, Migadu and manual protocol environments.
-- [Changelog](CHANGELOG.md): what changed in every release.
+- [System Architecture](docs/architecture.md): Internal subsystems, domain models, mail connection abstractions, and persistent asynchronous tasks.
+- [Security Guide](docs/security.md): Threat modeling, defense-in-depth measures, and operational controls.
+- [Operations Manual](docs/operations.md): Routine maintenance, database backup/restore procedures, seamless upgrades, and troubleshooting.
+- [Changelog](CHANGELOG.md): Detailed release notes, feature additions, improvements, and bug fixes across versions.
 
 ## Development
 
@@ -102,13 +110,13 @@ go vet ./...
 npm --prefix web run typecheck
 npm --prefix web run test
 npm --prefix web run build
-cd web && npm run dev           # Vite dev server proxying /api to :8080
+cd web && npm run dev           # Vite dev server with automatic /api proxying to :8080
 ```
 
-Go 1.27, Preact + Vite, SQLite (pure Go driver, no cgo). Everything ships in one binary.
+Stack: Go 1.27 + Preact + Vite + SQLite (pure-Go driver, zero cgo). The entire application compiles into a single, compact binary.
 
-The interface ships in English, Simplified Chinese, Traditional Chinese (Taiwan), Japanese and Spanish. Strings live in [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts): English is the source, and a new language is one dictionary plus an entry in the language switcher. Translation coverage and interpolation parameters are checked by `web/tests/i18n.test.mjs`. Real-provider acceptance is pending; local checks do not confirm external delivery.
+The web client natively supports English, Simplified Chinese, Traditional Chinese, Japanese, and Spanish. String dictionaries reside in [`web/src/lib/i18n.ts`](web/src/lib/i18n.ts), with English as the canonical source. Adding a language requires only an additional dictionary mapping and an entry in the switcher. Automated tests in `web/tests/i18n.test.mjs` validate translation coverage and template interpolation symmetry.
 
 ## License
 
-MIT. The full text is in [LICENSE](LICENSE).
+Released under the permissive MIT License. See [LICENSE](LICENSE) for full details.

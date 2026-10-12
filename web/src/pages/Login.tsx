@@ -77,7 +77,7 @@ export function Invite({ token, onDone }: { token: string; onDone: () => Promise
         setInfo(i);
         setName(i.memberName);
       },
-      (e) => setError(e instanceof ApiError && e.status === 404 ? t("This invite link is invalid or has expired.") : (e as Error).message),
+      (e) => setError(e instanceof ApiError && e.status === 404 ? t("This invite link is invalid or has expired. Please contact an administrator for a new one.") : (e as Error).message),
     );
   }, [token]);
   const submit = async (e: Event) => {

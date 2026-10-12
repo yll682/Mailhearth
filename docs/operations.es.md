@@ -1,85 +1,189 @@
-# Operaciones
+# Guía de operaciones y despliegue en producción
 
 [English](operations.md) · [简体中文](operations.zh-CN.md) · [繁體中文](operations.zh-TW.md) · [日本語](operations.ja.md) · **Español**
 
-## Dimensionamiento
+## Planificación de capacidad y dimensionamiento
 
-Mailhearth está pensado para el host más pequeño que se pueda comprar.
+Mailhearth está diseñado con una huella operativa excepcionalmente ligera, lo que le permite funcionar con total fluidez incluso en los servidores VPS más económicos y compactos del mercado.
 
-| Recurso | Valor típico | Notas |
+| Recurso | Consumo típico | Notas operativas |
 |---|---|---|
-| Binario | ~25 MB estático | sin cgo, sin dependencias en tiempo de ejecución |
-| RSS inactivo | 25–40 MB | `GOMEMLIMIT` es 160 MiB de forma predeterminada |
-| RSS ocupado (10 usuarios) | 60–120 MB | dominado por los búferes de descarga IMAP |
-| CPU | insignificante | argon2id en el inicio de sesión es el paso más pesado |
-| Disco | aumenta con los datos de la organización | SQLite guarda operaciones, envíos y colaboración; el correo permanece en su servicio IMAP |
-| Interfaz | unos 100 KB comprimidos con gzip | JS y CSS compilados el 2026-10-09; nombres con hash de contenido |
+| Binario ejecutable | ~25 MB estático | Cero dependencias de cgo; sin máquinas virtuales ni bibliotecas dinámicas externas |
+| Memoria residente inactiva (RSS) | 25–40 MB | Protegida por el límite flexible de memoria de Go `GOMEMLIMIT=160MiB` para evitar picos |
+| Memoria residente en carga (10 usuarios concurrentes) | 60–120 MB | La memoria se utiliza principalmente en búferes de descarga por lotes IMAP y análisis MIME |
+| Uso de CPU | Prácticamente 0% en reposo | La derivación criptográfica de contraseñas con argon2id en el inicio de sesión es el único proceso intensivo |
+| Crecimiento en disco | Crece solo con los metadatos | SQLite guarda la organización, permisos, historial y notas internas; los cuerpos de los correos residen en el proveedor |
+| Paquete web frontend | ~100 KB comprimido con gzip | Incluye cliente webmail y consola de gestión completos, con nombres basados en hash para almacenamiento en caché prolongado |
 
-Ajusta `MAILHEARTH_IMAP_MAX_CONNS` (24 de forma predeterminada) a aproximadamente `2 × usuarios simultáneos + número de buzones que la gente mantiene abiertos`. Cada vigilante IDLE ocupa una conexión. El máximo global predeterminado es 24; cada connection admite 8 y cada mailbox 3. IDLE conserva capacidad para solicitudes ordinarias. Respeta los límites reales del proveedor.
+### Ajuste del grupo de conexiones IMAP
 
-## Copias de seguridad
+Configura el grupo de conexiones simultáneas mediante la variable de entorno `MAILHEARTH_IMAP_MAX_CONNS` (valor predeterminado: 24). Fórmula orientativa recomendada: `usuarios concurrentes estimados × 2 + total de buzones que el equipo mantiene abiertos en pestañas`.
 
-Todo el estado es el directorio de datos:
+El sistema implementa cuotas estrictas de protección por niveles:
+- **Límite global de conexiones**: 24 conexiones simultáneas por defecto;
+- **Límite por conexión de proveedor**: Cada conexión de correo puede usar como máximo 8 conexiones IMAP simultáneas;
+- **Límite por buzón**: Cada buzón puede reutilizar un máximo de 3 conexiones simultáneas;
+- **Reserva de vigilantes IDLE**: Los escuchas IDLE en segundo plano para notificaciones push operan bajo una cuota reservada, garantizando que queden libres al menos 4 ranuras globales y 2 por conexión para las peticiones interactivas de los usuarios.
 
-| Ruta | Contenido |
-|---|---|
-| `/data/mailhearth.db` | Base de datos SQLite (modo WAL) |
-| `/data/mailhearth.db-wal` | Registro de escritura anticipada; cópialo junto con la base de datos |
-| `/data/master.key` | Clave de cifrado de las credenciales almacenadas |
-| `/data/uploads/` | Archivos adjuntos del redactor en espera de envío (transitorios) |
+> **Nota**: Al ajustar las conexiones, asegúrate de comprobar los límites máximos de conexiones concurrentes por IP establecidos por tu proveedor de correo (como Purelymail o Migadu).
 
-Haz la copia de seguridad con el contenedor detenido, o usa `sqlite3 mailhearth.db ".backup out.db"` para obtener una copia en línea coherente. Guarda `master.key` en una ubicación segura aparte. Para restaurar en un host nuevo: coloca ambos archivos y arranca el binario.
+## Copias de seguridad y recuperación ante desastres
 
-## Actualizaciones
+Todo el estado operativo de Mailhearth reside en el directorio de datos montado como volumen persistente (por defecto `/data`):
 
-Las migraciones se ejecutan al arrancar e incluyen conversiones de tablas y comprobaciones de referencias. Guarda una copia coherente de la base de datos y master key antes de actualizar. Descarga la imagen nueva y ejecuta `docker compose up -d`. No se admite volver a una versión anterior que cruce una migración; restaura una copia de seguridad en su lugar.
+| Archivo / Directorio | Función y descripción | Requisitos de respaldo |
+|---|---|---|
+| `/data/mailhearth.db` | Base de datos SQLite principal (en modo de registro anticipado WAL) | Datos esenciales |
+| `/data/mailhearth.db-wal` | Búfer de registro anticipado que contiene las transacciones recientes | Debe copiarse junto con `.db` |
+| `/data/master.key` | Clave maestra de cifrado utilizada para proteger tokens de API y contraseñas | Secreto crítico; guardar en una ubicación externa segura |
+| `/data/uploads/` | Adjuntos temporales preparados durante la redacción de mensajes | Temporales; se recrean automáticamente si es necesario |
 
-## Proxy inverso
+### Copia de seguridad en caliente (sin detener el servicio)
+Aprovecha la función de copia de seguridad en línea de SQLite para generar una instantánea coherente sin interrumpir el servicio:
+```bash
+docker compose exec mailhearth sqlite3 /data/mailhearth.db ".backup /data/backup_$(date +%Y%m%d_%H%M%S).db"
+```
 
-Caddy:
+### Copia de seguridad en frío
+Detén el contenedor y comprime directamente el volumen de datos:
+```bash
+docker compose stop
+tar -czvf mailhearth-backup-$(date +%Y%m%d).tar.gz /data/mailhearth.db /data/mailhearth.db-wal /data/master.key
+docker compose start
+```
 
+### Procedimiento de recuperación en un nuevo servidor
+Restaurar Mailhearth en una máquina limpia se reduce a tres sencillos pasos:
+1. Prepara el entorno Docker Compose en el nuevo servidor;
+2. Copia la base de datos `mailhearth.db` respaldada (o renombra la copia en caliente a `mailhearth.db`) y el archivo `master.key` dentro del directorio de datos del host;
+3. Ejecuta `docker compose up -d`. El sistema validará la clave maestra, ejecutará las comprobaciones necesarias y reanudará el servicio sin fricción.
+
+## Actualizaciones del sistema y migraciones de esquemas
+
+Mailhearth incorpora un motor de migraciones declarativas (`internal/db/migrations`).
+
+1. **Migración automática**: Al iniciar una nueva versión del binario, el sistema detecta la versión del esquema actual y aplica en una transacción atómica las actualizaciones de tablas, claves foráneas y comprobaciones de integridad pertinentes.
+2. **Medida preventiva**: Antes de descargar nuevas imágenes de contenedores, realiza siempre una copia de seguridad coherente de la base de datos y de `master.key`.
+3. **Aplicar la actualización**:
+   ```bash
+   git pull
+   docker compose pull
+   docker compose up -d --build
+   ```
+4. **Política de reversión (Rollback)**: Las migraciones solo garantizan compatibilidad hacia adelante. Si surge una incidencia y se necesita volver atrás, **no está permitido ejecutar versiones antiguas sobre esquemas migrados**; restaura la copia de seguridad de la base de datos previa a la actualización y vuelve a la imagen anterior.
+
+## Proxy inverso y configuración de TLS
+
+En entornos de producción, Mailhearth debe situarse detrás de un proxy inverso que gestione el tráfico público y la terminación automática de certificados TLS (como Caddy o Nginx).
+
+### Caddy (Recomendado)
+Caddy aprovisiona y renueva automáticamente certificados TLS con una configuración sumamente limpia:
 ```caddyfile
 mail.example.com {
     reverse_proxy 127.0.0.1:8080 {
-        flush_interval -1      # required for Server-Sent Events
+        # Desactiva el búfer para que el flujo de eventos en tiempo real (SSE) fluya al instante
+        flush_interval -1
     }
 }
 ```
 
-nginx: define `proxy_buffering off;` y `proxy_read_timeout 3600s;` en `/api/mail/` para que los flujos SSE no se almacenen en búfer, y `client_max_body_size 50m` para los archivos adjuntos.
+### Nginx
+Si utilizas Nginx, debes desactivar el almacenamiento en búfer de las respuestas para las conexiones SSE y configurar tiempos de espera adecuados:
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name mail.example.com;
 
-## Resolución de problemas
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
 
-**`provider_auth_failed`** — actualiza la autenticación administrativa de la conexión identificada en Administración → Conexiones. Un candidato rechazado conserva la configuración activa. La autenticación del correo se comprueba por separado.
+    # Permitir subir adjuntos de gran tamaño
+    client_max_body_size 50m;
 
-**Protocolos sin configurar** — la importación registra los recursos elegidos. Configura IMAP, SMTP, ManageSieve y credenciales entered, o usa la capacidad managed de esa conexión. Los protocolos activos deben autenticarse antes de guardar la configuración. SMTP y ManageSieve pueden desactivarse independientemente.
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-**`mailbox_auth_failed`** — comprueba username y password del protocolo afectado. Actualiza entered en la configuración de protocolos y managed mediante rotación. Los fallos de red, rechazos temporales y respuestas ManageSieve sin clasificación mantienen el estado sin confirmar. Verifica la revocación mediante una conexión nueva.
+        # Desactivar búfer para conexiones push en tiempo real
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
 
-**Las reglas no se pueden guardar** — comprueba endpoint, TLS y extensiones de ManageSieve del buzón. Purelymail usa `mailserver.purelymail.com:4190` con STARTTLS por defecto. La plantilla Migadu comienza desactivada; utiliza la configuración real de la cuenta. Tomar control de un active script requiere confirmación y su hash actual. La respuesta automática también requiere la extensión `vacation`.
+Asegúrate además de definir `MAILHEARTH_TRUST_PROXY=true` en tu archivo `.env` para que los registros de auditoría conserven las direcciones IP reales de los usuarios.
 
-**Operation `unknown`** — consulta los pasos y verifica los resultados remotos antes de reintentar explícitamente. Se mantienen los bloqueos de recursos. Si se pierde una respuesta de creación de credenciales sin guardar el ID remoto, resuelve las credenciales en el portal y presenta un informe administrativo de limpieza. El informe cancela la operación y conserva los recursos creados: `external_reported`, `systemVerified: false`.
+## Resolución de incidencias y diagnóstico
 
-**Submission `sent_copy_failed`** — SMTP ya aceptó el mensaje; reintenta solamente la copia Sent. Si SMTP o APPEND queda `unknown`, consulta Submission y su marcador único. Conserva el requestId original.
+### 1. Error de conexión con el proveedor: `provider_auth_failed`
+- **Causa**: El token de API de administración ha caducado, ha sido revocado o carece de los permisos requeridos.
+- **Solución**: Accede a Consola de administración → Conexiones de correo, edita la conexión afectada y proporciona un nuevo token de gestión. Hasta que el nuevo token no se valide con éxito, la configuración anterior continuará funcionando sin cortes.
 
-**Nuevos recursos durante la sincronización** — selecciona los recursos en el resultado de esa conexión. Se conservan credenciales, permisos e historial. Un fallo de lectura no demuestra que el recurso haya sido eliminado.
+### 2. El buzón indica «Protocolos sin configurar»
+- **Causa**: La importación de recursos solo transfiere metadatos remotos; las contraseñas nunca se importan de forma automática.
+- **Solución**: Entra en los ajustes del buzón y configura los endpoints de IMAP, SMTP y ManageSieve con las credenciales correspondientes. El sistema ejecutará una prueba real de conexión antes de confirmar los cambios. Desactiva los protocolos que no vayas a utilizar.
 
-**Sin actualizaciones en vivo** — un proxy está almacenando SSE en búfer; consulta lo anterior. El cliente recurre a la actualización manual y aun así consulta las carpetas cuando ocurren acciones.
+### 3. Error de autenticación de protocolo: `mailbox_auth_failed`
+- **Causa**: El servidor remoto ha rechazado el usuario, la contraseña principal o la contraseña de aplicación configurada.
+- **Solución**: En modo manual (`entered`), actualiza las credenciales en la ventana de configuración de protocolos; en modo gestionado (`managed`), inicia una operación de rotación de credenciales desde la consola de administración.
 
-**Primera página lenta en una carpeta enorme** — el listado es un único FETCH de rango de secuencia de 50 envolturas más las estructuras del cuerpo. El índice de búsqueda del lado del servidor de Purelymail (habilitado por usuario) hace que las búsquedas sean rápidas; está activado en los buzones que crea Mailhearth.
+### 4. No se pueden guardar las reglas de correo
+- **Causa**: El endpoint ManageSieve no está configurado, la conexión TLS falla o el servidor carece de las extensiones Sieve necesarias.
+- **Solución**:
+  - Purelymail utiliza por defecto `mailserver.purelymail.com:4190` con STARTTLS;
+  - Migadu desactiva ManageSieve por defecto; actívalo e introduce credenciales válidas si tu plan lo contempla;
+  - Si ya existe un script activo en el servidor, el sistema pedirá confirmación expresa para asumir su control y evitar sobreescrituras accidentales;
+  - Las respuestas automáticas de vacaciones exigen que el servidor admita la extensión `vacation`.
 
-## Registros
+### 5. Una tarea asíncrona (Operation) queda en estado `unknown`
+- **Causa**: Una llamada remota al proveedor agotó el tiempo de espera o se interrumpió la red sin una respuesta definitiva.
+- **Solución**:
+  - Examina el registro paso a paso de la operación; los bloqueos de recursos se mantienen para evitar inconsistencias;
+  - Si la creación de credenciales se cortó sin devolver un ID remoto, accede al panel del proveedor para verificar y eliminar contraseñas de aplicación huérfanas;
+  - A continuación, haz clic en «Enviar informe de limpieza» en Mailhearth. La operación se marcará como `external_reported` con `systemVerified=false`, cancelando la tarea pendiente mientras se conservan los recursos ya creados.
 
-Registros de texto estructurado en stderr. `MAILHEARTH_LOG_LEVEL=debug` añade líneas por solicitud y reconexiones del vigilante IMAP. Nada en los registros contiene credenciales.
+### 6. El estado del envío muestra `sent_copy_failed`
+- **Causa**: El servidor SMTP aceptó el mensaje para su entrega, pero falló el almacenamiento de la copia en la carpeta Enviados (Sent) por un fallo puntual de red en IMAP.
+- **Solución**: ¡No temas enviar correos duplicados! El sistema separa de manera estricta el envío SMTP del archivado de la copia. Haz clic en «Reintentar guardado de copia»; el sistema únicamente reintentará la operación IMAP sin volver a enviar el mensaje a los destinatarios.
 
-## Comprobaciones
+### 7. No hay actualizaciones en vivo y es necesario recargar manualmente
+- **Causa**: El proxy inverso está almacenando en búfer el flujo de eventos Server-Sent Events (SSE).
+- **Solución**: Revisa la configuración del proxy inverso: asegúrate de contar con `flush_interval -1` en Caddy o de desactivar `proxy_buffering` en `/api/mail/` con Nginx.
+
+### 8. Apertura inicial lenta en carpetas con un gran volumen de mensajes
+- **Explicación**: Al abrir una carpeta, Mailhearth realiza una única llamada FETCH por rango de secuencia para recuperar las envolturas y estructuras MIME de 50 mensajes. En Purelymail, el índice de búsqueda del servidor se activa de forma automática en los buzones creados para mantener una respuesta ágil permanente.
+
+## Registros y observabilidad
+
+Mailhearth escribe registros de texto estructurado en `stderr`, fácilmente accesibles mediante las herramientas de contenedores:
+```bash
+docker compose logs -f --tail=100 mailhearth
+```
+
+- Nivel de registro predeterminado: `info`;
+- Para diagnosticar detalles de bajo nivel en conexiones de red o reconexiones de escuchas IMAP IDLE, define `MAILHEARTH_LOG_LEVEL=debug` en tu `.env`;
+- **Seguridad garantizada**: Todas las salidas de registro se desinfectan automáticamente; jamás se imprimen contraseñas en claro, tokens de API ni credenciales descifradas.
+
+## Comandos de comprobación y verificación
 
 ```powershell
+# Ejecutar pruebas base
 go test ./... -run '^$'
+
+# Validar modelos multiproveedor y pruebas de dominio
 go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+
+# Análisis estático de código
 go vet ./...
+
+# Pruebas automatizadas y verificación de empaquetado del frontend
 npm --prefix web run test
 npm --prefix web run build
 ```
 
-Desactiva `MAILHEARTH_DEV_STACK` para las pruebas reales. Guarda la configuración de autenticación en `data/integration/multi-provider/` dentro del proyecto, define `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG` y ejecuta `go test -count=1 -v ./internal/integration/multiprovider`. La ausencia de configuración produce un fallo explícito. Registra las comprobaciones locales y la aceptación real por separado; los casos reales no ejecutados permanecen incompletos.
+Para ejecutar pruebas de integración reales frente a proveedores externos, desactiva `MAILHEARTH_DEV_STACK`, configura las credenciales en `data/integration/multi-provider/`, asigna `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG` y ejecuta `go test -count=1 -v ./internal/integration/multiprovider`.

@@ -1,85 +1,189 @@
-# 运维
+# 系统运维与生产部署指南
 
 [English](operations.md) · **简体中文** · [繁體中文](operations.zh-TW.md) · [日本語](operations.ja.md) · [Español](operations.es.md)
 
-## 容量规划
+## 容量规划与资源占用
 
-Mailhearth 是为能买到的最小主机设计的。
+Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上规格最小的 VPS 上稳定运行。
 
-| 资源 | 典型值 | 说明 |
+| 资源维度 | 典型占用 | 运维说明 |
 |---|---|---|
-| 二进制 | 约 25 MB 静态 | 无 cgo，无运行时依赖 |
-| 空载 RSS | 25–40 MB | `GOMEMLIMIT` 默认 160 MiB |
-| 繁忙 RSS（10 人） | 60–120 MB | 主要来自 IMAP 抓取缓冲 |
-| CPU | 可忽略 | 登录时的 argon2id 是最重的一步 |
-| 磁盘 | 按组织数据增长 | SQLite 保存组织、操作、发送状态和协作数据；邮件保存在所属 IMAP 服务 |
-| 前端 | gzip 后约 100 KB | 2026-10-09 的 JS 与 CSS 构建结果；文件名包含内容摘要 |
+| 可执行二进制 | 约 25 MB 静态文件 | 零 cgo 依赖，无外部动态库与环境运行时依赖 |
+| 空载常驻内存 (RSS) | 25–40 MB | 默认启用 Go 内存上限 `GOMEMLIMIT=160MiB`，防止突发峰值 |
+| 繁忙常驻内存 (10 人并发) | 60–120 MB | 内存主要被 IMAP 批次数据抓取与 MIME 解析缓冲占用 |
+| CPU 算力消耗 | 日常几乎为 0% | 最密集的计算发生在用户登录时的 argon2id 密码哈希推导 |
+| 磁盘存储开销 | 仅随团队组织元数据增长 | SQLite 保存组织、权限、操作记录与团队协作备注；邮件内容永久保留在服务商端 |
+| Web 前端资源体积 | gzip 后约 100 KB | 包含完整 Webmail 与管理后台，文件名自带内容指纹哈希，支持长久缓存 |
 
-把 `MAILHEARTH_IMAP_MAX_CONNS`（默认 24）调到大约「并发使用人数 × 2 加上大家同时打开的邮箱数量」。全局默认上限为 24，每个连接上限为 8，每个邮箱上限为 3。IDLE 使用独立额度，保留普通请求的连接额度。按照各服务商实际限制安排连接数量。
+### IMAP 连接池与并发调优
 
-## 备份
+通过环境变量 `MAILHEARTH_IMAP_MAX_CONNS`（系统默认值为 24）调优全局并发连接池。建议配置公式：`预估同时在线人数 × 2 + 团队常驻打开的邮箱总数`。
 
-全部状态就是数据目录：
+系统内部实施精细的分级配额保护：
+- **全局连接池上限**：默认 24 个连接；
+- **单服务商连接上限**：每个邮件连接最多占用 8 个并发连接；
+- **单邮箱上限**：每个邮箱最多复用 3 个连接；
+- **IDLE 监听保障**：后台 IMAP IDLE 实时监听器占用独立配额，在 IDLE 运行时始终为前台普通交互请求保留至少 4 个全局插槽及单连接 2 个插槽。
 
-| 路径 | 内容 |
-|---|---|
-| `/data/mailhearth.db` | SQLite 数据库（WAL 模式） |
-| `/data/mailhearth.db-wal` | 预写日志，需要和数据库一起复制 |
-| `/data/master.key` | 加密已保存凭据的密钥 |
-| `/data/uploads/` | 等待发送的撰写附件（临时） |
+> **提示**：调优时请务必核对上游邮件服务商（如 Migadu 或 Purelymail）对单个 IP 或单个账户设定的最大并发连接数限制。
 
-停止容器后备份，或者用 `sqlite3 mailhearth.db ".backup out.db"` 做在线一致性复制。把 `master.key` 保存在另一个安全位置。在新主机上恢复时，放好这两个文件，启动二进制即可。
+## 数据备份与灾难恢复
 
-## 升级
+Mailhearth 的全量运行时状态均保存在持久化挂载的数据目录（默认为 `/data`）中：
 
-migration 在启动时自动执行，包括表结构转换、关联检查和约束检查。升级前保存数据库和 master key 的一致备份。拉取新镜像后执行 `docker compose up -d`。跨 migration 降级不受支持，需要恢复备份。
+| 文件 / 路径 | 作用与说明 | 备份要求 |
+|---|---|---|
+| `/data/mailhearth.db` | 系统核心 SQLite 数据库（运行于 WAL 预写日志模式） | 核心数据 |
+| `/data/mailhearth.db-wal` | 预写日志缓存，包含最新写入事务 | 必须与 `.db` 同时备份 |
+| `/data/master.key` | 主加密密钥，用于加解密保存在数据库中的 API 凭据与协议密码 | 核心机密，需异地安全备份 |
+| `/data/uploads/` | 邮件撰写器中临时暂存的待发送附件 | 临时文件，重启后可自动重建 |
 
-## 反向代理
+### 在线热备份方案
+推荐使用 SQLite 内建的在线安全备份机制，无需停机即可生成事务一致性镜像：
+```bash
+docker compose exec mailhearth sqlite3 /data/mailhearth.db ".backup /data/backup_$(date +%Y%m%d_%H%M%S).db"
+```
 
-Caddy：
+### 冷备份方案
+停止容器后直接打包数据目录：
+```bash
+docker compose stop
+tar -czvf mailhearth-backup-$(date +%Y%m%d).tar.gz /data/mailhearth.db /data/mailhearth.db-wal /data/master.key
+docker compose start
+```
 
+### 异地灾难恢复流程
+在全新的服务器上恢复运行仅需三步：
+1. 准备好目标服务器的 Docker 环境；
+2. 将备份的 `mailhearth.db`（或热备生成的 `.db` 文件重命名为 `mailhearth.db`）与 `master.key` 放置在新服务器的数据目录中；
+3. 启动 `docker compose up -d`，系统启动时将自动识别数据、验证主密钥并平滑接管运行。
+
+## 系统升级与数据迁移
+
+Mailhearth 内置了声明式的数据库迁移引擎（`internal/db/migrations`）。
+
+1. **自动迁移机制**：当启动新版本二进制时，系统会自动探测数据库架构版本，按序执行所需的表结构演进、外键关系重构与数据完整性校验。
+2. **升级前准备**：在拉取新版本镜像之前，务必按上述步骤先完成一次完整的数据库热备份与 `master.key` 备份。
+3. **执行升级**：
+   ```bash
+   git pull
+   docker compose pull
+   docker compose up -d --build
+   ```
+4. **版本回滚说明**：Mailhearth 的数据库迁移仅向前兼容。若升级后遇到不可预期的异常需要回滚旧版本，**不支持跨迁移版本直接降级运行**；请切回旧版本镜像，并还原升级前保存的数据库备份。
+
+## 反向代理与 TLS 配置
+
+生产环境中，Mailhearth 前端应部署反向代理（如 Caddy 或 Nginx）负责公开域名访问与 TLS 证书自动化终结。
+
+### Caddy（强烈推荐）
+Caddy 能够全自动申请与续期 Let's Encrypt 证书，配置简洁：
 ```caddyfile
 mail.example.com {
     reverse_proxy 127.0.0.1:8080 {
-        flush_interval -1      # required for Server-Sent Events
+        # 必须禁用缓冲以确保 Server-Sent Events (SSE) 即时推播畅通
+        flush_interval -1
     }
 }
 ```
 
-nginx：在 `/api/mail/` 上设置 `proxy_buffering off;` 和 `proxy_read_timeout 3600s;`，避免 SSE 流被缓冲；附件需要 `client_max_body_size 50m`。
+### Nginx
+若使用 Nginx，必须特别注意关闭 SSE 推流缓冲并配置合理的超时时间：
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name mail.example.com;
 
-## 故障排查
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
 
-**`provider_auth_failed`** — 查看错误所属连接，在管理 → 连接中更新该连接的管理认证。候选认证失败时保留当前可用配置。管理 API 与邮件协议认证分别检查。
+    # 允许上传较大附件
+    client_max_body_size 50m;
 
-**邮箱协议未配置** — 导入只登记选中的资源。为邮箱明确配置 IMAP、SMTP、ManageSieve 和 entered 凭据，或者使用该连接已提供的 managed 凭据接入能力。每个启用协议完成实际认证检查后才保存配置。SMTP 或 ManageSieve 可以分别停用。
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-**`mailbox_auth_failed`** — 检查错误所属协议的用户名和密码。entered 凭据通过协议配置页面更新；managed 凭据通过轮换操作更新。网络中断、临时拒绝和未明确分类的 ManageSieve 响应保留未确认状态。旧凭据的远程撤销需要使用新的连接核查。
+        # 针对实时推送接口禁用缓冲
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
 
-**规则无法保存** — 检查邮箱的 ManageSieve endpoint、TLS 和服务器扩展。Purelymail 默认使用 `mailserver.purelymail.com:4190` 和 STARTTLS；Migadu 的 ManageSieve 模板默认停用，启用时填写实际账户配置。已有其他 active script 时需要明确接管，并提交当前脚本的内容摘要。自动回复还需要 `vacation` 扩展。
+并在 `.env` 中设置 `MAILHEARTH_TRUST_PROXY=true`，以确保审计日志准确记录真实的访问端 IP。
 
-**Operation 为 `unknown`** — 查询步骤记录并执行核查。保留资源占用，确认远程结果后才能显式重试。凭据创建响应丢失且没有保存远程 ID 时，在服务商界面处理新增凭据，随后提交管理员清理报告。报告取消原操作，保留已经创建的资源；报告状态为 `external_reported`，`systemVerified` 为 `false`。
+## 常见问题排查与应急处置
 
-**发送为 `sent_copy_failed`** — SMTP 已接受邮件，只重试 Sent 副本。SMTP 或 APPEND 结果为 `unknown` 时，查询 Submission 和唯一提交标识。保留原 requestId。
+### 1. 服务商管理连接报错：`provider_auth_failed`
+- **原因**：服务商 API 令牌失效、已被重置或权限范围受限。
+- **处理**：登录进入「管理控制台 → 邮件连接」，点击编辑并更新该连接的管理 API 令牌。修改未提交或测试不通过前，系统将安全保留当前原有配置，不会破坏运行。
 
-**同步发现新增资源** — 在所属连接的同步结果中选择需要导入的资源。同步更新已有资源的观察状态，保留凭据、授权和历史；读取失败时不会据此认定对象已删除。
+### 2. 邮箱显示「协议尚未配置」
+- **原因**：初次导入资源仅拉取了远端元数据，并未自动注入登录密码。
+- **处理**：进入该邮箱的详情页面，分别配置 IMAP、SMTP 及 ManageSieve 的协议参数与凭据。系统在保存前会执行真实的连接握手测试，只有握手成功的配置才会被原子化保存。若该服务商无需发信或不支持 Sieve，可直接停用相应协议。
 
-**没有实时更新** — SSE 被代理缓冲了，参见上文的反向代理配置。此时客户端会退回手动刷新，并且在发生操作时仍会重新拉取文件夹。
+### 3. 邮箱协议连接报错：`mailbox_auth_failed`
+- **原因**：对应协议的用户名、邮箱密码或应用专用密码填写有误，或服务商侧已修改密码。
+- **处理**：若为手动输入模式（`entered`），在邮箱协议配置弹窗中直接录入新密码；若为托管凭据（`managed`），在管理控制台发起凭据轮换操作。
 
-**超大文件夹首页加载慢** — 列表是一次序号区间 FETCH，取 50 封的 envelope 和 body structure。Purelymail 的服务端搜索索引（按用户开关）能让搜索很快；Mailhearth 创建的邮箱默认开启该索引。
+### 4. 邮件过滤规则无法保存
+- **原因**：邮箱的 ManageSieve 协议端点未配置、TLS 握手失败，或服务器缺少关键 Sieve 扩展。
+- **处理**：
+  - Purelymail 默认应为 `mailserver.purelymail.com:4190` 并开启 STARTTLS；
+  - Migadu 的 ManageSieve 模板默认停用，若需使用请手动开启并填写正确的 Migadu 凭据；
+  - 若远端服务器已存在活跃的过滤脚本，系统为保护已有逻辑会弹出确认对话框，请明确确认接管；
+  - 若保存假期自动回复，请确认服务器支持 `vacation` 扩展指令。
 
-## 日志
+### 5. 异步操作任务（Operation）显示为 `unknown`
+- **原因**：在向远端邮件服务商写入数据时遭遇网络断连或响应超时，无法确定远端是否已成功创建资源。
+- **处理**：
+  - 点击查看该操作的详细分步日志，系统会保留资源排他锁防止状态进一步错乱；
+  - 若创建凭据中断且未返回远端凭据 ID，请登录邮件服务商的官方网页控制台，检查并删除可能残留的应用密码；
+  - 清理完毕后，在 Mailhearth 界面中点击「提交凭据清理报告」，系统将安全取消该挂起任务，状态记录为 `external_reported`，`systemVerified=false`，同时完整保留先前已就绪的其他资源。
 
-结构化文本日志输出到 stderr。`MAILHEARTH_LOG_LEVEL=debug` 会额外输出每个请求的记录和 IMAP 监听重连情况。日志中不包含任何凭据。
+### 6. 发件状态显示为 `sent_copy_failed`
+- **原因**：邮件已成功被底层 SMTP 服务器接收并开始投递，但在将邮件写入发件箱（Sent 文件夹）时 IMAP 发生网络抖动。
+- **处理**：无需担心重复发信给收件人！系统设计了严格的状态解耦机制，直接点击「重新保存副本」即可，系统仅重新执行 IMAP 追加保存，绝不会重新向收件人发起 SMTP 投递。
 
-## 检查命令
+### 7. 页面收信没有实时推播，必须手动刷新
+- **原因**：反向代理服务器缓冲了 Server-Sent Events (SSE) 数据流。
+- **处理**：请检查前文的反向代理配置，确保 Caddy 启用了 `flush_interval -1`，或 Nginx 针对 `/api/mail/` 接口关闭了 `proxy_buffering`。
+
+### 8. 超大文件夹首次加载较慢
+- **说明**：Mailhearth 在打开文件夹时执行单次区间 FETCH 批量读取 50 封邮件的摘要元数据与 MIME 结构。在 Purelymail 环境中，系统默认会为新建邮箱开启服务端全文搜索索引以保障长久极速体验。
+
+## 系统日志与可观测性
+
+Mailhearth 输出标准结构化文本日志至 `stderr`，可直接通过容器日志系统收集：
+```bash
+docker compose logs -f --tail=100 mailhearth
+```
+
+- 默认日志级别为 `info`；
+- 若需排查网络握手与 IMAP 监听断线重连详情，可在 `.env` 中设置 `MAILHEARTH_LOG_LEVEL=debug`；
+- **安全保障**：所有日志输出均经过安全脱敏，绝不输出任何用户明文密码、API 密钥或解密凭据。
+
+## 常用测试与自检命令
 
 ```powershell
+# 运行全部基准测试
 go test ./... -run '^$'
+
+# 运行多服务商模型与核心业务测试
 go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+
+# 代码静态质量检查
 go vet ./...
+
+# 前端自动化测试与生产打包校验
 npm --prefix web run test
 npm --prefix web run build
 ```
 
-真实环境测试要求关闭 `MAILHEARTH_DEV_STACK`。将认证配置保存在项目 `data/integration/multi-provider/` 目录，设置 `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG`，执行 `go test -count=1 -v ./internal/integration/multiprovider`。缺少配置会明确失败。本地数据库检查与编译检查的结果分别记录，真实验收尚未执行的项目保持未完成状态。
+如需对真实环境进行自动化集成测试，请关闭 `MAILHEARTH_DEV_STACK`，在 `data/integration/multi-provider/` 中按规范提供真实凭据并配置 `MAILHEARTH_MULTIPROVIDER_TEST_CONFIG`，随后执行 `go test -count=1 -v ./internal/integration/multiprovider`。

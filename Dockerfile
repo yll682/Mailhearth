@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 
 # --- Stage 3: runtime -------------------------------------------------------
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 mailhearth
+RUN apk add --no-cache ca-certificates tzdata sqlite && adduser -D -H -u 10001 mailhearth
 COPY --from=build /out/mailhearth /usr/local/bin/mailhearth
 ENV MAILHEARTH_LISTEN=:8080 \
     MAILHEARTH_DATA_DIR=/data

@@ -1,7 +1,6 @@
 // Package integration 使用真实 Purelymail 账户检查管理 API、IMAP、SMTP 和 ManageSieve。
 //
 // 未设置 MAILHEARTH_IT_TOKEN 与 MAILHEARTH_IT_DOMAIN 时跳过测试。
-// 执行方法见 docs/integration-testing.md。
 //
 // 测试只创建、修改和删除地址 local part 使用指定前缀的资源（默认 mh-it）。
 // guardOwned 检查资源前缀；需要使用专用测试账户与域名。

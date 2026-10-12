@@ -72,7 +72,7 @@ export function OperationsPage({ id }: { id?: string }) {
       catch (error) { errorToast(error); }
       finally { setBusy(false); }
     }}>{t("Report completion")}</Button></>}>
-      <p>{t("Remove the unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.")}</p>
+      <p>{t("If remote credential creation was interrupted, remove any unknown application credential in the provider console before reporting. This cancels the operation and retains already created resources.")}</p>
       <p>{t("This records the administrator's report. Mailhearth has not verified remote access revocation.")}</p><p>{cleanup.stepKey}</p>
       <Field label={t("Full mailbox address")}><input value={cleanupAddress} onInput={(event) => setCleanupAddress(event.currentTarget.value)} /></Field>
       <Field label={t("Completion note")}><textarea value={note} maxLength={2000} onInput={(event) => setNote(event.currentTarget.value)} /></Field>

@@ -21,7 +21,7 @@ test:
 
 # Verify a release against a real Purelymail account. Skips unless
 # MAILHEARTH_IT_TOKEN and MAILHEARTH_IT_DOMAIN are set; it creates and deletes
-# real mailboxes on that domain. See docs/integration-testing.md.
+# real mailboxes on that domain.
 test-integration:
 	go test -count=1 -timeout 60m -v ./internal/integration/...
 

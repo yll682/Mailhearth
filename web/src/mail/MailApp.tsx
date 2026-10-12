@@ -385,7 +385,7 @@ export function MailApp() {
       {deleteFolder ? (
         <Confirm
           title={t("Delete folder")}
-          text={t("Delete folder “{name}” and all its messages?", { name: deleteFolder })}
+          text={t("Delete folder “{name}” and all its messages? This action cannot be undone.", { name: deleteFolder })}
           danger
           confirmLabel={t("Delete")}
           onClose={() => setDeleteFolder(null)}

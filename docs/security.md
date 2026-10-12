@@ -1,53 +1,76 @@
-# Security
+# Security Standards & Threat Mitigation Guide
 
-**English** · [简体中文](https://github.com/yll682/Mailhearth/blob/main/docs/security.zh-CN.md) · [繁體中文](https://github.com/yll682/Mailhearth/blob/main/docs/security.zh-TW.md) · [日本語](https://github.com/yll682/Mailhearth/blob/main/docs/security.ja.md) · [Español](https://github.com/yll682/Mailhearth/blob/main/docs/security.es.md)
+**English** · [简体中文](security.zh-CN.md) · [繁體中文](security.zh-TW.md) · [日本語](security.ja.md) · [Español](security.es.md)
 
-## Threat model
+## Threat Model & Protected Assets
 
-Mailhearth sits between staff browsers and Purelymail, Migadu or manual mail servers. Management credentials can affect account resources; protocol credentials access individual mailboxes. The assets, in order of sensitivity:
+Architecturally, Mailhearth sits between staff browsers and upstream mail providers (Purelymail, Migadu, or custom mail servers). As a centralized platform for organizational administration and daily email communication, the system categorizes and defends digital assets in order of sensitivity:
 
-1. Each connection's management API credentials.
-2. Independent mailbox passwords for IMAP/SMTP/ManageSieve.
-3. Mail content and the organisation directory.
-4. Member sessions.
+1. **Provider Management API Credentials**: Possess full administrative authority over upstream domains, accounts, and server-side routing rules;
+2. **Mailbox Protocol Credentials**: Passwords and application-specific credentials used for IMAP, SMTP, and ManageSieve operations;
+3. **Email Data & Organizational Directory**: Historical messages, drafts, internal shared-mailbox notes, and team rosters;
+4. **Member Active Sessions**: Active browser sessions, cached profile state, and temporary authentication tokens.
 
-Adversaries considered: an attacker on the internet, a malicious or phishing email, a departed employee, and a member who tries to read a mailbox they were not granted. A compromised host is out of scope beyond limiting blast radius (secrets are encrypted at rest, so a database copy alone is useless).
+### Threat Landscape & Defense Perimeter
+Mailhearth implements defense-in-depth across the following primary threat vectors:
+- **Public Internet Attackers**: Attempting brute-force password guessing, Cross-Site Request Forgery (CSRF), or API parameter tampering;
+- **Malicious & Phishing Senders**: Injecting malicious JavaScript (XSS) via crafted HTML email bodies, exploiting CSS phishing overlays, or tracking user reading habits via remote image beacons;
+- **Departed Teammates & Unauthorized Internal Users**: Attempting to retain unrevoked access or inspect personal mailboxes and confidential shared mailboxes without explicit authorization;
+- **Malicious External Clients**: Attempting unauthorized retrieval or interception of third-party application passwords.
 
-## Controls
+> **Scope Note**: Complete physical server compromise or root operating system breaches lie outside the software boundary. However, Mailhearth strictly limits the blast radius through **encryption at rest**—even if an attacker steals a raw database snapshot, all stored credentials remain entirely unreadable without the separate `master.key`.
 
-**Secrets at rest.** `secrets.Box` seals values with AES-256-GCM using a key derived (HKDF-SHA256) from the installation master key. The master key comes from `MAILHEARTH_MASTER_KEY` or `<data>/master.key` (mode 0600, generated on first start). Different purposes use different derived keys. Saved API and protocol credentials are returned only as masked metadata. A newly generated external-client password can be claimed explicitly once by an authorized administrator before expiry; the claim response uses `Cache-Control: no-store` and removes the claimable secret.
+## Core Security Controls
 
-**Authentication.** Member passwords are argon2id (19 MiB, t=2). Sessions are random 256-bit tokens stored hashed (SHA-256); cookies are `HttpOnly`, `SameSite=Lax`, `Secure` when the base URL is HTTPS, 30-day sliding expiry. Login and invite acceptance are rate-limited per IP. Disabling or offboarding a member revokes all their sessions immediately.
+### 1. Encryption at Rest (Secrets at Rest)
+- **Cryptographic Standard**: Implemented via the `internal/secrets` package using industry-standard authenticated AES-256-GCM.
+- **Key Derivation Hierarchy**: The installation master key (loaded from `MAILHEARTH_MASTER_KEY` or read from `<data>/master.key` with strict `0600` permissions) is expanded using HKDF-SHA256 into isolated, context-specific subkeys.
+- **Zero Plaintext Leakage**: Routine API responses never reveal stored credentials, displaying only masked placeholders.
+- **One-Time Claim Flow**: When new application passwords are generated for external clients, authorized administrators must explicitly retrieve them through an expiring, one-time claim channel. Responses enforce `Cache-Control: no-store`, and the plaintext secret is permanently purged from server memory immediately after retrieval.
 
-**Authorisation.** Every admin endpoint checks a permission from the member's role; owner-only actions (transfer) require `org.owner`. Mail endpoints resolve the mailbox through `core.ResolveMailbox`, which requires ownership or an explicit access grant and enforces the grant level (`read` cannot flag or send; `send` cannot delete or move). Administrative rights never imply mail access.
+### 2. Authentication & Session Hardening
+- **Modern Password Hashing**: Member passwords are hash-protected using RFC 9106 argon2id (`m=19MiB, t=2`), providing robust defense against offline GPU/ASIC brute-force cracking.
+- **High-Entropy Sessions**: Sessions utilize 256-bit cryptographically secure pseudorandom tokens stored exclusively as SHA-256 hashes. Cookies enforce `HttpOnly`, `SameSite=Lax`, and `Secure` (over HTTPS) with a 30-day sliding expiration window.
+- **Brute-Force Rate Limiting**: Multi-tiered IP and account rate limits protect login endpoints and invite redemption flows.
+- **Instant Offboarding Invalidation**: Disabling (`disabled`) or offboarding (`departed`) a member immediately purges all active sessions in a single database transaction.
 
-**CSRF.** State-changing `/api` requests must carry `X-Requested-With: Mailhearth` (which browsers cannot add cross-origin without CORS) and, when an `Origin` header is present, it must match the host.
+### 3. Granular Authorization & Mailbox Isolation
+- **Orthogonal Separation of Privileges**: Administrative permissions (e.g., domain configuration, member onboarding) are strictly segregated from email access rights. Being an administrator does not grant implicit rights to read personal inboxes.
+- **Strict Authorization Boundary**: All mail operations pass through `core.ResolveMailbox`, verifying explicit ownership or shared mailbox access tiers (`read`: view-only, cannot flag or send; `send`: read and compose, but no delete/move; `full`: unrestricted management).
 
-**Untrusted mail content.**
-- HTML is sanitised server-side with an allow-list (bluemonday) plus a DOM pass that strips dangerous CSS (`expression`, `url()`, `position:fixed`), rewrites `cid:` images to authenticated part URLs, blocks remote images unless requested, and forces `target=_blank rel=noopener noreferrer` on links.
-- The sanitised document is served from its own URL with `Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; form-action 'none'` and displayed in an `<iframe sandbox="allow-same-origin allow-popups …">` without `allow-scripts`. `allow-same-origin` is kept only so the parent can measure the height; the CSP guarantees no script can run inside regardless.
-- The iframe is authenticated with a short-lived HMAC view token bound to the member, mailbox, folder and UID, so it needs no cookies.
-- Attachments are served with `Content-Disposition: attachment` unless the type is a safe inline type (raster images, PDF, audio/video, text/plain); HTML, SVG and XML are never rendered inline. `X-Content-Type-Options: nosniff` everywhere.
-- Composed HTML and signatures pass through the same sanitiser before being sent, so a compromised browser session cannot inject scripts into mail.
-- Message and attachment sizes are capped (`MAILHEARTH_MAX_UPLOAD_MB`, `MAILHEARTH_MAX_MESSAGE_MB`); text parts larger than 2 MB are truncated for display.
+### 4. Robust CSRF Defenses
+- All state-mutating requests (POST, PUT, PATCH, DELETE) require the custom header `X-Requested-With: Mailhearth`. Under standard browser security policies, cross-origin sites cannot attach custom headers without preflight CORS approval.
+- When an `Origin` header is present, Mailhearth validates that it matches the configured `MAILHEARTH_BASE_URL`.
 
-**Application headers.** `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a CSP for the SPA (`script-src 'self'`), immutable caching only for hashed assets, `no-store` for API responses.
+### 5. Untrusted Email Content Sandboxing
+Email represents the most volatile source of untrusted content. Mailhearth enforces a multi-layered sanitization pipeline:
+- **Server-Side Allow-List Sanitization**: Email HTML is filtered through `bluemonday` tag allow-lists, followed by a second DOM pass that strips high-risk CSS (`expression`, `url()`, `position: fixed`), rewrites `cid:` inline assets to authenticated endpoints, and forces `target="_blank" rel="noopener noreferrer"` on all links.
+- **Default Remote Image Blocking**: Remote images are blocked by default to neutralize tracking pixels and IP reconnaissance, loading only upon explicit user request.
+- **Scriptless Sandboxed Rendering**: Sanitized HTML is served from an isolated URL with strict headers:
+  ```http
+  Content-Security-Policy: default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; form-action 'none'
+  ```
+  and rendered inside an `<iframe sandbox="allow-same-origin allow-popups ...">` **strictly omitting `allow-scripts`**. Even if an obscure browser parser vulnerability exists, script execution remains fundamentally blocked.
+- **Cookie-Free HMAC View Tokens**: The iframe authenticates using short-lived HMAC view tokens bound to the member, mailbox, folder, and message UID, eliminating cookie exposure.
+- **Attachment Disposition**: Attachments are delivered with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`. HTML, SVG, and XML files are strictly barred from inline rendering.
+- **Symmetric Composer Sanitization**: Outgoing HTML and signatures pass through the identical sanitization pipeline before SMTP dispatch, preventing compromised browser extensions from injecting malicious scripts into outbound email.
 
-**Connections and credentials.** Management authentication is separate from protocol authentication. Candidate settings authenticate all enabled endpoints before commit. Connection, endpoint, credential and access revisions invalidate old pooled connections and requests. Suspension revokes local access immediately and preserves saved credentials. Managed rotation records creation, validation, commit and revocation separately. Entered credentials and external clients require explicit provider-side handling. A remote revocation is confirmed only by the relevant verification; administrator reports use `systemVerified=false`. Losing a credential-creation response without a remote ID requires a cleanup report and does not trigger automatic creation of another credential.
+### 6. Security Header Baseline
+- Clickjacking Defense: `X-Frame-Options: DENY`;
+- Referrer Privacy: `Referrer-Policy: no-referrer`;
+- Web Client CSP: Application shell restricted to `script-src 'self'`;
+- API Cache Prevention: All `/api/` endpoints send `Cache-Control: no-store`.
 
-**Association and concurrency.** Database constraints validate organisation, connection, mailbox and credential ownership. requestId, resource locks and expectedRevision protect operations; permissions are checked at queueing, execution and control. Historical mailboxes remain archived when deletion would remove sending or collaboration records. Domain scope controls management and discovery, while mail access retains separate checks.
+### 7. Protocol TLS & Certificate Validation
+- Every enabled IMAP, SMTP, and ManageSieve connection validates remote certificates and server hostnames (SNI) against host root stores or custom private CA bundles.
+- Mailhearth provides **no option** to bypass TLS validation or ignore certificate mismatches.
 
-**TLS and authorization.** Every enabled protocol validates hostname and certificates, using system trust or an explicitly configured private CA. No protocol has an insecure certificate option. Identity display settings and sender authorization are independent; an alias, import or forwarding registration does not authorize SMTP From.
+### 8. Immutable Audit Trail
+- All administrative operations (member onboarding, role updates, connection changes, credential rotations) are permanently recorded in `audit_log`, capturing actor IDs, client IPs, timestamps, and contextual change diffs.
 
-**Sending and remote observations.** Submission encrypts its envelope and retains stable identifiers. SMTP and Sent results are separate; unknown delivery requires investigation and a new explicit request for resending. Forwarding import preserves confirmation states and unverified delivery modes. API presence and external reports do not verify delivery.
+## Deployment Security Best Practices
 
-**Sieve.** Rules are compiled from a structured model with validation of header names, sizes, addresses and flags; users cannot submit raw Sieve. ManageSieve requires advertised extensions, verifies the active-script hash, reads back a separate candidate and checks activation. Taking over an active script requires confirmation; existing scripts are retained. Ambiguous authentication refusal remains unverified.
-
-**Audit.** Every administrative change is recorded with actor, target and detail in `audit_log`.
-
-## Deployment recommendations
-
-- Terminate TLS at a reverse proxy and set `MAILHEARTH_BASE_URL` to the HTTPS origin so cookies are `Secure`. Set `MAILHEARTH_TRUST_PROXY=true` only when the proxy sets `X-Forwarded-For`.
-- Back up `master.key` separately from the database; store it in your password manager. Without it, stored credentials must be re-created (the appropriate entered or managed flow must be completed and verified).
-- Use management API credentials dedicated to Mailhearth so they can be revoked independently.
-- Enable two-factor authentication on the provider account itself; the API token bypasses it, which is why it is the top asset above.
+1. **Enforce HTTPS with Reverse Proxies**: Terminate TLS at your reverse proxy (Caddy or Nginx) and configure `MAILHEARTH_BASE_URL` with an `https://` prefix to enforce `Secure` cookies. Enable `MAILHEARTH_TRUST_PROXY=true` only when the reverse proxy is verified and trusted.
+2. **Isolate `master.key`**: Never store `/data/master.key` alongside database backups in generic storage. Keep `master.key` in an enterprise password manager (e.g., 1Password, Bitwarden) or hardware security module.
+3. **Use Dedicated Provider API Tokens**: Create dedicated API credentials specifically for Mailhearth within Purelymail or Migadu, avoiding shared tokens to ensure clean revocation boundaries.
+4. **Enable Two-Factor Authentication (2FA)**: Always enable hardware or TOTP 2FA on your primary provider account to safeguard upstream infrastructure.

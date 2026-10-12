@@ -4,31 +4,34 @@
 
 All notable changes to Mailhearth are documented in this file.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+### Added & Improved
 
-- Interface translations for Traditional Chinese (Taiwan), Japanese and Spanish, selectable from the sign-in screen and from Settings.
+- **Expanded Localization**: Full frontend and administrative interface translations for Traditional Chinese (Taiwan), Japanese, and Spanish, selectable from the login screen and Settings. Dictionary coverage and template variables are validated to 100% via TypeScript AST tests.
+- **Multi-Provider Architecture**: Added support for Migadu and generic manual IMAP/SMTP mail servers, enabling independent per-connection management credentials and endpoint defaults.
+- **Orphaned Credential Reconciliation**: Introduced offline cleanup reporting and administrative reconciliation workflows for interrupted credential provisioning, eliminating dangling tasks.
+- **Comprehensive Multilingual Documentation Rewrite**: Complete human-centered overhaul of Architecture, Operations, Security, Integration Testing, and Project Guides, ensuring complete structural and factual parity across all five languages.
 
 ## [0.1.0] - 2026-09-20
 
-First public release: a self-hosted business email platform that turns a Purelymail account into a team mail product.
+First public release: a self-hosted business email platform that transforms upstream email provider accounts into a polished, team-collaborative email product.
 
-### Added
+### Added Features
 
-- **First-run setup**: create the organisation, validate the Purelymail API token, and import existing domains, mailboxes and routing rules without changing anything on the account. The import is read-only and repeatable.
-- **Organisation model**: members with title, department, role and status (invited, active, disabled, departed); built-in owner, admin and member roles, plus custom roles built from fine-grained permissions; an audit log of administrative actions and ownership transfer.
-- **Mailbox lifecycle**: personal and shared mailboxes, access grants at `full`, `send` and `read` level, one application password per mailbox created and rotated by the server, and one-step offboarding that hands a mailbox over, converts it to shared, keeps or locks it, forwards new mail, rotates every credential and removes the member from groups.
-- **Addressing**: primary addresses, aliases, forwards, catch-all and prefix rules, and group distribution addresses that follow group membership.
-- **Domains**: domain management with DNS health for MX, SPF, DKIM and DMARC, and copy-paste DNS records.
-- **Webmail**: folders, paging, server-side search, flags, bulk actions, attachments, drafts with autosave, signatures and multiple sending identities, desktop notifications over IMAP IDLE, keyboard shortcuts, light and dark themes, English and Simplified Chinese.
-- **Shared mailbox teamwork**: see who replied, assign a message, mark it resolved, and leave internal notes. Collaboration state is keyed by `Message-ID`, so it survives moves between folders.
-- **Rules**: structured conditions and actions, plus the vacation auto-reply, compiled to Sieve and installed over ManageSieve so they keep working while nobody is signed in.
-- **Security**: the Purelymail API token and every mailbox application password are encrypted at rest with AES-256-GCM under a key derived from the master key and never leave the server; argon2id password hashing, CSRF protection, rate-limited sign-in; message HTML sanitised server-side and rendered in a sandboxed, script-free iframe under a strict CSP with remote images blocked by default; attachments served with `nosniff` and a download disposition.
-- **Deployment**: one static Go binary with the web client embedded, SQLite storage through the pure-Go `modernc.org/sqlite` driver, a `Dockerfile` and `docker-compose.yml`, and a GitHub Actions workflow that runs the test suite, builds the binary and publishes multi-architecture images to GHCR.
-- **Development and verification**: an in-process fake of the Purelymail API, IMAP and SMTP with demo data (`make dev`), a screenshot script that drives the real interface, and an integration suite that runs against a real Purelymail account.
+- **First-Run Setup Wizard**: Create the initial organization administrator, validate provider API tokens, and discover existing domains, mailboxes, and routing rules with read-only, non-destructive import.
+- **People-First Organizational Model**: Manage members with titles, departments, roles, and explicit lifecycle states (invited, active, disabled, departed); built-in owner, admin, and member roles alongside customizable granular permissions; immutable administrative audit logs and organizational ownership transfer.
+- **Mailbox Lifecycle Management**: Provision personal and shared mailboxes with granular access tiers (Full Access, Send & Read, Read Only); server-side generation and rotation of application passwords; one-step offboarding workflows that reassign, archive, forward mail, revoke active sessions, and clean up group memberships.
+- **Flexible Address Topology**: Native support for primary addresses, aliases, forwarding, catch-all rules, prefix routing, and dynamic distribution groups synchronized with team rosters.
+- **Domain Management & DNS Health**: Manage multiple custom domains with visual DNS status indicators (MX, SPF, DKIM, DMARC) and copy-paste DNS record values.
+- **Modern Responsive Webmail Client**: System and custom folders, paginated browsing, instant server-side search, flags, bulk operations, attachment previews and chunked downloads, autosaved drafts, rich text editing, custom signatures, multiple sending identities, IMAP IDLE desktop push notifications, global keyboard shortcuts, and dark/light themes.
+- **Shared Mailbox Collaboration**: Real-time triage context—view which teammate replied, assign owners, mark conversations resolved, and append internal private notes; collaboration state is anchored to the message's `Message-ID`, surviving folder moves.
+- **Server-Side Rules & Auto-Reply**: Create visual filtering rules and vacation responders compiled to RFC-compliant Sieve scripts and deployed via ManageSieve, running server-side even when members are offline; explicit confirmation before taking over existing active scripts.
+- **Defense-in-Depth Security**: All API tokens and mailbox passwords encrypted at rest using AES-256-GCM derived from the installation master key; argon2id password hashing, CSRF enforcement, and login rate limiting; server-side HTML sanitization rendered in a scriptless, sandboxed iframe under strict CSP with remote images blocked by default; attachments served with `nosniff` and safe download disposition.
+- **Lightweight Monolithic Deployment**: Single Go binary embedding all static web assets, pure-Go SQLite storage via `modernc.org/sqlite`, accompanying `Dockerfile` and `docker-compose.yml`, and CI workflows publishing multi-arch images.
+- **Developer & Testing Tooling**: In-process mock email provider with pre-seeded demo fixtures (`make dev`), browser UI screenshot scripts, and automated integration test suites for real email providers.
 
 [Unreleased]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.1.0

@@ -217,7 +217,7 @@ export function MessageView(p: Props) {
 
         {m.hasRemote && !remote ? (
           <div class="notice inline">
-            <Icon name="eye" size={15} /> {t("This message has remote images.")}
+            <Icon name="eye" size={15} /> {t("This message contains remote images. They have been blocked to protect your privacy.")}
             <button class="linklike" onClick={() => setRemote(true)}>
               {t("Show images")}
             </button>

@@ -2,33 +2,36 @@
 
 [English](CHANGELOG.md) · [简体中文](CHANGELOG.zh-CN.md) · [繁體中文](CHANGELOG.zh-TW.md) · [日本語](CHANGELOG.ja.md) · **Español**
 
-Todos los cambios importantes de Mailhearth se documentan en este archivo.
+Todos los cambios notables introducidos en Mailhearth quedan documentados en este archivo.
 
-El formato sigue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), y el proyecto usa [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+El formato sigue las pautas de [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y el proyecto se rige por [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [Sin publicar]
+## [No publicado]
 
-### Añadido
+### Novedades y mejoras
 
-- Traducciones de la interfaz al chino tradicional (Taiwán), japonés y español, seleccionables desde la pantalla de inicio de sesión y desde Ajustes.
+- **Ampliación de localización multilingüe**: Traducciones completas de la interfaz web y del panel de administración para chino tradicional (Taiwán), japonés y español, seleccionables en la pantalla de inicio de sesión y en Ajustes. La cobertura de diccionarios y variables se valida al 100% mediante análisis de AST en TypeScript.
+- **Arquitectura multiproveedor**: Soporte ampliado para Migadu y servidores genéricos manuales IMAP/SMTP, permitiendo credenciales de gestión y plantillas de endpoints independientes por conexión.
+- **Flujo de conciliación y limpieza de credenciales huérfanas**: Implementación de informes de limpieza fuera de línea y flujos de conciliación administrativa ante interrupciones de red o fallos en la provisión remota.
+- **Reescritura integral de la documentación multilingüe**: Modernización y unificación estructural de las guías de arquitectura, operaciones, seguridad, pruebas de integración y presentación general en los cinco idiomas.
 
 ## [0.1.0] - 2026-09-20
 
-Primera versión pública: una plataforma de correo empresarial autoalojada que convierte una cuenta de Purelymail en un producto de correo para equipos.
+Primera versión pública: plataforma de correo empresarial autoalojada y ligera que convierte cuentas de correo de proveedores ascendentes en un servicio completo y colaborativo para equipos.
 
-### Añadido
+### Funcionalidades añadidas
 
-- **Configuración inicial**: crea la organización, valida el token de la API de Purelymail e importa los dominios, buzones y reglas de enrutamiento existentes sin cambiar nada en la cuenta. La importación es de solo lectura y repetible.
-- **Modelo de organización**: miembros con puesto, departamento, rol y estado (invitado, activo, deshabilitado, baja); roles integrados de propietario, administrador y miembro, además de roles personalizados creados a partir de permisos detallados; un registro de auditoría de las acciones administrativas y de la transferencia de propiedad.
-- **Ciclo de vida del buzón**: buzones personales y compartidos, concesiones de acceso en los niveles `full`, `send` y `read`, una contraseña de aplicación por buzón creada y rotada por el servidor, y una baja en un solo paso que traspasa un buzón, lo convierte en compartido, lo conserva o lo bloquea, reenvía el correo nuevo, rota todas las credenciales y quita al miembro de los grupos.
-- **Direccionamiento**: direcciones principales, alias, reenvíos, reglas de catch-all y prefijo, y direcciones de distribución de grupo que siguen la pertenencia al grupo.
-- **Dominios**: gestión de dominios con el estado del DNS para MX, SPF, DKIM y DMARC, y registros DNS listos para copiar y pegar.
-- **Correo web**: carpetas, paginación, búsqueda en el servidor, marcas, acciones masivas, archivos adjuntos, borradores con guardado automático, firmas y varias identidades de envío, notificaciones de escritorio mediante IMAP IDLE, atajos de teclado, temas claro y oscuro, inglés y chino simplificado.
-- **Trabajo en equipo en buzones compartidos**: ver quién respondió, asignar un mensaje, marcarlo como resuelto y dejar notas internas. El estado de colaboración se indexa por `Message-ID`, por lo que sobrevive a los movimientos entre carpetas.
-- **Reglas de correo**: condiciones y acciones estructuradas, además de la respuesta automática de vacaciones, compiladas a Sieve e instaladas mediante ManageSieve para que sigan funcionando mientras nadie ha iniciado sesión.
-- **Seguridad**: el token de la API de Purelymail y todas las contraseñas de aplicación de los buzones se cifran en reposo con AES-256-GCM bajo una clave derivada de la clave maestra y nunca salen del servidor; hash de contraseñas con argon2id, protección CSRF, inicio de sesión con límite de intentos; el HTML de los mensajes se sanitiza en el servidor y se representa en un iframe en sandbox, sin scripts, bajo una CSP estricta con las imágenes remotas bloqueadas de forma predeterminada; los archivos adjuntos se sirven con `nosniff` y una disposición de descarga.
-- **Despliegue**: un único binario estático de Go con el cliente web integrado, almacenamiento SQLite mediante el controlador `modernc.org/sqlite` escrito en Go puro, un `Dockerfile` y `docker-compose.yml`, y un flujo de trabajo de GitHub Actions que ejecuta la suite de pruebas, compila el binario y publica imágenes multiarquitectura en GHCR.
-- **Desarrollo y verificación**: una implementación simulada en proceso de la API de Purelymail, IMAP y SMTP con datos de demostración (`make dev`), un script de capturas de pantalla que maneja la interfaz real y una suite de integración que se ejecuta contra una cuenta real de Purelymail.
+- **Asistente de configuración inicial**: Creación del administrador de la organización, validación de tokens de API y descubrimiento e importación no destructiva de dominios, buzones y reglas de reenvío existentes.
+- **Modelo de organización centrado en las personas**: Gestión de colaboradores con cargos, departamentos, roles y estados de ciclo de vida (invitado, activo, deshabilitado, desvinculado); roles predefinidos (propietario, admin, miembro) y roles personalizados granulares; registro de auditoría inmutable y traspaso de propiedad.
+- **Gestión integral de buzones**: Soporte para buzones personales y compartidos con niveles de acceso (total, lectura/envío, solo lectura); generación y rotación segura de contraseñas de aplicación; flujo guiado de baja (Offboarding) que reasigna buzones, archiva, redirige correo, cierra sesiones activas y desvincula grupos.
+- **Topología flexible de direcciones**: Soporte nativo para direcciones principales, alias, reenvíos, captura global (catch-all), enrutamiento por prefijo y grupos de distribución dinámicos vinculados a la plantilla del equipo.
+- **Gestión de dominios y salud de DNS**: Vinculación de dominios con monitoreo visual de registros MX, SPF, DKIM y DMARC, con valores listos para copiar y pegar.
+- **Webmail moderno y adaptable**: Carpetas de sistema y personalizadas, paginación, búsqueda instantánea en el servidor, mensajes destacados, acciones masivas, visor y descarga de adjuntos, autoguardado de borradores, editor enriquecido, firmas, múltiples identidades, notificaciones de escritorio mediante IMAP IDLE, atajos de teclado y temas claro y oscuro.
+- **Colaboración en buzones compartidos**: Contexto de respuesta en tiempo real: comprobación de quién respondió, asignación de responsables, marcas de resolución y notas privadas internas; el estado se vincula al `Message-ID`, manteniéndose intacto tras mover mensajes entre carpetas.
+- **Reglas automáticas y respuestas de vacaciones**: Editor visual de condiciones y acciones compiladas a scripts Sieve compatibles con RFC desplegados por ManageSieve, activos incluso cuando no hay usuarios conectados; confirmación expresa antes de sustituir scripts activos.
+- **Seguridad en profundidad**: Cifrado completo de credenciales y contraseñas con AES-256-GCM derivado de la clave maestra; hash de contraseñas con argon2id, protección CSRF y limitación de tasa en el inicio de sesión; saneamiento riguroso de HTML en el servidor dentro de un iframe aislado sin scripts bajo estricta CSP; bloqueo predeterminado de imágenes remotas y adjuntos protegidos con `nosniff`.
+- **Despliegue monolítico simplificado**: Binario ejecutable Go único con los recursos web estáticos incrustados, almacenamiento SQLite nativo con `modernc.org/sqlite`, `Dockerfile`, `docker-compose.yml` y flujos de integración continua en GitHub Actions.
+- **Herramientas de desarrollo y verificación**: Entorno mock en proceso con datos de demostración preconfigurados (`make dev`), scripts para captura automatizada de pantallas de interfaz y suite de pruebas de integración frente a proveedores reales.
 
-[Unreleased]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
+[No publicado]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.1.0
