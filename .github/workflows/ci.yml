@@ -37,7 +37,9 @@ jobs:
           mkdir -p "$GOTMPDIR"
           gofmt -l ./internal ./cmd | tee /dev/stderr | test -z "$(cat)"
           go vet ./...
-          go test -race ./...
+          # local runs take ~5 minutes for internal/core under -race; the
+          # default 10m package timeout is too tight for a 2-vCPU runner.
+          go test -race -timeout 30m ./...
       - name: Binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o mailhearth ./cmd/mailhearth
 
