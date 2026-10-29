@@ -93,14 +93,17 @@ type Pool struct {
 
 // Conn is a pooled IMAP connection. Callers must return it with Put.
 type Conn struct {
-	C         *imapclient.Client
-	cred      Cred
-	key       string
-	pool      *Pool
-	selected  string
-	readOnly  bool
-	selData   *imap.SelectData
-	lastUsed  time.Time
+	C        *imapclient.Client
+	cred     Cred
+	key      string
+	pool     *Pool
+	selected string
+	readOnly bool
+	selData  *imap.SelectData
+	lastUsed time.Time
+	// refresh is set when an idle connection is handed out again: the
+	// cached SELECT state may predate mail that arrived while it was idle.
+	refresh   bool
 	broken    atomic.Bool
 	closeOnce sync.Once
 }
@@ -264,6 +267,7 @@ func (p *Pool) get(ctx context.Context, cred Cred, reuse bool) (*Conn, error) {
 			c.close()
 			return p.Get(ctx, cred)
 		}
+		c.refresh = true
 		return c, nil
 	}
 	p.mu.Unlock()
@@ -446,11 +450,24 @@ func (c *Conn) Cred() Cred { return c.cred }
 // (possibly cached) selection data with an up-to-date message count.
 func (c *Conn) Select(ctx context.Context, mailbox string, readOnly bool) (*imap.SelectData, error) {
 	if c.selected == mailbox && c.selData != nil && c.readOnly == readOnly {
-		if mb := c.C.Mailbox(); mb != nil {
-			c.selData.NumMessages = mb.NumMessages
+		fresh := true
+		if c.refresh {
+			// Servers usually only report EXISTS/EXPUNGE in reply to a
+			// command; NOOP collects whatever arrived while idle.
+			var err error
+			c.run(ctx, func() { err = c.C.Noop().Wait() })
+			c.refresh = false
+			fresh = err == nil
 		}
-		return c.selData, nil
+		if fresh {
+			if mb := c.C.Mailbox(); mb != nil {
+				c.selData.NumMessages = mb.NumMessages
+			}
+			return c.selData, nil
+		}
+		c.selected, c.selData = "", nil
 	}
+	c.refresh = false
 	var (
 		data *imap.SelectData
 		err  error
@@ -516,7 +533,12 @@ func (p *Pool) reaper() {
 			p.mu.Unlock()
 			for _, c := range victims {
 				go func(c *Conn) {
-					c.C.Logout().Wait()
+					// A half-open or stalled server must not keep the slot:
+					// the polite LOGOUT gets five seconds, then the
+					// connection is closed regardless.
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					c.run(ctx, func() { c.C.Logout().Wait() })
+					cancel()
 					c.close()
 				}(c)
 			}

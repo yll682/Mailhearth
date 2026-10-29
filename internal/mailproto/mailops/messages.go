@@ -3,6 +3,7 @@ package mailops
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -16,6 +17,7 @@ import (
 
 	"mailhearth/internal/mailproto/imappool"
 	"mailhearth/internal/mailproto/mimeutil"
+	"mailhearth/internal/provider"
 )
 
 type fetchBuffer = imapclient.FetchMessageBuffer
@@ -452,37 +454,36 @@ func StreamRaw(ctx context.Context, conn *imappool.Conn, folder string, uid uint
 }
 
 // RawMessage returns the full message bytes (used for forwarding as an
-// attachment and for quoting).
+// attachment and for quoting). Messages larger than limit are never
+// truncated: they fail with a message_too_large error.
 func RawMessage(ctx context.Context, conn *imappool.Conn, folder string, uid uint32, limit int64) ([]byte, error) {
 	var buf bytes.Buffer
 	lw := &limitedWriter{w: &buf, n: limit}
-	if err := StreamRaw(ctx, conn, folder, uid, lw); err != nil && !errors_isLimit(err) {
+	if err := StreamRaw(ctx, conn, folder, uid, lw); err != nil {
+		if errors.Is(err, errLimit) {
+			return nil, provider.Errorf("message_too_large", "邮件超过大小上限")
+		}
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
+// limitedWriter accepts at most n bytes and fails with errLimit on the
+// first write that would exceed them.
 type limitedWriter struct {
 	w io.Writer
 	n int64
 }
 
-var errLimit = fmt.Errorf("size limit reached")
+var errLimit = errors.New("size limit reached")
 
 func (l *limitedWriter) Write(p []byte) (int, error) {
-	if l.n <= 0 {
-		return 0, errLimit
-	}
 	if int64(len(p)) > l.n {
-		p = p[:l.n]
+		return 0, errLimit
 	}
 	n, err := l.w.Write(p)
 	l.n -= int64(n)
 	return n, err
-}
-
-func errors_isLimit(err error) bool {
-	return err == errLimit || strings.Contains(err.Error(), errLimit.Error())
 }
 
 func streamSection(ctx context.Context, conn *imappool.Conn, uid uint32, sec *imap.FetchItemBodySection, encoding string, w io.Writer) error {

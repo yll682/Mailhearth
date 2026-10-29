@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -429,6 +430,14 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 	// Uploads
 	mux.HandleFunc("POST /api/mail/uploads", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
+		if !s.limiter.allow("upload:"+strconv.FormatInt(p.Member.ID, 10), 60, time.Minute) {
+			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many uploads, try again in a minute", Code: "rate_limited"})
+			return
+		}
+		quota := s.Cfg.UploadQuotaBytes
+		if quota <= 0 {
+			quota = 3 * s.Cfg.MaxMessageBytes
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, s.Cfg.MaxUploadBytes+1<<20)
 		mr, err := r.MultipartReader()
 		if err != nil {
@@ -448,7 +457,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			if part.FormName() != "file" || part.FileName() == "" {
 				continue
 			}
-			info, err := s.uploads.save(r.Context(), p.Member.ID, mailops.SafeFilename(part.FileName(), "attachment"), part.Header.Get("Content-Type"), part, s.Cfg.MaxUploadBytes)
+			info, err := s.uploads.save(r.Context(), p.Member.ID, mailops.SafeFilename(part.FileName(), "attachment"), part.Header.Get("Content-Type"), part, s.Cfg.MaxUploadBytes, quota)
 			if err != nil {
 				s.fail(w, r, err)
 				return

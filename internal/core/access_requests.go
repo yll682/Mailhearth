@@ -48,6 +48,18 @@ func (s *Service) cancelMailRequests(memberID, mailboxID int64) {
 	}
 }
 
+// cancelMailRequestsExcept cancels a member's in-flight mail requests except
+// those of the session identified by keepSessionHash.
+func (s *Service) cancelMailRequestsExcept(memberID int64, keepSessionHash string) {
+	s.requestMu.Lock()
+	defer s.requestMu.Unlock()
+	for _, request := range s.requests {
+		if request.memberID == memberID && (keepSessionHash == "" || request.sessionHash != keepSessionHash) {
+			request.cancel()
+		}
+	}
+}
+
 func (s *Service) cancelConnectionMailRequests(connectionID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

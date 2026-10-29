@@ -18,7 +18,10 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 
 # --- Stage 3: runtime -------------------------------------------------------
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata sqlite && adduser -D -H -u 10001 mailhearth
+# sqlite is not used by the (CGO-free) binary; it provides the sqlite3 CLI
+# used for online backups in docs/operations.md.
+RUN apk add --no-cache ca-certificates tzdata sqlite && adduser -D -H -u 10001 mailhearth \
+    && mkdir -p /data && chown 10001:10001 /data && chmod 700 /data
 COPY --from=build /out/mailhearth /usr/local/bin/mailhearth
 ENV MAILHEARTH_LISTEN=:8080 \
     MAILHEARTH_DATA_DIR=/data

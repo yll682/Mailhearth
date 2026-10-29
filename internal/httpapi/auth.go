@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"mailhearth/internal/core"
 	"mailhearth/internal/model"
+	"mailhearth/internal/secrets"
 )
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, maxAge int) {
@@ -42,7 +44,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, p *principal) {
 
 func (s *Server) routesAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r, s.Cfg.TrustProxyHeader)
+		ip := s.clientIP(r)
 		if !s.limiter.allow("login:"+ip, 12, time.Minute) {
 			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many attempts, try again in a minute", Code: "rate_limited"})
 			return
@@ -53,6 +55,12 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 		}
 		if err := readJSON(r, &in); err != nil {
 			s.fail(w, r, err)
+			return
+		}
+		// Per-account limit: spreading guesses over many source addresses
+		// must not multiply the attempts available against one login.
+		if !s.limiter.allow("login-account:"+strings.ToLower(strings.TrimSpace(in.Email)), 30, 15*time.Minute) {
+			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many attempts for this account, try again later", Code: "rate_limited"})
 			return
 		}
 		m, err := s.Svc.VerifyLogin(r.Context(), in.Email, in.Password)
@@ -94,6 +102,10 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
+		if !s.limiter.allow("password:"+strconv.FormatInt(p.Member.ID, 10), 10, 15*time.Minute) {
+			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many attempts, try again later", Code: "rate_limited"})
+			return
+		}
 		var in struct {
 			Current string `json:"current"`
 			New     string `json:"new"`
@@ -106,7 +118,7 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 			writeJSON(w, http.StatusBadRequest, apiError{Error: "current password is incorrect", Code: "invalid"})
 			return
 		}
-		if err := s.Svc.SetPassword(r.Context(), p.OrgID, p.Member.ID, p.Member.ID, in.New, false); err != nil {
+		if err := s.Svc.ChangeOwnPassword(r.Context(), p.OrgID, p.Member.ID, in.New, secrets.HashToken(p.Token)); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -123,7 +135,7 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("POST /api/auth/invite/{token}/accept", func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r, s.Cfg.TrustProxyHeader)
+		ip := s.clientIP(r)
 		if !s.limiter.allow("invite:"+ip, 10, time.Minute) {
 			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many attempts", Code: "rate_limited"})
 			return
@@ -174,7 +186,7 @@ func (s *Server) routesSetup(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		token, err := s.Svc.CreateSession(r.Context(), m.ID, clientIP(r, s.Cfg.TrustProxyHeader), r.UserAgent())
+		token, err := s.Svc.CreateSession(r.Context(), m.ID, s.clientIP(r), r.UserAgent())
 		if err != nil {
 			s.fail(w, r, err)
 			return

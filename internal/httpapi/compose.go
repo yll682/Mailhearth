@@ -231,6 +231,13 @@ func (s *Server) handleCompose(m *mailReq, send bool) {
 		s.fail(m.w, m.r, err)
 		return
 	}
+	// The limit applies to the encoded message: base64 grows attachments by
+	// about a third, and every later read-back of the staged copy uses the
+	// same limit.
+	if int64(len(raw)) > s.Cfg.MaxMessageBytes {
+		s.fail(m.w, m.r, provider.Errorf("message_too_large", "the encoded message exceeds the %d MB limit; attachments grow by about a third when sent", s.Cfg.MaxMessageBytes>>20))
+		return
+	}
 	folders, err := mailops.ListFolders(m.ctx, m.conn)
 	if err != nil {
 		s.fail(m.w, m.r, err)
