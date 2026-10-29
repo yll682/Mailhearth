@@ -27,6 +27,35 @@ El sistema implementa cuotas estrictas de protección por niveles:
 
 > **Nota**: Al ajustar las conexiones, asegúrate de comprobar los límites máximos de conexiones concurrentes por IP establecidos por tu proveedor de correo (como Purelymail o Migadu).
 
+## Referencia de configuración
+
+Todas las opciones son variables de entorno. Los valores mal formados o fuera de rango detienen el arranque con un error que indica la variable; los valores ajustados se registran como advertencias, y al arrancar se registra la configuración efectiva (sin secretos).
+
+| Variable | Valor por defecto | Uso |
+| --- | --- | --- |
+| `MAILHEARTH_BASE_URL` | vacío | URL pública, usada en los enlaces de invitación. Una URL `https://` activa las cookies `Secure`. |
+| `MAILHEARTH_LISTEN` | `:8080` | Dirección de escucha HTTP. |
+| `MAILHEARTH_DATA_DIR` | `./data` (`/data` en el contenedor) | Base de datos SQLite, clave maestra, archivos subidos y copias previas a las migraciones. |
+| `MAILHEARTH_MASTER_KEY` | generada en `<data>/master.key` | Clave de 32 bytes (base64 o hex) que cifra las credenciales guardadas. |
+| `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` o `error`. |
+| `MAILHEARTH_TRUST_PROXY` | `false` | Leer `X-Forwarded-For` / `X-Forwarded-Host` de los proxies de confianza. |
+| `MAILHEARTH_TRUSTED_PROXIES` | loopback y redes privadas | CIDR o direcciones de tus proxies inversos, separados por comas. Las cabeceras de reenvío de cualquier otro par se ignoran. |
+| `MAILHEARTH_SECURE_COOKIES` | `true` si `MAILHEARTH_BASE_URL` es `https://` | Fuerza el atributo `Secure` de las cookies. |
+| `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | vacío | CIDR donde pueden estar los servidores de correo. Las conexiones a direcciones privadas, loopback y de enlace local se rechazan salvo que aparezcan aquí; configúralo si tu servidor IMAP/SMTP/ManageSieve está en una red privada. |
+| `MAILHEARTH_CA_BUNDLES_FILE` | vacío | Archivo JSON que asocia identificadores de paquetes de CA con archivos PEM, por ejemplo `{"1": "/etc/mailhearth/ca.pem"}`. Los endpoints de protocolo usan ese identificador para confiar en una CA privada. |
+| `MAILHEARTH_IMAP_MAX_CONNS` | `24` | Límite de conexiones IMAP. El pool admite de 4 a 24; otros valores se ajustan con una advertencia. |
+| `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | Segundos tras los que se cierran las conexiones IMAP inactivas (10 a 3600). |
+| `MAILHEARTH_MAX_UPLOAD_MB` | `25` | Tamaño máximo de un adjunto subido. |
+| `MAILHEARTH_MAX_MESSAGE_MB` | `40` | Tamaño máximo del mensaje codificado. Los adjuntos aumentan aproximadamente un tercio al codificarse para el envío. |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | Tamaño total de las subidas no enviadas de un miembro. |
+| `MAILHEARTH_SESSION_DAYS` | `30` | Caducidad deslizante de la sesión. |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | Duración absoluta de la sesión; no puede ser menor que `MAILHEARTH_SESSION_DAYS`. |
+| `MAILHEARTH_INVITE_DAYS` | `7` | Validez de los enlaces de invitación (1 a 90). |
+| `MAILHEARTH_DEV_STACK` | `false` | Solo desarrollo: proveedor, IMAP y SMTP simulados en el propio proceso. |
+| `GOMEMLIMIT` | `160MiB` si no se define | Límite del heap de Go. |
+
+`MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` y `MAILHEARTH_SIEVE_TLS` solo se leen una vez, al actualizar una instalación creada antes de que existieran las conexiones de correo: se convierten en su primera conexión. En los demás casos, las conexiones y los endpoints de protocolo se configuran en la consola de administración.
+
 ## Copias de seguridad y recuperación ante desastres
 
 Todo el estado operativo de Mailhearth reside en el directorio de datos montado como volumen persistente (por defecto `/data`):
@@ -62,7 +91,7 @@ Restaurar Mailhearth en una máquina limpia se reduce a tres sencillos pasos:
 
 Mailhearth incorpora un motor de migraciones declarativas (`internal/db/migrations`).
 
-1. **Migración automática**: Al iniciar una nueva versión del binario, el sistema detecta la versión del esquema actual y aplica en una transacción atómica las actualizaciones de tablas, claves foráneas y comprobaciones de integridad pertinentes.
+1. **Migración automática**: Al iniciar una nueva versión del binario, el sistema detecta la versión del esquema actual y aplica en una transacción atómica las actualizaciones de tablas, claves foráneas y comprobaciones de integridad pertinentes. Antes de modificar una base de datos existente, escribe una copia junto a ella con el nombre `mailhearth.db.pre-<migración>-<marca de tiempo>.bak`.
 2. **Medida preventiva**: Antes de descargar nuevas imágenes de contenedores, realiza siempre una copia de seguridad coherente de la base de datos y de `master.key`.
 3. **Aplicar la actualización**:
    ```bash
@@ -70,7 +99,7 @@ Mailhearth incorpora un motor de migraciones declarativas (`internal/db/migratio
    docker compose pull
    docker compose up -d --build
    ```
-4. **Política de reversión (Rollback)**: Las migraciones solo garantizan compatibilidad hacia adelante. Si surge una incidencia y se necesita volver atrás, **no está permitido ejecutar versiones antiguas sobre esquemas migrados**; restaura la copia de seguridad de la base de datos previa a la actualización y vuelve a la imagen anterior.
+4. **Política de reversión (Rollback)**: Las migraciones solo garantizan compatibilidad hacia adelante. Si surge una incidencia y se necesita volver atrás, **no está permitido ejecutar versiones antiguas sobre esquemas migrados**; restaura la copia de seguridad de la base de datos previa a la actualización y vuelve a la imagen anterior. También puedes restaurar la copia `.bak` automática; elimina las copias `.bak` antiguas cuando confirmes que la actualización funciona.
 
 ## Proxy inverso y configuración de TLS
 
@@ -116,7 +145,7 @@ server {
 }
 ```
 
-Asegúrate además de definir `MAILHEARTH_TRUST_PROXY=true` en tu archivo `.env` para que los registros de auditoría conserven las direcciones IP reales de los usuarios.
+Asegúrate además de definir `MAILHEARTH_TRUST_PROXY=true` en tu archivo `.env` para que los registros de auditoría y los límites de tasa usen la IP real del cliente. Si el proxy no se conecta desde loopback o una red privada, añade su dirección a `MAILHEARTH_TRUSTED_PROXIES`.
 
 ## Resolución de incidencias y diagnóstico
 
@@ -167,6 +196,7 @@ docker compose logs -f --tail=100 mailhearth
 
 - Nivel de registro predeterminado: `info`;
 - Para diagnosticar detalles de bajo nivel en conexiones de red o reconexiones de escuchas IMAP IDLE, define `MAILHEARTH_LOG_LEVEL=debug` en tu `.env`;
+- Cada respuesta de la API incluye la cabecera `X-Request-ID`, y las líneas de error del registro incluyen el mismo `requestId`. Los errores del servidor se registran como `error` y los demás errores del cliente como `info`;
 - **Seguridad garantizada**: Todas las salidas de registro se desinfectan automáticamente; jamás se imprimen contraseñas en claro, tokens de API ni credenciales descifradas.
 
 ## Comandos de comprobación y verificación

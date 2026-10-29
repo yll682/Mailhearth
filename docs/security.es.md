@@ -30,17 +30,18 @@ El diseño de seguridad de Mailhearth aplica defensa en profundidad frente a los
 
 ### 2. Autenticación y protección de sesiones (Authentication & Sessions)
 - **Hash de contraseñas de última generación**: Las contraseñas de los miembros se protegen con el algoritmo argon2id recomendado por RFC 9106 (`m=19MiB, t=2`), ofreciendo máxima resistencia frente a ataques de fuerza bruta asistidos por GPU/ASIC.
-- **Tokens de sesión de alta entropía**: Las sesiones se basan en tokens pseudoaleatorios criptográficamente seguros de 256 bits y se almacenan exclusivamente como hashes SHA-256 en la base de datos. Las cookies aplican `HttpOnly`, `SameSite=Lax` y `Secure` (bajo HTTPS) con ventana de caducidad deslizante de 30 días.
-- **Límites de tasa contra ataques de fuerza bruta**: Se aplican restricciones de tasa multinivel por dirección IP y cuenta sobre los puntos de acceso de inicio de sesión y activación de invitaciones.
+- **Tokens de sesión de alta entropía**: Las sesiones se basan en tokens pseudoaleatorios criptográficamente seguros de 256 bits y se almacenan exclusivamente como hashes SHA-256 en la base de datos. Las cookies aplican `HttpOnly`, `SameSite=Lax` y `Secure` (bajo HTTPS) con ventana de caducidad deslizante de 30 días. La ventana deslizante se configura con `MAILHEARTH_SESSION_DAYS` y está limitada por una duración absoluta de 90 días (`MAILHEARTH_SESSION_MAX_DAYS`). Al cambiar la propia contraseña se cierran todas las demás sesiones.
+- **Límites de tasa contra ataques de fuerza bruta**: Se aplican restricciones de tasa multinivel por dirección IP y cuenta sobre los puntos de acceso de inicio de sesión y activación de invitaciones. La dirección del cliente solo se lee de `X-Forwarded-For` cuando la petición procede de un proxy indicado en `MAILHEARTH_TRUSTED_PROXIES`.
 - **Invalidación inmediata en desvinculaciones**: En cuanto un usuario es deshabilitado (`disabled`) o marcado como desvinculado (`departed`), el sistema revoca y destruye todas sus sesiones activas en una única transacción atómica.
 
 ### 3. Modelo de autorización granular y aislamiento de buzones
 - **Separación ortogonal de privilegios**: Las atribuciones de gestión (configuración de dominios, alta de personal) están estrictamente separadas del acceso a los correos. Ser administrador de la organización jamás concede acceso implícito a los buzones personales de otros miembros.
+- **Jerarquía de gestión**: Los gestores solo pueden actuar sobre miembros cuyos permisos sean un subconjunto de los suyos (restablecer contraseñas, invitar, cambiar perfil y rol, activar o desactivar, gestionar bajas, eliminar) y solo pueden conceder permisos que ellos mismos tienen. La cuenta del propietario solo puede gestionarla el propietario.
 - **Límites de autorización estrictos**: Todo acceso a los mensajes se valida dinámicamente mediante `core.ResolveMailbox`, verificando la titularidad del buzón o el nivel concedido en buzones compartidos (`read` solo lectura, sin marcar ni enviar; `send` lectura y envío, sin eliminar ni mover; `full` administración completa).
 
 ### 4. Protección estricta contra ataques CSRF
 - Todas las peticiones HTTP que alteran el estado (POST, PUT, PATCH, DELETE) requieren de forma obligatoria la cabecera personalizada `X-Requested-With: Mailhearth`. Las políticas de seguridad de los navegadores impiden que sitios externos puedan enviar esta cabecera sin aprobación previa de CORS.
-- Cuando una petición incluye la cabecera `Origin`, el servidor valida minuciosamente que coincida de forma exacta con la dirección `MAILHEARTH_BASE_URL`.
+- Cuando una petición incluye la cabecera `Origin`, el servidor verifica que coincida con el host de la petición (o con `X-Forwarded-Host` si la petición llega desde un proxy de confianza).
 
 ### 5. Aislamiento estricto de contenido no confiable (Sandboxing)
 Los correos electrónicos representan el canal más expuesto a contenidos no confiables. Mailhearth implementa una canalización de saneamiento exhaustiva:

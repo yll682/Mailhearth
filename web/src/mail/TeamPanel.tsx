@@ -23,6 +23,8 @@ export function TeamPanel({ mailbox, msgKey, state, onChange }: { mailbox: Acces
     }
   };
   const myId = me.value!.member.id;
+  // Read-only access can follow and annotate; assigning and resolving need send access.
+  const canAct = mailbox.level !== "read";
   const label = (a: string) => t(a);
   return (
     <div class="team-panel">
@@ -32,7 +34,7 @@ export function TeamPanel({ mailbox, msgKey, state, onChange }: { mailbox: Acces
         <div class="spacer" />
         <label class="field-inline">
           <span class="muted">{t("Assigned to")}</span>
-          <select value={state.assigneeId ?? ""} onChange={(e) => act({ action: "assign", memberId: Number((e.target as HTMLSelectElement).value) || null })} disabled={busy}>
+          <select value={state.assigneeId ?? ""} onChange={(e) => act({ action: "assign", memberId: Number((e.target as HTMLSelectElement).value) || null })} disabled={busy || !canAct}>
             <option value="">{t("Unassigned")}</option>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
@@ -41,12 +43,12 @@ export function TeamPanel({ mailbox, msgKey, state, onChange }: { mailbox: Acces
             ))}
           </select>
         </label>
-        {state.assigneeId !== myId ? (
+        {canAct && state.assigneeId !== myId ? (
           <Button size="sm" onClick={() => act({ action: "assign", memberId: myId })} disabled={busy}>
             {t("Assign to me")}
           </Button>
         ) : null}
-        {state.status === "resolved" ? (
+        {!canAct ? null : state.status === "resolved" ? (
           <Button size="sm" icon="refresh" onClick={() => act({ action: "status", status: "open" })} disabled={busy}>
             {t("Reopen")}
           </Button>
@@ -79,7 +81,7 @@ export function TeamPanel({ mailbox, msgKey, state, onChange }: { mailbox: Acces
           setNote("");
         }}
       >
-        <input placeholder={t("Internal note")} value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} />
+        <input placeholder={t("Internal note")} maxLength={4000} value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} />
         <Button size="sm" busy={busy} type="submit">
           {t("Add note")}
         </Button>

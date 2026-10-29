@@ -30,17 +30,18 @@ Mailhearth implements defense-in-depth across the following primary threat vecto
 
 ### 2. Authentication & Session Hardening
 - **Modern Password Hashing**: Member passwords are hash-protected using RFC 9106 argon2id (`m=19MiB, t=2`), providing robust defense against offline GPU/ASIC brute-force cracking.
-- **High-Entropy Sessions**: Sessions utilize 256-bit cryptographically secure pseudorandom tokens stored exclusively as SHA-256 hashes. Cookies enforce `HttpOnly`, `SameSite=Lax`, and `Secure` (over HTTPS) with a 30-day sliding expiration window.
-- **Brute-Force Rate Limiting**: Multi-tiered IP and account rate limits protect login endpoints and invite redemption flows.
+- **High-Entropy Sessions**: Sessions utilize 256-bit cryptographically secure pseudorandom tokens stored exclusively as SHA-256 hashes. Cookies enforce `HttpOnly`, `SameSite=Lax`, and `Secure` (over HTTPS) with a 30-day sliding expiration window (`MAILHEARTH_SESSION_DAYS`), capped by an absolute lifetime of 90 days (`MAILHEARTH_SESSION_MAX_DAYS`). Changing one's own password signs out every other session.
+- **Brute-Force Rate Limiting**: Multi-tiered IP and account rate limits protect login endpoints and invite redemption flows. Client addresses are read from `X-Forwarded-For` only when the request comes from a proxy listed in `MAILHEARTH_TRUSTED_PROXIES`.
 - **Instant Offboarding Invalidation**: Disabling (`disabled`) or offboarding (`departed`) a member immediately purges all active sessions in a single database transaction.
 
 ### 3. Granular Authorization & Mailbox Isolation
 - **Orthogonal Separation of Privileges**: Administrative permissions (e.g., domain configuration, member onboarding) are strictly segregated from email access rights. Being an administrator does not grant implicit rights to read personal inboxes.
+- **Management Hierarchy**: Managers can only act on members whose permissions are a subset of their own (password resets, invites, profile and role changes, status changes, offboarding, deletion), and can only grant permissions they hold. The owner account can only be managed by the owner.
 - **Strict Authorization Boundary**: All mail operations pass through `core.ResolveMailbox`, verifying explicit ownership or shared mailbox access tiers (`read`: view-only, cannot flag or send; `send`: read and compose, but no delete/move; `full`: unrestricted management).
 
 ### 4. Robust CSRF Defenses
 - All state-mutating requests (POST, PUT, PATCH, DELETE) require the custom header `X-Requested-With: Mailhearth`. Under standard browser security policies, cross-origin sites cannot attach custom headers without preflight CORS approval.
-- When an `Origin` header is present, Mailhearth validates that it matches the configured `MAILHEARTH_BASE_URL`.
+- When an `Origin` header is present, Mailhearth validates that it matches the host of the request (or `X-Forwarded-Host` when the request comes from a trusted proxy).
 
 ### 5. Untrusted Email Content Sandboxing
 Email represents the most volatile source of untrusted content. Mailhearth enforces a multi-layered sanitization pipeline:

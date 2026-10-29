@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,8 +39,34 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, p *principal) {
 		s.fail(w, r, err)
 		return
 	}
-	st, _ := s.Svc.Status(r.Context())
+	st, err := s.Svc.Status(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, meResponse{Member: p.Member, Org: org, RoleKey: p.RoleKey, Permissions: p.Perms, Mailboxes: mbs, Setup: st})
+}
+
+// startSession signs m in: it creates the session, sets the cookie and
+// answers with the same payload as /api/auth/me.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, m *model.Member, ip string) {
+	token, err := s.Svc.CreateSession(r.Context(), m.ID, ip, r.UserAgent())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	perms, roleKey, err := s.Svc.Permissions(r.Context(), m.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	orgID, err := s.orgID(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.setSessionCookie(w, token, int(s.Cfg.SessionTTL.Seconds()))
+	s.me(w, r, &principal{Member: m, OrgID: orgID, Perms: perms, RoleKey: roleKey, Token: token})
 }
 
 func (s *Server) routesAuth(mux *http.ServeMux) {
@@ -65,32 +92,25 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 		}
 		m, err := s.Svc.VerifyLogin(r.Context(), in.Email, in.Password)
 		if err != nil {
-			if strings.Contains(err.Error(), "forbidden") {
-				msg := "incorrect email or password"
-				if strings.Contains(err.Error(), "account is") {
-					msg = "this account is not active"
-				}
-				writeJSON(w, http.StatusUnauthorized, apiError{Error: msg, Code: "bad_credentials"})
-				return
+			switch {
+			case errors.Is(err, core.ErrAccountInactive):
+				writeJSON(w, http.StatusUnauthorized, apiError{Error: "this account is not active", Code: "bad_credentials"})
+			case errors.Is(err, core.ErrBadCredentials):
+				writeJSON(w, http.StatusUnauthorized, apiError{Error: "incorrect email or password", Code: "bad_credentials"})
+			default:
+				s.fail(w, r, err)
 			}
-			s.fail(w, r, err)
 			return
 		}
-		token, err := s.Svc.CreateSession(r.Context(), m.ID, ip, r.UserAgent())
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		s.setSessionCookie(w, token, int(s.Cfg.SessionTTL.Seconds()))
-		perms, roleKey, _ := s.Svc.Permissions(r.Context(), m.ID)
-		org, _ := s.Svc.Org(r.Context())
-		p := &principal{Member: m, OrgID: org.ID, Perms: perms, RoleKey: roleKey, Token: token}
-		s.me(w, r, p)
+		s.startSession(w, r, m, ip)
 	})
 
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if p := principalFrom(r); p != nil {
-			s.Svc.DeleteSession(r.Context(), p.Token)
+			if err := s.Svc.DeleteSession(r.Context(), p.Token); err != nil {
+				s.fail(w, r, err)
+				return
+			}
 		}
 		s.setSessionCookie(w, "", -1)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -115,7 +135,11 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 			return
 		}
 		if _, err := s.Svc.VerifyLogin(r.Context(), p.Member.LoginEmail, in.Current); err != nil {
-			writeJSON(w, http.StatusBadRequest, apiError{Error: "current password is incorrect", Code: "invalid"})
+			if errors.Is(err, core.ErrForbidden) {
+				writeJSON(w, http.StatusBadRequest, apiError{Error: "current password is incorrect", Code: "invalid"})
+				return
+			}
+			s.fail(w, r, err)
 			return
 		}
 		if err := s.Svc.ChangeOwnPassword(r.Context(), p.OrgID, p.Member.ID, in.New, secrets.HashToken(p.Token)); err != nil {
@@ -153,15 +177,7 @@ func (s *Server) routesAuth(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		token, err := s.Svc.CreateSession(r.Context(), m.ID, ip, r.UserAgent())
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		s.setSessionCookie(w, token, int(s.Cfg.SessionTTL.Seconds()))
-		perms, roleKey, _ := s.Svc.Permissions(r.Context(), m.ID)
-		org, _ := s.Svc.Org(r.Context())
-		s.me(w, r, &principal{Member: m, OrgID: org.ID, Perms: perms, RoleKey: roleKey, Token: token})
+		s.startSession(w, r, m, ip)
 	})
 }
 
@@ -186,15 +202,7 @@ func (s *Server) routesSetup(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		token, err := s.Svc.CreateSession(r.Context(), m.ID, s.clientIP(r), r.UserAgent())
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		s.setSessionCookie(w, token, int(s.Cfg.SessionTTL.Seconds()))
-		perms, roleKey, _ := s.Svc.Permissions(r.Context(), m.ID)
-		org, _ := s.Svc.Org(r.Context())
-		s.me(w, r, &principal{Member: m, OrgID: org.ID, Perms: perms, RoleKey: roleKey, Token: token})
+		s.startSession(w, r, m, s.clientIP(r))
 	})
 
 	mux.HandleFunc("POST /api/setup/connect", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {

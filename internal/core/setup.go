@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -154,7 +155,7 @@ type InitRequest struct {
 func (s *Service) Init(ctx context.Context, req InitRequest) (*model.Member, error) {
 	if _, err := s.Org(ctx); err == nil {
 		return nil, fmt.Errorf("%w: setup already completed", ErrConflict)
-	} else if err != ErrNoSetup {
+	} else if !errors.Is(err, ErrNoSetup) {
 		return nil, err
 	}
 	orgName, adminName := strings.TrimSpace(req.OrgName), strings.TrimSpace(req.AdminName)

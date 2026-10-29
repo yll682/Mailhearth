@@ -6,8 +6,10 @@ package config
 import (
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -49,10 +51,14 @@ type Config struct {
 	UploadQuotaBytes    int64 // pending (unsent) uploads per member
 	TrustedProxies      []*net.IPNet
 	SessionTTL          time.Duration
+	SessionMaxAge       time.Duration // absolute session lifetime
 	InviteTTL           time.Duration
 	TrustProxyHeader    bool
 	AllowedMailNetworks []*net.IPNet
 	CABundles           map[int64]*x509.CertPool
+
+	// Warnings lists values that were adjusted while loading.
+	Warnings []string
 }
 
 func env(key, def string) string {
@@ -62,22 +68,44 @@ func env(key, def string) string {
 	return def
 }
 
-func envBool(key string, def bool) bool {
+// loader collects every configuration problem so that startup reports
+// them all at once instead of silently falling back to defaults.
+type loader struct{ errs []error }
+
+func (l *loader) fail(format string, args ...any) {
+	l.errs = append(l.errs, fmt.Errorf(format, args...))
+}
+
+func (l *loader) bool(key string, def bool) bool {
 	v := strings.ToLower(env(key, ""))
 	switch v {
+	case "":
+		return def
 	case "1", "true", "yes", "on":
 		return true
 	case "0", "false", "no", "off":
 		return false
 	}
+	l.fail("%s: %q is not a boolean (use true or false)", key, v)
 	return def
 }
 
-func envInt(key string, def int) int {
-	if v, err := strconv.Atoi(env(key, "")); err == nil {
-		return v
+// int parses an integer option and requires min <= value <= max.
+func (l *loader) int(key string, def, min, max int) int {
+	raw := env(key, "")
+	if raw == "" {
+		return def
 	}
-	return def
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		l.fail("%s: %q is not an integer", key, raw)
+		return def
+	}
+	if v < min || v > max {
+		l.fail("%s: %d is out of range (%d to %d)", key, v, min, max)
+		return def
+	}
+	return v
 }
 
 func envTLS(key string, def TLSMode) (TLSMode, error) {
@@ -89,53 +117,75 @@ func envTLS(key string, def TLSMode) (TLSMode, error) {
 	return "", fmt.Errorf("%s: unknown TLS mode %q (want tls|starttls|none)", key, v)
 }
 
-// Load reads configuration from the environment.
+// Load reads configuration from the environment. Malformed or
+// out-of-range values are errors; values the runtime adjusts (such as the
+// IMAP connection cap) are reported in Warnings.
 func Load() (*Config, error) {
+	l := &loader{}
 	c := &Config{
 		Listen:           env("MAILHEARTH_LISTEN", ":8080"),
 		DataDir:          env("MAILHEARTH_DATA_DIR", "./data"),
 		BaseURL:          strings.TrimRight(env("MAILHEARTH_BASE_URL", ""), "/"),
-		LogLevel:         env("MAILHEARTH_LOG_LEVEL", "info"),
-		DevStack:         envBool("MAILHEARTH_DEV_STACK", false),
+		LogLevel:         strings.ToLower(env("MAILHEARTH_LOG_LEVEL", "info")),
+		DevStack:         l.bool("MAILHEARTH_DEV_STACK", false),
 		PurelymailAPIURL: strings.TrimRight(env("MAILHEARTH_PURELYMAIL_API_URL", "https://purelymail.com/api/v0"), "/"),
 		IMAPAddr:         env("MAILHEARTH_IMAP_ADDR", "imap.purelymail.com:993"),
 		SMTPAddr:         env("MAILHEARTH_SMTP_ADDR", "smtp.purelymail.com:465"),
 		SieveAddr:        env("MAILHEARTH_SIEVE_ADDR", "mailserver.purelymail.com:4190"),
-		IMAPMaxConns:     envInt("MAILHEARTH_IMAP_MAX_CONNS", 24),
-		IMAPIdleTimeout:  time.Duration(envInt("MAILHEARTH_IMAP_IDLE_SECONDS", 90)) * time.Second,
-		MaxUploadBytes:   int64(envInt("MAILHEARTH_MAX_UPLOAD_MB", 25)) << 20,
-		MaxMessageBytes:  int64(envInt("MAILHEARTH_MAX_MESSAGE_MB", 40)) << 20,
-		UploadQuotaBytes: int64(envInt("MAILHEARTH_UPLOAD_QUOTA_MB", 0)) << 20,
-		SessionTTL:       time.Duration(envInt("MAILHEARTH_SESSION_DAYS", 30)) * 24 * time.Hour,
-		InviteTTL:        time.Duration(envInt("MAILHEARTH_INVITE_DAYS", 7)) * 24 * time.Hour,
-		TrustProxyHeader: envBool("MAILHEARTH_TRUST_PROXY", false),
+		IMAPMaxConns:     l.int("MAILHEARTH_IMAP_MAX_CONNS", 24, 1, 10000),
+		IMAPIdleTimeout:  time.Duration(l.int("MAILHEARTH_IMAP_IDLE_SECONDS", 90, 10, 3600)) * time.Second,
+		MaxUploadBytes:   int64(l.int("MAILHEARTH_MAX_UPLOAD_MB", 25, 1, 2048)) << 20,
+		MaxMessageBytes:  int64(l.int("MAILHEARTH_MAX_MESSAGE_MB", 40, 1, 2048)) << 20,
+		UploadQuotaBytes: int64(l.int("MAILHEARTH_UPLOAD_QUOTA_MB", 0, 0, 1<<20)) << 20,
+		SessionTTL:       time.Duration(l.int("MAILHEARTH_SESSION_DAYS", 30, 1, 365)) * 24 * time.Hour,
+		SessionMaxAge:    time.Duration(l.int("MAILHEARTH_SESSION_MAX_DAYS", 90, 1, 3650)) * 24 * time.Hour,
+		InviteTTL:        time.Duration(l.int("MAILHEARTH_INVITE_DAYS", 7, 1, 90)) * 24 * time.Hour,
+		TrustProxyHeader: l.bool("MAILHEARTH_TRUST_PROXY", false),
 	}
 	var err error
 	if c.IMAPTLS, err = envTLS("MAILHEARTH_IMAP_TLS", TLSImplicit); err != nil {
-		return nil, err
+		l.errs = append(l.errs, err)
 	}
 	if c.SMTPTLS, err = envTLS("MAILHEARTH_SMTP_TLS", TLSImplicit); err != nil {
-		return nil, err
+		l.errs = append(l.errs, err)
 	}
 	if c.SieveTLS, err = envTLS("MAILHEARTH_SIEVE_TLS", TLSStart); err != nil {
-		return nil, err
+		l.errs = append(l.errs, err)
 	}
-	c.SecureCook = envBool("MAILHEARTH_SECURE_COOKIES", strings.HasPrefix(c.BaseURL, "https://"))
+	switch c.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		l.fail("MAILHEARTH_LOG_LEVEL: %q is not one of debug, info, warn, error", c.LogLevel)
+	}
+	if c.BaseURL != "" {
+		if u, err := url.Parse(c.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			l.fail("MAILHEARTH_BASE_URL: %q must be an absolute http(s) URL", c.BaseURL)
+		}
+	}
+	if c.SessionMaxAge < c.SessionTTL {
+		l.fail("MAILHEARTH_SESSION_MAX_DAYS must not be shorter than MAILHEARTH_SESSION_DAYS")
+	}
+	c.SecureCook = l.bool("MAILHEARTH_SECURE_COOKIES", strings.HasPrefix(c.BaseURL, "https://"))
+	// The IMAP pool supports 4 to 24 connections; other values are
+	// clamped (as before) but now reported.
 	if c.IMAPMaxConns < 4 {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("MAILHEARTH_IMAP_MAX_CONNS=%d raised to the minimum of 4", c.IMAPMaxConns))
 		c.IMAPMaxConns = 4
 	}
-	for _, value := range strings.Split(os.Getenv("MAILHEARTH_ALLOWED_MAIL_NETWORKS"), ",") {
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		_, network, err := net.ParseCIDR(strings.TrimSpace(value))
-		if err != nil {
-			return nil, fmt.Errorf("MAILHEARTH_ALLOWED_MAIL_NETWORKS: CIDR 无效")
-		}
-		c.AllowedMailNetworks = append(c.AllowedMailNetworks, network)
+	if c.IMAPMaxConns > 24 {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("MAILHEARTH_IMAP_MAX_CONNS=%d lowered to the maximum of 24", c.IMAPMaxConns))
+		c.IMAPMaxConns = 24
+	}
+	if networks, err := ParseCIDRs("MAILHEARTH_ALLOWED_MAIL_NETWORKS", os.Getenv("MAILHEARTH_ALLOWED_MAIL_NETWORKS")); err != nil {
+		l.errs = append(l.errs, err)
+	} else {
+		c.AllowedMailNetworks = networks
 	}
 	if c.UploadQuotaBytes <= 0 {
 		c.UploadQuotaBytes = 3 * c.MaxMessageBytes
+	}
+	if len(l.errs) > 0 {
+		return nil, errors.Join(l.errs...)
 	}
 	c.TrustedProxies, err = ParseCIDRs("MAILHEARTH_TRUSTED_PROXIES", env("MAILHEARTH_TRUSTED_PROXIES", DefaultTrustedProxies))
 	if err != nil {
@@ -154,7 +204,7 @@ func Load() (*Config, error) {
 		for key, path := range paths {
 			id, err := strconv.ParseInt(key, 10, 64)
 			if err != nil || id <= 0 {
-				return nil, fmt.Errorf("CA bundle ID 无效")
+				return nil, fmt.Errorf("MAILHEARTH_CA_BUNDLES_FILE: %q is not a positive bundle id", key)
 			}
 			pem, err := os.ReadFile(path)
 			if err != nil {
@@ -165,7 +215,7 @@ func Load() (*Config, error) {
 				return nil, err
 			}
 			if !roots.AppendCertsFromPEM(pem) {
-				return nil, fmt.Errorf("CA bundle %d 没有有效证书", id)
+				return nil, fmt.Errorf("MAILHEARTH_CA_BUNDLES_FILE: bundle %d contains no valid certificate", id)
 			}
 			c.CABundles[id] = roots
 		}

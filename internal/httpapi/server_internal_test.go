@@ -118,3 +118,42 @@ func TestRequestIDHeader(t *testing.T) {
 		t.Fatalf("请求 ID 没有同时进入上下文和响应头：%q / %q", seen, w.Header().Get("X-Request-ID"))
 	}
 }
+
+// #20: the part type is normalised before the allow-list check, so no
+// spelling of an active type is ever served as itself.
+func TestPartHeaders(t *testing.T) {
+	cases := []struct {
+		declared, charset string
+		partInline, want  bool
+		ct, disposition   string
+	}{
+		{"Text/HTML", "", false, false, "application/octet-stream", "attachment"},
+		{"image/SVG+xml", "", true, true, "application/octet-stream", "attachment"},
+		{"application/xhtml+xml", "", false, true, "application/octet-stream", "attachment"},
+		{"application/zip", "", false, false, "application/octet-stream", "attachment"},
+		{"not a type", "", false, false, "application/octet-stream", "attachment"},
+		{"IMAGE/PNG", "", true, false, "image/png", "inline"},
+		{"image/png", "", false, false, "image/png", "attachment"},
+		{"application/pdf", "", false, true, "application/pdf", "inline"},
+		{"text/plain", "iso-8859-1", false, false, "text/plain; charset=iso-8859-1", "attachment"},
+	}
+	for _, tc := range cases {
+		ct, disposition := partHeaders(tc.declared, tc.charset, tc.partInline, tc.want)
+		if ct != tc.ct || disposition != tc.disposition {
+			t.Errorf("partHeaders(%q) = %q %q，要求 %q %q", tc.declared, ct, disposition, tc.ct, tc.disposition)
+		}
+	}
+}
+
+// #19: URLs and filenames are fully escaped.
+func TestURLAndDispositionEscaping(t *testing.T) {
+	u := partURL("/api/mail/mailboxes/1/messages/2", "1.2", "Projects/#1 ?a&b+c 项目", "tok-_en")
+	want := "/api/mail/mailboxes/1/messages/2/parts/1.2?folder=Projects%2F%231+%3Fa%26b%2Bc+%E9%A1%B9%E7%9B%AE&t=tok-_en"
+	if u != want {
+		t.Fatalf("partURL = %q，要求 %q", u, want)
+	}
+	cd := contentDisposition("attachment", "报告 (final).pdf")
+	if cd != `attachment; filename="__ (final).pdf"; filename*=UTF-8''%E6%8A%A5%E5%91%8A%20%28final%29.pdf` {
+		t.Fatalf("Content-Disposition = %q", cd)
+	}
+}

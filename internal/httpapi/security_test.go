@@ -317,3 +317,58 @@ func TestManagementPermissionMatrix(t *testing.T) {
 		}
 	}
 }
+
+// #23: assignees must be able to act on the mailbox, keys and notes are
+// bounded, and read-only access cannot assign or resolve.
+func TestTeamCollaborationValidation(t *testing.T) {
+	env := newTestEnv(t)
+	reader, readerID := env.addMember("reader@example.org", env.roleID(model.RoleMember))
+	_, outsiderID := env.addMember("outsider@example.org", env.roleID(model.RoleMember))
+	var connection core.ConnectionView
+	env.owner.do("POST", "/api/admin/connections", map[string]any{"providerKind": "manual", "label": "team"}, 201, &connection)
+	org, err := env.svc.Org(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := env.db.Exec(`INSERT INTO mailboxes(org_id,connection_id,kind,address,address_key,owner_member_id,management_mode,remote_state,created_at,updated_at) VALUES (?,?,'personal','team@example.org','team@example.org',?,'external','external',?,?)`, org.ID, connection.ID, env.ownerID, db.Now(), db.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mailboxID, _ := res.LastInsertId()
+	if _, err := env.db.Exec(`INSERT INTO mailbox_access(mailbox_id,member_id,level,granted_at) VALUES (?,?,'read',?)`, mailboxID, readerID, db.Now()); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/mail/mailboxes/" + strconv.FormatInt(mailboxID, 10) + "/team"
+	env.owner.do("POST", path, map[string]any{"key": "k1", "action": "assign", "memberId": outsiderID}, 400, nil)
+	env.owner.do("POST", path, map[string]any{"key": "k1", "action": "assign", "memberId": readerID}, 200, nil)
+	env.owner.do("POST", path, map[string]any{"key": strings.Repeat("k", core.MaxMessageKeyLength+1), "action": "status", "status": "resolved"}, 400, nil)
+	env.owner.do("POST", path, map[string]any{"key": "k1", "action": "note", "text": strings.Repeat("n", core.MaxNoteLength+1)}, 400, nil)
+	reader.do("POST", path, map[string]any{"key": "k1", "action": "status", "status": "resolved"}, 403, nil)
+	reader.do("POST", path, map[string]any{"key": "k1", "action": "assign", "memberId": readerID}, 403, nil)
+	reader.do("POST", path, map[string]any{"key": "k1", "action": "note", "text": "seen"}, 200, nil)
+}
+
+// #18: activity extends a session, but never past its absolute lifetime.
+func TestSessionAbsoluteLifetime(t *testing.T) {
+	env := newTestEnv(t, func(c *config.Config) { c.SessionTTL = 24 * time.Hour; c.SessionMaxAge = 72 * time.Hour })
+	env.owner.do("GET", "/api/auth/me", nil, 200, nil)
+	old := time.Now().UTC().Add(-71 * time.Hour)
+	if _, err := env.db.Exec(`UPDATE sessions SET created_at=?, last_seen_at=?`, old.Format(time.RFC3339), old.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	env.owner.do("GET", "/api/auth/me", nil, 200, nil)
+	var expires string
+	if err := env.db.QueryRow(`SELECT expires_at FROM sessions`).Scan(&expires); err != nil {
+		t.Fatal(err)
+	}
+	if limit := old.Add(72 * time.Hour); db.ParseTime(expires).After(limit) {
+		t.Fatalf("续期越过了绝对有效期：%s > %s", expires, limit.Format(time.RFC3339))
+	}
+	if _, err := env.db.Exec(`UPDATE sessions SET created_at=?`, time.Now().UTC().Add(-73*time.Hour).Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	env.owner.do("GET", "/api/auth/me", nil, 401, nil)
+	if n, err := env.svc.PurgeExpiredSessions(context.Background()); err != nil || n != 0 {
+		t.Fatalf("过期会话应已在查询时删除：%d %v", n, err)
+	}
+}

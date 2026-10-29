@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/hkdf"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -62,6 +64,16 @@ func run(seedDemo bool) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(log)
+	for _, warning := range cfg.Warnings {
+		log.Warn("configuration adjusted", "detail", warning)
+	}
+	// Effective configuration without secrets (the master key is never logged).
+	log.Info("configuration",
+		"listen", cfg.Listen, "dataDir", cfg.DataDir, "baseURL", cfg.BaseURL, "secureCookies", cfg.SecureCook,
+		"trustProxy", cfg.TrustProxyHeader, "trustedProxies", len(cfg.TrustedProxies), "allowedMailNetworks", len(cfg.AllowedMailNetworks),
+		"imapMaxConns", cfg.IMAPMaxConns, "imapIdle", cfg.IMAPIdleTimeout, "maxUploadMB", cfg.MaxUploadBytes>>20,
+		"maxMessageMB", cfg.MaxMessageBytes>>20, "uploadQuotaMB", cfg.UploadQuotaBytes>>20, "session", cfg.SessionTTL,
+		"sessionMax", cfg.SessionMaxAge, "invite", cfg.InviteTTL, "devStack", cfg.DevStack, "logLevel", cfg.LogLevel)
 
 	// Keep the Go heap modest by default; operators can override via GOMEMLIMIT.
 	if os.Getenv("GOMEMLIMIT") == "" {
@@ -99,11 +111,6 @@ func run(seedDemo bool) error {
 	if err != nil {
 		return err
 	}
-	signBox, err := secrets.NewBox(master, "signing")
-	if err != nil {
-		return err
-	}
-	_ = signBox
 	signKey, err := deriveSignKey(master)
 	if err != nil {
 		return err
@@ -135,6 +142,7 @@ func run(seedDemo bool) error {
 		return err
 	}
 	defer func() { stop(); svc.WaitSubmissions() }()
+	go svc.RunSessionJanitor(ctx, time.Hour)
 	api := httpapi.New(cfg, svc, pool, web.Handler(), signKey, log)
 
 	srv := &http.Server{
@@ -169,18 +177,14 @@ func run(seedDemo bool) error {
 	return workerErr
 }
 
+// deriveSignKey returns the key that signs view tokens. It is derived from
+// the master key with HKDF under its own label, so it is stable across
+// restarts (tokens survive a restart) without exposing the master key.
 func deriveSignKey(master []byte) ([]byte, error) {
-	b, err := secrets.NewBox(master, "signing-derive")
-	if err != nil {
-		return nil, err
+	if len(master) != 32 {
+		return nil, errors.New("master key must be 32 bytes")
 	}
-	// Use the sealed form of a constant as key material: deterministic per
-	// installation without exposing the master key.
-	sealed, err := b.Seal("view-token")
-	if err != nil {
-		return nil, err
-	}
-	return []byte(secrets.HashToken(sealed[:8] + string(master))), nil
+	return hkdf.Key(sha256.New, master, nil, "mailhearth/view-token", 32)
 }
 
 func seed(stack *devstack.Stack, log *slog.Logger) {

@@ -15,9 +15,10 @@ build: web
 dev:
 	MAILHEARTH_DEV_STACK=1 MAILHEARTH_DATA_DIR=./data/dev MAILHEARTH_LOG_LEVEL=debug go run ./cmd/mailhearth -seed-demo
 
+# MAILHEARTH_TEST_KEEP_DATA=1 keeps test databases under data/integration.
 test:
 	go vet ./... && go test ./...
-	cd web && npm run typecheck
+	cd web && npm run typecheck && npm run test
 
 # Verify a release against a real Purelymail account. Skips unless
 # MAILHEARTH_IT_TOKEN and MAILHEARTH_IT_DOMAIN are set; it creates and deletes

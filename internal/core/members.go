@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -483,17 +484,17 @@ func (s *Service) VerifyLogin(ctx context.Context, email, password string) (*mod
 		err = s.DB.QueryRowContext(ctx, `SELECT m.id,m.password_hash,m.status FROM members m WHERE m.id=(SELECT MIN(b.owner_member_id) FROM mailboxes b WHERE LOWER(b.address)=? HAVING COUNT(DISTINCT b.owner_member_id)=1)`, email).Scan(&id, &hash, &status)
 		if db.IsNotFound(err) {
 			secrets.VerifyPassword("$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", password) // constant-time-ish
-			return nil, ErrForbidden
+			return nil, ErrBadCredentials
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	if hash == "" || !secrets.VerifyPassword(hash, password) {
-		return nil, ErrForbidden
+		return nil, ErrBadCredentials
 	}
 	if status != model.MemberActive {
-		return nil, fmt.Errorf("%w: account is %s", ErrForbidden, status)
+		return nil, fmt.Errorf("%w (%s)", ErrAccountInactive, status)
 	}
 	return s.MemberByID(ctx, id)
 }
@@ -535,35 +536,92 @@ func (s *Service) CreateSession(ctx context.Context, memberID int64, ip, ua stri
 	return token, nil
 }
 
-// LookupSession resolves a token to a member (nil when invalid).
+// LookupSession resolves a token to a member. It returns (nil, nil) for a
+// missing, expired or inactive session and an error only when the lookup
+// itself failed, so callers can tell "signed out" from "database busy".
+//
+// Sessions slide: activity extends expires_at by SessionTTL, but never past
+// created_at + SessionMaxAge, after which the member must sign in again.
 func (s *Service) LookupSession(ctx context.Context, token string) (*model.Member, error) {
 	if token == "" {
 		return nil, nil
 	}
 	var sid, memberID int64
-	var expires, lastSeen string
-	err := s.DB.QueryRowContext(ctx, `SELECT id, member_id, expires_at, last_seen_at FROM sessions WHERE token_hash = ?`, secrets.HashToken(token)).Scan(&sid, &memberID, &expires, &lastSeen)
+	var created, expires, lastSeen string
+	err := s.DB.QueryRowContext(ctx, `SELECT id, member_id, created_at, expires_at, last_seen_at FROM sessions WHERE token_hash = ?`, secrets.HashToken(token)).Scan(&sid, &memberID, &created, &expires, &lastSeen)
 	if db.IsNotFound(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if db.ParseTime(expires).Before(time.Now()) {
-		s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sid)
+	now := time.Now().UTC()
+	hardLimit := db.ParseTime(created).Add(s.sessionMaxAge())
+	if db.ParseTime(expires).Before(now) || !hardLimit.After(now) {
+		if _, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sid); err != nil {
+			s.Log.Warn("could not delete expired session", "err", err)
+		}
 		return nil, nil
 	}
 	if time.Since(db.ParseTime(lastSeen)) > 5*time.Minute {
-		s.DB.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?`, db.Now(), time.Now().UTC().Add(s.Cfg.SessionTTL).Format(time.RFC3339), sid)
+		next := now.Add(s.Cfg.SessionTTL)
+		if next.After(hardLimit) {
+			next = hardLimit
+		}
+		if _, err := s.DB.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?`, db.Now(), next.Format(time.RFC3339), sid); err != nil {
+			s.Log.Warn("could not extend session", "err", err)
+		}
 	}
 	m, err := s.MemberByID(ctx, memberID)
-	if err != nil {
+	if errors.Is(err, ErrNotFound) || db.IsNotFound(err) {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	if m.Status != model.MemberActive {
 		return nil, nil
 	}
 	return m, nil
+}
+
+func (s *Service) sessionMaxAge() time.Duration {
+	if s.Cfg.SessionMaxAge > 0 {
+		return s.Cfg.SessionMaxAge
+	}
+	if s.Cfg.SessionTTL > 0 {
+		return 3 * s.Cfg.SessionTTL
+	}
+	return 90 * 24 * time.Hour
+}
+
+// PurgeExpiredSessions deletes sessions past their expiry or absolute
+// lifetime; it returns how many were removed.
+func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
+	now := time.Now().UTC()
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ? OR created_at <= ?`, now.Format(time.RFC3339), now.Add(-s.sessionMaxAge()).Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// RunSessionJanitor purges expired sessions every interval until ctx ends.
+func (s *Service) RunSessionJanitor(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := s.PurgeExpiredSessions(ctx); err != nil {
+				s.Log.Warn("session cleanup failed", "err", err)
+			} else if n > 0 {
+				s.Log.Debug("expired sessions removed", "count", n)
+			}
+		}
+	}
 }
 
 // DeleteSession logs a session out.

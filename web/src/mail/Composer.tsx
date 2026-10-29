@@ -28,8 +28,26 @@ function forwardHeader(m: Message): string {
   return `<div class="mh-fwd"><b>---------- ${t("Forwarded message")} ----------</b><br>${t("From")}: ${escapeHtml(m.from.map(f).join(", "))}<br>${t("Date")}: ${escapeHtml(fmtDate(m.date, "full"))}<br>${t("Subject")}: ${escapeHtml(m.subject)}<br>${t("To")}: ${escapeHtml(m.to.map(f).join(", "))}${m.cc.length ? `<br>${t("Cc")}: ${escapeHtml(m.cc.map(f).join(", "))}` : ""}</div><br>`;
 }
 
+// The reading view replaces remote images with a placeholder and keeps the
+// original URL in data-mh-src. A quoted copy must carry the real URL, or the
+// recipient receives blank pixels. (The app CSP still keeps the editor from
+// loading them.)
+function restoreRemoteImages(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return html;
+  root.querySelectorAll("img[data-mh-src]").forEach((img) => {
+    const src = img.getAttribute("data-mh-src") ?? "";
+    if (/^https?:\/\//i.test(src)) img.setAttribute("src", src);
+    img.removeAttribute("data-mh-src");
+    img.classList.remove("mh-blocked");
+    if (!img.getAttribute("class")) img.removeAttribute("class");
+  });
+  return root.innerHTML;
+}
+
 function bodyHtmlOf(m: Message): string {
-  return m.html || `<div style="white-space:pre-wrap">${escapeHtml(m.text)}</div>`;
+  return m.html ? restoreRemoteImages(m.html) : `<div style="white-space:pre-wrap">${escapeHtml(m.text)}</div>`;
 }
 
 export function Composer({ init, mailbox, onClose, onSent }: { init: ComposeInit; mailbox: AccessibleMailbox; onClose: () => void; onSent: () => void }) {

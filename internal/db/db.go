@@ -27,6 +27,7 @@ var migrationFS embed.FS
 // DB wraps *sql.DB with helpers.
 type DB struct {
 	*sql.DB
+	path string
 }
 
 // MigrationInputs carries the old installation inputs needed by version 2.
@@ -56,7 +57,7 @@ func Open(path string, inputs ...MigrationInputs) (*DB, error) {
 	sqldb.SetMaxOpenConns(4)
 	sqldb.SetMaxIdleConns(2)
 	sqldb.SetConnMaxIdleTime(5 * time.Minute)
-	d := &DB{sqldb}
+	d := &DB{DB: sqldb, path: path}
 	var in MigrationInputs
 	if len(inputs) > 0 {
 		in = inputs[0]
@@ -83,14 +84,20 @@ func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
 		}
 	}
 	sort.Strings(names)
+	var pending []string
 	for _, name := range names {
-		var exists int
-		if err := d.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, name).Scan(&exists); err != nil {
+		applied, err := migrationApplied(ctx, d, name)
+		if err != nil {
 			return err
 		}
-		if exists > 0 {
-			continue
+		if !applied {
+			pending = append(pending, name)
 		}
+	}
+	if err := d.backupBeforeMigration(ctx, len(names)-len(pending), pending); err != nil {
+		return err
+	}
+	for _, name := range pending {
 		body, err := migrationFS.ReadFile("migrations/" + name)
 		if err != nil {
 			return err
@@ -110,6 +117,16 @@ func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
 		tx, err := d.BeginTx(ctx, nil)
 		if err != nil {
 			return err
+		}
+		// The write lock is held from BEGIN (_txlock=immediate): re-check
+		// here so a second process starting at the same time skips instead
+		// of failing.
+		if applied, err := migrationApplied(ctx, tx, name); err != nil || applied {
+			tx.Rollback()
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 			tx.Rollback()
@@ -144,6 +161,28 @@ func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
 	return nil
 }
 
+func migrationApplied(ctx context.Context, q Querier, version string) (bool, error) {
+	var exists int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, version).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}
+
+// backupBeforeMigration copies an existing database next to itself before
+// pending migrations change it, so an upgrade can be rolled back by
+// restoring the copy. Fresh databases (nothing applied yet) are skipped.
+func (d *DB) backupBeforeMigration(ctx context.Context, applied int, pending []string) error {
+	if applied == 0 || len(pending) == 0 || d.path == "" {
+		return nil
+	}
+	target := fmt.Sprintf("%s.pre-%s-%s.bak", d.path, strings.TrimSuffix(pending[0], ".sql"), time.Now().UTC().Format("20060102T150405"))
+	if _, err := d.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
+		return fmt.Errorf("backup before migration %s: %w", pending[0], err)
+	}
+	return nil
+}
+
 // migrateV2 runs the structural migration on a dedicated connection, with
 // foreign keys disabled outside the transaction and checked before commit.
 func (d *DB) migrateV2(ctx context.Context, body string, inputs MigrationInputs) error {
@@ -161,6 +200,9 @@ func (d *DB) migrateV2(ctx context.Context, body string, inputs MigrationInputs)
 		return err
 	}
 	defer tx.Rollback()
+	if applied, err := migrationApplied(ctx, tx, "0002_multi_provider.sql"); err != nil || applied {
+		return err
+	}
 	if err := validateLegacyInputs(ctx, tx, inputs); err != nil {
 		return err
 	}

@@ -246,7 +246,7 @@ func CreateFolder(ctx context.Context, conn *imappool.Conn, name string) error {
 }
 
 // DeleteFolder deletes a folder.
-func DeleteFolder(ctx context.Context, conn *impaoolConnAlias, name string) error {
+func DeleteFolder(ctx context.Context, conn *imappool.Conn, name string) error {
 	var err error
 	conn.Run(ctx, func() {
 		conn.C.Unsubscribe(name).Wait()
@@ -255,8 +255,6 @@ func DeleteFolder(ctx context.Context, conn *impaoolConnAlias, name string) erro
 	conn.Invalidate()
 	return err
 }
-
-type impaoolConnAlias = imappool.Conn
 
 // RenameFolder renames a folder.
 func RenameFolder(ctx context.Context, conn *imappool.Conn, name, newName string) error {

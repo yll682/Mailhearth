@@ -27,6 +27,9 @@ func (d *DB) migrateStructural(ctx context.Context, version, body string) (resul
 		return err
 	}
 	defer tx.Rollback()
+	if applied, err := migrationApplied(ctx, tx, version); err != nil || applied {
+		return err
+	}
 	type schemaObject struct{ kind, name, statement string }
 	rows, err := tx.QueryContext(ctx, `SELECT type,name,sql FROM sqlite_schema WHERE type IN ('view','trigger','index') AND sql IS NOT NULL ORDER BY CASE type WHEN 'view' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name`)
 	if err != nil {

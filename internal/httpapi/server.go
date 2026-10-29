@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mailhearth/internal/config"
@@ -41,6 +42,21 @@ type Server struct {
 	signKey []byte
 	limiter *rateLimiter
 	uploads *uploadStore
+	// org caches the organisation id: it is assigned once at setup and
+	// never changes, so it need not be read on every request.
+	org atomic.Int64
+}
+
+func (s *Server) orgID(ctx context.Context) (int64, error) {
+	if id := s.org.Load(); id > 0 {
+		return id, nil
+	}
+	org, err := s.Svc.Org(ctx)
+	if err != nil {
+		return 0, err
+	}
+	s.org.Store(org.ID)
+	return org.ID, nil
 }
 
 // New builds the server. signKey signs short-lived view tokens.
@@ -274,21 +290,42 @@ func (s *Server) clientIP(r *http.Request) string {
 
 // --- middleware ---
 
+// withSession resolves the session cookie for API requests. Static assets
+// never need it. A failed lookup answers 503 instead of treating the
+// request as signed out, so a busy database does not log people out.
 func (s *Server) withSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		c, err := r.Cookie(sessionCookie)
-		if err == nil && c.Value != "" {
-			m, err := s.Svc.LookupSession(r.Context(), c.Value)
-			if err == nil && m != nil {
-				perms, roleKey, err := s.Svc.Permissions(r.Context(), m.ID)
-				if err == nil {
-					org, err := s.Svc.Org(r.Context())
-					if err == nil {
-						p := &principal{Member: m, OrgID: org.ID, Perms: perms, RoleKey: roleKey, Token: c.Value}
-						r = r.WithContext(context.WithValue(r.Context(), principalKey, p))
-					}
-				}
+		if err != nil || c.Value == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		unavailable := func(err error) {
+			s.Log.Error("session lookup failed", "path", r.URL.Path, "requestId", requestID(r), "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, apiError{Error: "the server is busy, try again", Code: "unavailable"})
+		}
+		m, err := s.Svc.LookupSession(r.Context(), c.Value)
+		if err != nil {
+			unavailable(err)
+			return
+		}
+		if m != nil {
+			perms, roleKey, err := s.Svc.Permissions(r.Context(), m.ID)
+			if err != nil {
+				unavailable(err)
+				return
 			}
+			orgID, err := s.orgID(r.Context())
+			if err != nil {
+				unavailable(err)
+				return
+			}
+			p := &principal{Member: m, OrgID: orgID, Perms: perms, RoleKey: roleKey, Token: c.Value}
+			r = r.WithContext(context.WithValue(r.Context(), principalKey, p))
 		}
 		next.ServeHTTP(w, r)
 	})

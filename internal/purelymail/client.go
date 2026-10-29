@@ -75,7 +75,14 @@ func New(base, token string) *Client {
 	return &Client{
 		base:  base,
 		token: token,
-		http:  &http.Client{Timeout: 40 * time.Second},
+		http: &http.Client{Timeout: 40 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// The API token is a custom header, which net/http forwards on
+			// cross-host redirects; never follow one.
+			if req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		}},
 	}
 }
 
