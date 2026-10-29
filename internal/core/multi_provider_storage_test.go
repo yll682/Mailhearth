@@ -27,7 +27,10 @@ type storageMember struct {
 
 func newStorageService(t *testing.T) (*Service, *storageMember) {
 	t.Helper()
-	dir := filepath.Join("..", "..", "data", "integration", "multi-provider", "core-"+t.Name()+"-"+time.Now().UTC().Format("20060102T150405.000000000"))
+	dir := t.TempDir()
+	if os.Getenv("MAILHEARTH_TEST_KEEP_DATA") != "" {
+		dir = filepath.Join("..", "..", "data", "integration", "multi-provider", "core-"+t.Name()+"-"+time.Now().UTC().Format("20060102T150405.000000000"))
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

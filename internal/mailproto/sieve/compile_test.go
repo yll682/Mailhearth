@@ -81,3 +81,26 @@ func TestCompileValidation(t *testing.T) {
 		t.Fatalf("empty script: %v %q", err, script)
 	}
 }
+
+// #25: the auto-reply follows the rules, discard stops processing, and rule
+// names cannot break out of their comment line.
+func TestVacationRunsAfterRules(t *testing.T) {
+	rules := []model.SieveRule{
+		{ID: "spam", Name: "Spam\rrequire \"x\";", Enabled: true, Conditions: []model.SieveCondition{{Field: "subject", Value: "[SPAM]"}}, Actions: []model.SieveAction{{Type: "discard"}}},
+		{ID: "off", Name: "Off\rdiscard;", Enabled: false},
+	}
+	script, err := Compile(rules, &model.Vacation{Enabled: true, Body: "away", Days: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, vacation := strings.Index(script, `header :contains "subject"`), strings.Index(script, "vacation :days")
+	if rule < 0 || vacation < 0 || vacation < rule {
+		t.Fatalf("自动回复必须位于规则之后：\n%s", script)
+	}
+	if !strings.Contains(script, "discard;\r\n    stop;") {
+		t.Fatalf("discard 之后必须停止处理：\n%s", script)
+	}
+	if strings.Contains(strings.ReplaceAll(script, "\r\n", ""), "\r") {
+		t.Fatalf("规则名称中的 CR 逃出了注释行：%q", script)
+	}
+}

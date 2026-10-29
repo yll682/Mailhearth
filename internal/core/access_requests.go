@@ -34,7 +34,7 @@ func (s *Service) RegisterMailRequestSessionHash(ctx context.Context, memberID, 
 
 func (s *Service) SessionHashActive(ctx context.Context, memberID int64, hash string) (bool, error) {
 	var active bool
-	err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN members m ON m.id=s.member_id WHERE s.token_hash=? AND s.member_id=? AND s.expires_at>? AND m.status='active')`, hash, memberID, db.Now()).Scan(&active)
+	err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN members m ON m.id=s.member_id WHERE s.token_hash=? AND s.member_id=? AND s.expires_at>? AND s.created_at>? AND m.status='active')`, hash, memberID, db.Now(), time.Now().UTC().Add(-s.sessionMaxAge()).Format(time.RFC3339)).Scan(&active)
 	return active, err
 }
 

@@ -106,7 +106,10 @@ func (c *client) await(id string) core.OperationView {
 }
 
 func TestEndToEnd(t *testing.T) {
-	root := filepath.Join("..", "..", "data", "integration", "multi-provider", "api-"+uuid.NewString())
+	root := t.TempDir()
+	if os.Getenv("MAILHEARTH_TEST_KEEP_DATA") != "" {
+		root = filepath.Join("..", "..", "data", "integration", "multi-provider", "api-"+uuid.NewString())
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,9 @@ docker compose up -d --build
 
 Mailhearth は 12-Factor 原則に準拠しており、すべての設定は環境変数で管理されます。詳細は [`.env.example`](.env.example) を参照してください。一般的な本番運用で設定が必要となるのは基本的に以下の2点のみです:
 - `MAILHEARTH_BASE_URL`: ユーザーが Mailhearth にアクセスするための完全な公開 URL。
-- `MAILHEARTH_TRUST_PROXY`: リバースプロキシが転送するクライアント IP ヘッダーを信頼するかどうか（`true` または特定の CIDR）。
+- `MAILHEARTH_TRUST_PROXY`: リバースプロキシの背後で動かす場合は `true` に設定し、クライアントのアドレスを `X-Forwarded-For` から読み取ります。転送ヘッダーは `MAILHEARTH_TRUSTED_PROXIES` に列挙されたプロキシ（既定値：ループバックとプライベートネットワーク）からのリクエストでのみ信頼されます。
+
+値の形式が不正な場合や範囲外の場合、起動時に該当する変数名を示すエラーで停止します。アップロード容量、セッション有効期間、メールサーバーのネットワーク許可リスト、プライベート CA を含むすべての設定項目は、[運用マニュアル](docs/operations.ja.md)の「設定リファレンス」に記載しています。
 
 ## ドキュメント一覧
 

@@ -27,6 +27,35 @@ The built-in connection pool enforces strict hierarchical quotas:
 
 > **Note**: Always verify that your connection settings adhere to your upstream mail provider's (e.g., Purelymail or Migadu) connection rate limits per IP address.
 
+## Configuration Reference
+
+All options are environment variables. Malformed or out-of-range values stop startup with an error naming the variable; adjusted values are logged as warnings, and the effective configuration (without secrets) is logged at startup.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MAILHEARTH_BASE_URL` | empty | Public URL, used for invite links. An `https://` URL enables `Secure` cookies. |
+| `MAILHEARTH_LISTEN` | `:8080` | HTTP listen address. |
+| `MAILHEARTH_DATA_DIR` | `./data` (`/data` in the container) | SQLite database, master key, uploads and pre-migration backups. |
+| `MAILHEARTH_MASTER_KEY` | generated into `<data>/master.key` | 32-byte key (base64 or hex) that encrypts stored credentials. |
+| `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
+| `MAILHEARTH_TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Host` from trusted proxies. |
+| `MAILHEARTH_TRUSTED_PROXIES` | loopback and private networks | Comma-separated CIDRs or addresses of your reverse proxies. Forwarding headers from any other peer are ignored. |
+| `MAILHEARTH_SECURE_COOKIES` | `true` when `MAILHEARTH_BASE_URL` is `https://` | Force the `Secure` cookie flag on or off. |
+| `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | empty | CIDRs where mail servers may live. Connections to private, loopback and link-local addresses are refused unless listed here; set this when your IMAP/SMTP/ManageSieve server is on a private network. |
+| `MAILHEARTH_CA_BUNDLES_FILE` | empty | JSON file mapping bundle ids to PEM files, e.g. `{"1": "/etc/mailhearth/ca.pem"}`. Protocol endpoints refer to a bundle id to trust a private CA. |
+| `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP connection cap. The pool supports 4 to 24; other values are adjusted with a warning. |
+| `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | Idle IMAP connections are closed after this many seconds (10 to 3600). |
+| `MAILHEARTH_MAX_UPLOAD_MB` | `25` | Largest single attachment upload. |
+| `MAILHEARTH_MAX_MESSAGE_MB` | `40` | Largest encoded message. Attachments grow by about a third when encoded for sending. |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | Total size of one member's unsent uploads. |
+| `MAILHEARTH_SESSION_DAYS` | `30` | Sliding session expiry. |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | Absolute session lifetime; must not be shorter than `MAILHEARTH_SESSION_DAYS`. |
+| `MAILHEARTH_INVITE_DAYS` | `7` | Invite link validity (1 to 90). |
+| `MAILHEARTH_DEV_STACK` | `false` | Development only: in-process fake provider, IMAP and SMTP. |
+| `GOMEMLIMIT` | `160MiB` when unset | Go heap limit. |
+
+`MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` and `MAILHEARTH_SIEVE_TLS` are only read once, when upgrading an installation created before mail connections existed: they are converted into its first connection. Connections and protocol endpoints are otherwise configured in the admin console.
+
 ## Backups & Disaster Recovery
 
 All runtime state in Mailhearth lives within the persistent data directory (`/data` by default):
@@ -62,7 +91,7 @@ Restoring Mailhearth on a fresh host is a simple three-step process:
 
 Mailhearth includes an embedded database migration engine (`internal/db/migrations`).
 
-1. **Automatic Schema Migrations**: When launching a new binary, Mailhearth detects the existing schema version and automatically executes required schema updates, foreign key checks, and data invariants in an isolated transaction.
+1. **Automatic Schema Migrations**: When launching a new binary, Mailhearth detects the existing schema version and automatically executes required schema updates, foreign key checks, and data invariants in an isolated transaction. Before changing an existing database it writes a copy next to it, named `mailhearth.db.pre-<migration>-<timestamp>.bak`.
 2. **Pre-Upgrade Safeguard**: Always perform a complete database snapshot and verify your `master.key` backup before pulling new container images.
 3. **Applying Upgrades**:
    ```bash
@@ -70,7 +99,7 @@ Mailhearth includes an embedded database migration engine (`internal/db/migratio
    docker compose pull
    docker compose up -d --build
    ```
-4. **Rollback Policy**: Database migrations are strictly forward-compatible. If an upgrade must be rolled back, **running older binaries across newer schema versions is unsupported**; revert the container image to the prior version and restore your pre-upgrade database backup.
+4. **Rollback Policy**: Database migrations are strictly forward-compatible. If an upgrade must be rolled back, **running older binaries across newer schema versions is unsupported**; revert the container image to the prior version and restore your pre-upgrade database backup (or the automatic `.bak` copy). Delete old `.bak` copies once an upgrade is confirmed.
 
 ## Reverse Proxy & TLS Setup
 
@@ -116,7 +145,7 @@ server {
 }
 ```
 
-Ensure `MAILHEARTH_TRUST_PROXY=true` is set in your `.env` so client IP addresses are accurately attributed in audit logs.
+Ensure `MAILHEARTH_TRUST_PROXY=true` is set in your `.env` so client IP addresses are accurately attributed in audit logs and rate limits. If the proxy does not connect from loopback or a private network, list its address in `MAILHEARTH_TRUSTED_PROXIES`.
 
 ## Troubleshooting & Incident Response
 
@@ -167,6 +196,7 @@ docker compose logs -f --tail=100 mailhearth
 
 - Standard log level defaults to `info`;
 - To troubleshoot low-level network handshakes or IMAP IDLE reconnects, set `MAILHEARTH_LOG_LEVEL=debug` in `.env`;
+- Every API response carries an `X-Request-ID` header, and error log lines include the same `requestId`. Server errors are logged at `error`, other client errors at `info`;
 - **Security Invariant**: Sensitive credentials, API tokens, and user passwords are automatically scrubbed and never printed to log streams.
 
 ## Common Verification Commands

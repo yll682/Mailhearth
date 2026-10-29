@@ -71,7 +71,7 @@ func TestMultiProviderMigrationStructuralFailureAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer base.Close()
-	d := &DB{base}
+	d := &DB{DB: base}
 	ctx := context.Background()
 	if _, err := d.Exec(`CREATE TABLE schema_migrations(version TEXT PRIMARY KEY,applied_at TEXT NOT NULL)`); err != nil {
 		t.Fatal(err)

@@ -39,6 +39,16 @@ func quote(s string) string {
 	return `"` + s + `"`
 }
 
+// commentText makes a rule name safe for a single-line "#" comment.
+func commentText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 32 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
 // multiline renders a Sieve multi-line string (text: ... .) with dot-stuffing.
 func multiline(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
@@ -170,7 +180,9 @@ func (c *compiler) action(rule string, i int, a model.SieveAction) (string, erro
 		}
 		return fmt.Sprintf("redirect %s;", quote(addr)), nil
 	case "discard":
-		return "discard;", nil
+		// Without stop, later rules (fileinto) would deliver the message
+		// again and the auto-reply would still answer it.
+		return "discard;\r\n    stop;", nil
 	case "stop":
 		return "stop;", nil
 	}
@@ -183,29 +195,6 @@ func Compile(rules []model.SieveRule, vacation *model.Vacation, extensions ...[]
 	c := &compiler{requires: map[string]bool{}, requiredBy: map[string]string{}, ruleID: "vacation"}
 	var body strings.Builder
 
-	if vacation != nil && vacation.Enabled {
-		days := vacation.Days
-		if days <= 0 {
-			days = 7
-		}
-		if days > 30 {
-			days = 30
-		}
-		subject := strings.TrimSpace(vacation.Subject)
-		text := strings.TrimSpace(vacation.Body)
-		if text == "" {
-			return "", &ValidationError{Field: "vacation.body", Msg: "auto-reply text is required"}
-		}
-		c.require("vacation")
-		body.WriteString("# Auto-reply\r\n")
-		body.WriteString(fmt.Sprintf("vacation :days %d", days))
-		if subject != "" {
-			body.WriteString(" :subject " + quote(subject))
-		}
-		body.WriteString(" " + multiline(text))
-		body.WriteString("\r\n")
-	}
-
 	for _, r := range rules {
 		c.ruleID = r.ID
 		name := strings.TrimSpace(r.Name)
@@ -213,7 +202,7 @@ func Compile(rules []model.SieveRule, vacation *model.Vacation, extensions ...[]
 			name = "Untitled rule"
 		}
 		if !r.Enabled {
-			body.WriteString("# (disabled) " + strings.ReplaceAll(name, "\n", " ") + "\r\n\r\n")
+			body.WriteString("# (disabled) " + commentText(name) + "\r\n\r\n")
 			continue
 		}
 		if len(r.Conditions) == 0 {
@@ -234,7 +223,7 @@ func Compile(rules []model.SieveRule, vacation *model.Vacation, extensions ...[]
 		if r.Match == "any" {
 			combinator = "anyof"
 		}
-		body.WriteString("# Rule: " + strings.ReplaceAll(name, "\n", " ") + "\r\n")
+		body.WriteString("# Rule: " + commentText(name) + "\r\n")
 		if len(tests) == 1 {
 			body.WriteString("if " + tests[0] + " {\r\n")
 		} else {
@@ -248,6 +237,32 @@ func Compile(rules []model.SieveRule, vacation *model.Vacation, extensions ...[]
 			body.WriteString("    " + s + "\r\n")
 		}
 		body.WriteString("}\r\n\r\n")
+	}
+
+	// The auto-reply runs after the user's rules, so a message a rule
+	// discards (or stops on) never triggers a reply to its sender.
+	if vacation != nil && vacation.Enabled {
+		c.ruleID = "vacation"
+		days := vacation.Days
+		if days <= 0 {
+			days = 7
+		}
+		if days > 30 {
+			days = 30
+		}
+		subject := strings.TrimSpace(vacation.Subject)
+		text := strings.TrimSpace(vacation.Body)
+		if text == "" {
+			return "", &ValidationError{Field: "vacation.body", Msg: "auto-reply text is required"}
+		}
+		c.require("vacation")
+		body.WriteString("# Auto-reply\r\n")
+		body.WriteString(fmt.Sprintf("vacation :days %d", days))
+		if subject != "" {
+			body.WriteString(" :subject " + quote(subject))
+		}
+		body.WriteString(" " + multiline(text))
+		body.WriteString("\r\n")
 	}
 
 	var out strings.Builder

@@ -27,7 +27,10 @@ import (
 func coreID(id int64) string { return strconv.FormatInt(id, 10) }
 
 func TestMultiProviderStorageHTTP(t *testing.T) {
-	root := filepath.Join("..", "..", "data", "integration", "multi-provider", "http-"+uuid.NewString())
+	root := t.TempDir()
+	if os.Getenv("MAILHEARTH_TEST_KEEP_DATA") != "" {
+		root = filepath.Join("..", "..", "data", "integration", "multi-provider", "http-"+uuid.NewString())
+	}
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}

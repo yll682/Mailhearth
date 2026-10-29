@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"mailhearth/internal/db"
 	"mailhearth/internal/model"
@@ -194,15 +195,37 @@ func (s *Service) StatesFor(ctx context.Context, mailboxID int64, keys []string)
 	return out, rows.Err()
 }
 
+// Limits for collaboration data stored per message.
+const (
+	MaxMessageKeyLength = 512
+	MaxNoteLength       = 4000
+)
+
+func validMessageKey(key string) error {
+	if key == "" || len(key) > MaxMessageKeyLength {
+		return invalid("message key is invalid")
+	}
+	return nil
+}
+
 // Assign sets or clears the assignee.
 func (s *Service) Assign(ctx context.Context, mailboxID, actor int64, key string, assignee *int64) error {
+	if err := validMessageKey(key); err != nil {
+		return err
+	}
 	var a any
 	detail := "unassigned"
 	if assignee != nil && *assignee != 0 {
 		a = *assignee
+		// Only active members who can act on this mailbox (the people
+		// MailboxMembers offers) can be assigned.
 		var name string
-		if err := s.DB.QueryRowContext(ctx, `SELECT display_name FROM members WHERE id = ?`, *assignee).Scan(&name); err != nil {
-			return invalid("member not found")
+		err := s.DB.QueryRowContext(ctx, `SELECT m.display_name FROM members m JOIN mailboxes b ON b.id=? AND b.org_id=m.org_id WHERE m.id=? AND m.status='active' AND (b.owner_member_id=m.id OR EXISTS(SELECT 1 FROM mailbox_access a WHERE a.mailbox_id=b.id AND a.member_id=m.id))`, mailboxID, *assignee).Scan(&name)
+		if db.IsNotFound(err) {
+			return invalid("this member cannot be assigned to messages in this mailbox")
+		}
+		if err != nil {
+			return err
 		}
 		detail = name
 	}
@@ -219,6 +242,9 @@ func (s *Service) Assign(ctx context.Context, mailboxID, actor int64, key string
 
 // SetStatus marks a message open or resolved.
 func (s *Service) SetStatus(ctx context.Context, mailboxID, actor int64, key, status string) error {
+	if err := validMessageKey(key); err != nil {
+		return err
+	}
 	if status != "open" && status != "resolved" {
 		return invalid("status must be open or resolved")
 	}
@@ -235,9 +261,15 @@ func (s *Service) SetStatus(ctx context.Context, mailboxID, actor int64, key, st
 
 // AddNote appends an internal note.
 func (s *Service) AddNote(ctx context.Context, mailboxID, actor int64, key, text string) error {
+	if err := validMessageKey(key); err != nil {
+		return err
+	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return invalid("note text is required")
+	}
+	if utf8.RuneCountInString(text) > MaxNoteLength {
+		return invalid("notes are limited to %d characters", MaxNoteLength)
 	}
 	return s.RecordActivity(ctx, mailboxID, actor, key, "note", text)
 }

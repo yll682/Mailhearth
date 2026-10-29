@@ -27,6 +27,35 @@ Mailhearth は極めて小さなフットプリントで動作するように設
 
 > **注意**：接続数を増やす際は、上流メールプロバイダー（Purelymail や Migadu など）が設けている IP アドレス単位またはアカウント単位の接続レート制限を必ずご確認ください。
 
+## 設定リファレンス
+
+すべての設定は環境変数で行います。値の形式が不正な場合や範囲外の場合は、起動時に該当する変数名を示すエラーで停止します。自動調整された値は警告として記録され、起動時には有効な設定（機密情報を除く）が出力されます。
+
+| 変数 | 既定値 | 用途 |
+| --- | --- | --- |
+| `MAILHEARTH_BASE_URL` | 空 | 公開 URL。招待リンクの生成に使用します。`https://` の URL では `Secure` Cookie が有効になります。 |
+| `MAILHEARTH_LISTEN` | `:8080` | HTTP の待ち受けアドレス。 |
+| `MAILHEARTH_DATA_DIR` | `./data`（コンテナ内では `/data`） | SQLite データベース、マスターキー、アップロードファイル、マイグレーション前のバックアップ。 |
+| `MAILHEARTH_MASTER_KEY` | `<data>/master.key` に自動生成 | 保存された認証情報を暗号化する 32 バイトの鍵（base64 または hex）。 |
+| `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` のいずれか。 |
+| `MAILHEARTH_TRUST_PROXY` | `false` | 信頼済みプロキシからの `X-Forwarded-For` / `X-Forwarded-Host` を読み取ります。 |
+| `MAILHEARTH_TRUSTED_PROXIES` | ループバックとプライベートネットワーク | リバースプロキシの CIDR またはアドレス（カンマ区切り）。その他の接続元からの転送ヘッダーは無視されます。 |
+| `MAILHEARTH_SECURE_COOKIES` | `MAILHEARTH_BASE_URL` が `https://` の場合は `true` | Cookie の `Secure` 属性を強制的に有効または無効にします。 |
+| `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | 空 | メールサーバーを置いてよい CIDR。ここに記載しない限り、プライベート、ループバック、リンクローカルのアドレスへの接続は拒否されます。IMAP/SMTP/ManageSieve サーバーが内部ネットワークにある場合に設定してください。 |
+| `MAILHEARTH_CA_BUNDLES_FILE` | 空 | CA バンドル ID と PEM ファイルを対応付ける JSON ファイル。例：`{"1": "/etc/mailhearth/ca.pem"}`。プロトコルエンドポイントはこの ID を参照してプライベート CA を信頼します。 |
+| `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP 接続数の上限。プールは 4〜24 に対応し、範囲外の値は警告とともに調整されます。 |
+| `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | アイドル状態の IMAP 接続を閉じるまでの秒数（10〜3600）。 |
+| `MAILHEARTH_MAX_UPLOAD_MB` | `25` | 1 つの添付ファイルのアップロード上限。 |
+| `MAILHEARTH_MAX_MESSAGE_MB` | `40` | エンコード後のメッセージの上限。添付ファイルは送信用にエンコードされると約 3 分の 1 大きくなります。 |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | メンバー 1 人あたりの未送信アップロードの合計サイズ。 |
+| `MAILHEARTH_SESSION_DAYS` | `30` | セッションのスライディング有効期限。 |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | セッションの絶対有効期間。`MAILHEARTH_SESSION_DAYS` より短くはできません。 |
+| `MAILHEARTH_INVITE_DAYS` | `7` | 招待リンクの有効日数（1〜90）。 |
+| `MAILHEARTH_DEV_STACK` | `false` | 開発専用：プロセス内の疑似プロバイダー、IMAP、SMTP。 |
+| `GOMEMLIMIT` | 未設定時は `160MiB` | Go ヒープの上限。 |
+
+`MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR`、`MAILHEARTH_SIEVE_TLS` は、メール接続機能が導入される前に作成されたインストールをアップグレードするときに一度だけ読み取られ、最初の接続に変換されます。それ以外の場合、接続とプロトコルエンドポイントは管理コンソールで設定します。
+
 ## バックアップとディザスタリカバリ
 
 Mailhearth のすべての実行時ステートは、永続化ボリューム（既定 `/data`）の内部に格納されています：
@@ -62,7 +91,7 @@ docker compose start
 
 Mailhearth は組み込みのデータベースマイグレーションエンジン（`internal/db/migrations`）を備えています。
 
-1. **自動マイグレーション**：新しいバイナリが起動すると、現在のスキーマバージョンを検知し、テーブル構造の更新、外部キー制約、整合性チェックを単一のトランザクション内で自動適用します。
+1. **自動マイグレーション**：新しいバイナリが起動すると、現在のスキーマバージョンを検知し、テーブル構造の更新、外部キー制約、整合性チェックを単一のトランザクション内で自動適用します。既存のデータベースを変更する前に、同じディレクトリに `mailhearth.db.pre-<マイグレーション名>-<タイムスタンプ>.bak` という名前でコピーを書き出します。
 2. **アップグレード前の安全策**：新しいコンテナイメージを取得する前に、必ず上記のバックアップ手順に従ってデータベースの完全なスナップショットと `master.key` のバックアップを保存してください。
 3. **アップグレードの適用**：
    ```bash
@@ -70,7 +99,7 @@ Mailhearth は組み込みのデータベースマイグレーションエンジ
    docker compose pull
    docker compose up -d --build
    ```
-4. **ロールバックに関する方針**：データベースマイグレーションは前方互換のみを前提としています。万が一以前のバージョンに切り戻す必要がある場合、**新しいスキーマに対して古いバイナリを実行することはサポートされていません**。古いイメージに戻すと同時に、アップグレード直前に取得したデータベースバックアップを復元してください。
+4. **ロールバックに関する方針**：データベースマイグレーションは前方互換のみを前提としています。万が一以前のバージョンに切り戻す必要がある場合、**新しいスキーマに対して古いバイナリを実行することはサポートされていません**。古いイメージに戻すと同時に、アップグレード直前に取得したデータベースバックアップを復元してください。自動生成された `.bak` コピーを復元することもできます。アップグレードに問題がないことを確認したら、古い `.bak` コピーは削除してください。
 
 ## リバースプロキシと TLS 設定
 
@@ -116,7 +145,7 @@ server {
 }
 ```
 
-また、監査ログに訪問元の正確な IP アドレスを記録するため、`.env` に `MAILHEARTH_TRUST_PROXY=true` を設定してください。
+また、監査ログとレート制限で訪問元の正確な IP アドレスを使うために、`.env` で `MAILHEARTH_TRUST_PROXY=true` を設定してください。リバースプロキシがループバックやプライベートネットワークから接続しない場合は、そのアドレスを `MAILHEARTH_TRUSTED_PROXIES` に追加してください。
 
 ## トラブルシューティングとインシデント対応
 
@@ -167,6 +196,7 @@ docker compose logs -f --tail=100 mailhearth
 
 - 標準ログレベルは `info` です；
 - 詳細なネットワークハンドシェイクや IMAP IDLE の再接続ログを追跡したい場合は、`.env` に `MAILHEARTH_LOG_LEVEL=debug` を指定してください；
+- すべての API レスポンスには `X-Request-ID` ヘッダーが付き、エラーログの `requestId` と一致します。サーバーエラーは `error`、その他のクライアントエラーは `info` レベルで記録されます。
 - **セキュリティ方針**: すべてのログは安全にマスキングされており、平文パスワード、API トークン、復号済みシークレットが出力されることはありません。
 
 ## 動作確認・テストコマンド

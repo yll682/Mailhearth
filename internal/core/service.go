@@ -27,6 +27,11 @@ var (
 	ErrForbidden = errors.New("forbidden")
 	ErrConflict  = errors.New("conflict")
 	ErrNoSetup   = errors.New("setup required")
+
+	// ErrBadCredentials and ErrAccountInactive are login failures; both
+	// wrap ErrForbidden so existing ErrForbidden checks keep working.
+	ErrBadCredentials  = fmt.Errorf("%w: incorrect email or password", ErrForbidden)
+	ErrAccountInactive = fmt.Errorf("%w: account is not active", ErrForbidden)
 )
 
 // ValidationError carries a user-facing message.

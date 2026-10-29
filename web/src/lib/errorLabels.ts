@@ -17,7 +17,7 @@ export function errorLabel(code: string, message = ""): string {
     remote_result_unknown: "The remote result requires checking.", verification_required: "This action requires verification.", revision_conflict: "The configuration changed. Refresh before continuing.",
     secret_already_claimed: "This secret has already been claimed.", secret_expired: "The secret claim has expired.",
     sieve_extension_missing: "The server lacks a required Sieve extension.", sieve_takeover_required: "Confirm takeover of the active Sieve script.",
-    staging_missing: "The staged message is unavailable.", draft_locator_changed: "The draft location changed.", submission_content_changed: "The staged message content changed.", message_too_large: "The message is too large to send. Attachments grow by about a third when sent.",
+    staging_missing: "The staged message is unavailable.", draft_locator_changed: "The draft location changed.", submission_content_changed: "The staged message content changed.", message_too_large: "The message is too large to send. Attachments grow by about a third when sent.", unavailable: "The server is busy. Try again in a moment.",
     submission_not_retryable: "This sending request cannot be retried in its current state.", submission_unknown: "Delivery result unknown. Sending again may deliver a duplicate.",
     target_constraint_failed: "The targets do not meet this provider's restrictions or quotas.", unsupported_auth_mode: "The authentication mode is unsupported.", unsupported_operation: "This operation is unsupported.", upstream_failed: "The remote service request failed.",
   };

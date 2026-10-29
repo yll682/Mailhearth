@@ -217,7 +217,10 @@ func TestMultiProviderMigrationConstraintConflict(t *testing.T) {
 
 func testDBPath(t *testing.T, name string) string {
 	t.Helper()
-	dir := filepath.Join("..", "..", "data", "integration", "multi-provider", "db-"+strings.ReplaceAll(t.Name(), "/", "-")+"-"+time.Now().UTC().Format("20060102T150405.000000000"))
+	dir := t.TempDir()
+	if os.Getenv("MAILHEARTH_TEST_KEEP_DATA") != "" {
+		dir = filepath.Join("..", "..", "data", "integration", "multi-provider", "db-"+strings.ReplaceAll(t.Name(), "/", "-")+"-"+time.Now().UTC().Format("20060102T150405.000000000"))
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

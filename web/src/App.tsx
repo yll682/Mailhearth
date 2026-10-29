@@ -1,9 +1,9 @@
 import { useEffect } from "preact/hooks";
 import { route, go } from "@/lib/router";
-import { me, booted, loadMe, isAdmin } from "@/lib/state";
-import { lang } from "@/lib/i18n";
+import { me, booted, loadMe, isAdmin, loadError } from "@/lib/state";
+import { lang, t } from "@/lib/i18n";
 import { get, type SetupStatus } from "@/lib/api";
-import { Spinner, Toasts } from "@/ui";
+import { Button, Spinner, Toasts } from "@/ui";
 import { Login, Invite } from "@/pages/Login";
 import { Setup } from "@/pages/Setup";
 import { MailApp } from "@/mail/MailApp";
@@ -15,8 +15,14 @@ const setup = signal<SetupStatus | null>(null);
 
 async function boot() {
   document.documentElement.lang = lang.value;
-  const st = await get<SetupStatus>("/api/setup/status").catch(() => null);
-  setup.value = st;
+  try {
+    setup.value = await get<SetupStatus>("/api/setup/status");
+  } catch (e) {
+    setup.value = null;
+    loadError.value = e instanceof Error ? e.message : String(e);
+    booted.value = true;
+    return;
+  }
   await loadMe();
   booted.value = true;
 }
@@ -34,6 +40,18 @@ export function App() {
     return (
       <div class="boot">
         <Spinner size={28} />
+      </div>
+    );
+  }
+  // A network or server failure must not look like being signed out.
+  if (loadError.value && !me.value) {
+    return (
+      <div class="boot" role="alert">
+        <p>{t("Something went wrong.")}</p>
+        <p class="muted small">{loadError.value}</p>
+        <Button kind="primary" onClick={() => { booted.value = false; boot(); }}>
+          {t("Retry")}
+        </Button>
       </div>
     );
   }

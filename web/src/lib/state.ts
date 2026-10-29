@@ -1,5 +1,5 @@
 import { signal, computed } from "@preact/signals";
-import { get, post, setUnauthorizedHandler, type Me, type AccessibleMailbox } from "./api";
+import { get, post, setUnauthorizedHandler, ApiError, type Me, type AccessibleMailbox } from "./api";
 import { go } from "./router";
 
 export const me = signal<Me | null>(null);
@@ -15,14 +15,24 @@ export const isAdmin = computed(() => {
   return p.length > 0;
 });
 
+// Set when the server could not be reached or answered with a server error;
+// distinct from "signed out", which only a 401 means.
+export const loadError = signal<string | null>(null);
+
 export async function loadMe(): Promise<Me | null> {
   try {
     const m = await get<Me>("/api/auth/me");
     me.value = m;
+    loadError.value = null;
     return m;
-  } catch {
-    me.value = null;
-    return null;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) {
+      me.value = null;
+      loadError.value = null;
+      return null;
+    }
+    loadError.value = e instanceof Error ? e.message : String(e);
+    return me.value;
   }
 }
 

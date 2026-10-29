@@ -92,7 +92,9 @@ docker compose up -d --build
 
 Mailhearth 遵循 12-Factor 原則，所有設定皆透過環境變數管理，詳見 [`.env.example`](.env.example)。在多數正式生產環境中，你通常僅需設定以下兩項：
 - `MAILHEARTH_BASE_URL`：外部使用者存取 Mailhearth 的完整公開基礎 URL。
-- `MAILHEARTH_TRUST_PROXY`：是否信任前端反向代理所傳遞的客戶端 IP 標頭（設為 `true` 或指定特定的 CIDR 網段）。
+- `MAILHEARTH_TRUST_PROXY`：部署在反向代理之後時設為 `true`，系統會從 `X-Forwarded-For` 讀取用戶端位址。轉送標頭僅在請求來自 `MAILHEARTH_TRUSTED_PROXIES` 所列代理（預設：本機迴路與私有網段）時才會被採信。
+
+設定值格式錯誤或超出範圍時，系統會在啟動時報錯並指明對應變數。全部設定項（包括上傳配額、工作階段有效期、郵件伺服器網路白名單與私有 CA 憑證）請見[系統維運手冊](docs/operations.zh-TW.md)中的「設定項參考」一節。
 
 ## 深入技術文件
 

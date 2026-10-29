@@ -27,6 +27,35 @@ Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上
 
 > **提示**：调优时请务必核对上游邮件服务商（如 Migadu 或 Purelymail）对单个 IP 或单个账户设定的最大并发连接数限制。
 
+## 配置项参考
+
+所有配置项均通过环境变量设置。取值格式错误或超出范围时，系统会在启动时报错并指明对应变量；被自动调整的取值会以警告记录，启动时还会输出生效配置（不含机密）。
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `MAILHEARTH_BASE_URL` | 空 | 对外公开 URL，用于生成邀请链接。使用 `https://` 地址时会启用 `Secure` Cookie。 |
+| `MAILHEARTH_LISTEN` | `:8080` | HTTP 监听地址。 |
+| `MAILHEARTH_DATA_DIR` | `./data`（容器内为 `/data`） | SQLite 数据库、主密钥、上传文件与迁移前备份。 |
+| `MAILHEARTH_MASTER_KEY` | 自动生成到 `<data>/master.key` | 32 字节密钥（base64 或 hex），用于加密保存的凭据。 |
+| `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
+| `MAILHEARTH_TRUST_PROXY` | `false` | 从受信代理读取 `X-Forwarded-For` / `X-Forwarded-Host`。 |
+| `MAILHEARTH_TRUSTED_PROXIES` | 本机回环与私有网段 | 反向代理的 CIDR 或地址，以逗号分隔。来自其他对端的转发标头会被忽略。 |
+| `MAILHEARTH_SECURE_COOKIES` | `MAILHEARTH_BASE_URL` 为 `https://` 时为 `true` | 强制开启或关闭 Cookie 的 `Secure` 属性。 |
+| `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | 空 | 允许邮件服务器所在的 CIDR。除非列在此处，否则系统会拒绝连接私有、回环与链路本地地址；IMAP/SMTP/ManageSieve 服务器位于内网时需要设置。 |
+| `MAILHEARTH_CA_BUNDLES_FILE` | 空 | 将 CA 证书包编号映射到 PEM 文件的 JSON 文件，例如 `{"1": "/etc/mailhearth/ca.pem"}`。协议端点通过编号引用以信任私有 CA。 |
+| `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP 连接上限。连接池支持 4 到 24，超出范围的取值会被调整并记录警告。 |
+| `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | 空闲 IMAP 连接在多少秒后关闭（10 到 3600）。 |
+| `MAILHEARTH_MAX_UPLOAD_MB` | `25` | 单个附件上传的最大大小。 |
+| `MAILHEARTH_MAX_MESSAGE_MB` | `40` | 编码后邮件的最大大小。附件在发送编码后会增大约三分之一。 |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | 单个成员未发送上传文件的总大小。 |
+| `MAILHEARTH_SESSION_DAYS` | `30` | 会话滑动过期时间。 |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | 会话绝对有效期，不得短于 `MAILHEARTH_SESSION_DAYS`。 |
+| `MAILHEARTH_INVITE_DAYS` | `7` | 邀请链接有效天数（1 到 90）。 |
+| `MAILHEARTH_DEV_STACK` | `false` | 仅用于开发：进程内模拟服务商、IMAP 与 SMTP。 |
+| `GOMEMLIMIT` | 未设置时为 `160MiB` | Go 堆内存上限。 |
+
+`MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR` 与 `MAILHEARTH_SIEVE_TLS` 只会在升级“邮件连接”功能出现之前创建的安装时读取一次，并被转换为其第一个连接。除此之外，连接与协议端点均在管理后台中配置。
+
 ## 数据备份与灾难恢复
 
 Mailhearth 的全量运行时状态均保存在持久化挂载的数据目录（默认为 `/data`）中：
@@ -62,7 +91,7 @@ docker compose start
 
 Mailhearth 内置了声明式的数据库迁移引擎（`internal/db/migrations`）。
 
-1. **自动迁移机制**：当启动新版本二进制时，系统会自动探测数据库架构版本，按序执行所需的表结构演进、外键关系重构与数据完整性校验。
+1. **自动迁移机制**：当启动新版本二进制时，系统会自动探测数据库架构版本，按序执行所需的表结构演进、外键关系重构与数据完整性校验。修改已有数据库之前，系统会在同一目录写入一份副本，命名为 `mailhearth.db.pre-<迁移名>-<时间戳>.bak`。
 2. **升级前准备**：在拉取新版本镜像之前，务必按上述步骤先完成一次完整的数据库热备份与 `master.key` 备份。
 3. **执行升级**：
    ```bash
@@ -70,7 +99,7 @@ Mailhearth 内置了声明式的数据库迁移引擎（`internal/db/migrations`
    docker compose pull
    docker compose up -d --build
    ```
-4. **版本回滚说明**：Mailhearth 的数据库迁移仅向前兼容。若升级后遇到不可预期的异常需要回滚旧版本，**不支持跨迁移版本直接降级运行**；请切回旧版本镜像，并还原升级前保存的数据库备份。
+4. **版本回滚说明**：Mailhearth 的数据库迁移仅向前兼容。若升级后遇到不可预期的异常需要回滚旧版本，**不支持跨迁移版本直接降级运行**；请切回旧版本镜像，并还原升级前保存的数据库备份。也可以直接还原自动生成的 `.bak` 副本；确认升级无误后可删除旧的 `.bak` 副本。
 
 ## 反向代理与 TLS 配置
 
@@ -116,7 +145,7 @@ server {
 }
 ```
 
-并在 `.env` 中设置 `MAILHEARTH_TRUST_PROXY=true`，以确保审计日志准确记录真实的访问端 IP。
+并在 `.env` 中设置 `MAILHEARTH_TRUST_PROXY=true`，以确保审计日志与速率限制使用真实的访问端 IP。若反向代理并非从本机回环或私有网段连接，请将其地址加入 `MAILHEARTH_TRUSTED_PROXIES`。
 
 ## 常见问题排查与应急处置
 
@@ -167,6 +196,7 @@ docker compose logs -f --tail=100 mailhearth
 
 - 默认日志级别为 `info`；
 - 若需排查网络握手与 IMAP 监听断线重连详情，可在 `.env` 中设置 `MAILHEARTH_LOG_LEVEL=debug`；
+- 每个 API 响应都带有 `X-Request-ID` 标头，错误日志中的 `requestId` 与之相同；服务端错误记录为 `error` 级别，其他客户端错误记录为 `info` 级别；
 - **安全保障**：所有日志输出均经过安全脱敏，绝不输出任何用户明文密码、API 密钥或解密凭据。
 
 ## 常用测试与自检命令

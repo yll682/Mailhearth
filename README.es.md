@@ -92,7 +92,9 @@ En el panel de administración, selecciona «Conexión manual», registra la dir
 
 Mailhearth sigue los principios 12-Factor y todas sus opciones se configuran mediante variables de entorno (ver [`.env.example`](.env.example)). En la gran mayoría de despliegues en producción solo necesitarás configurar:
 - `MAILHEARTH_BASE_URL`: La URL pública completa y accesible con la que los usuarios entrarán a Mailhearth.
-- `MAILHEARTH_TRUST_PROXY`: Si se debe confiar en las cabeceras de IP de cliente enviadas por el proxy inverso (`true` o rangos CIDR específicos).
+- `MAILHEARTH_TRUST_PROXY`: Ponlo en `true` detrás de un proxy inverso para que la dirección del cliente se lea de `X-Forwarded-For`. Las cabeceras de reenvío solo se aceptan de los pares indicados en `MAILHEARTH_TRUSTED_PROXIES` (por defecto: loopback y redes privadas).
+
+Los valores mal formados o fuera de rango detienen el arranque con un error que indica la variable. Todas las opciones, incluidas las cuotas de subida, la duración de las sesiones, las listas de redes permitidas para servidores de correo y las CA privadas, se describen en el [Manual de operaciones](docs/operations.es.md), sección «Referencia de configuración».
 
 ## Documentación técnica detallada
 

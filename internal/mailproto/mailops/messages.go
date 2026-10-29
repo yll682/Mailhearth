@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -539,7 +540,10 @@ func SafeFilename(name, fallback string) string {
 	}
 	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
 	name = strings.Map(func(r rune) rune {
-		if r < 32 || r == '"' || r == '\'' || r == ';' {
+		// Control characters (C0, DEL, C1) and bidirectional overrides are
+		// replaced: the latter can make "invoice\u202Efdp.exe" display as
+		// "invoiceexe.pdf".
+		if r < 32 || r == 0x7f || (r >= 0x80 && r < 0xa0) || unicode.Is(unicode.Bidi_Control, r) || r == '"' || r == '\'' || r == ';' {
 			return '_'
 		}
 		return r

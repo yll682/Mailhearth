@@ -92,7 +92,9 @@ In the admin console, choose "Manual Connection", register the full email addres
 
 Following 12-Factor principles, all configuration is managed via environment variables. See [`.env.example`](.env.example) for reference. In standard production deployments, you only need:
 - `MAILHEARTH_BASE_URL`: The fully qualified public URL where users access Mailhearth.
-- `MAILHEARTH_TRUST_PROXY`: Whether to trust upstream client IP headers (`true` or specific CIDRs).
+- `MAILHEARTH_TRUST_PROXY`: Set to `true` behind a reverse proxy so client addresses are read from `X-Forwarded-For`. Forwarding headers are only honoured from peers listed in `MAILHEARTH_TRUSTED_PROXIES` (default: loopback and private networks).
+
+Invalid or out-of-range values stop startup with an error naming the variable. All options, including upload quotas, session lifetime, mail-server network allow-lists and private CA bundles, are listed in the [Operations Manual](docs/operations.md#configuration-reference).
 
 ## In-Depth Documentation
 

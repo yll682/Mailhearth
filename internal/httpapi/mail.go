@@ -3,13 +3,18 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/emersion/go-imap/v2"
 
 	"mailhearth/internal/core"
 	"mailhearth/internal/mailproto/imappool"
@@ -73,7 +78,8 @@ func (s *Server) withMailbox(needConn bool, fn func(m *mailReq)) http.HandlerFun
 				return
 			}
 		}
-		m := &mailReq{w: w, r: r, p: p, mc: mc, ctx: ctx}
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		m := &mailReq{w: sw, r: r, p: p, mc: mc, ctx: ctx}
 		if needConn {
 			conn, err := s.Pool.Get(ctx, mc.Cred)
 			if err != nil {
@@ -82,6 +88,13 @@ func (s *Server) withMailbox(needConn bool, fn func(m *mailReq)) http.HandlerFun
 			}
 			m.conn = conn
 			defer s.Pool.Put(conn)
+			// A server-side failure (timeout, upstream error) may leave the
+			// IMAP connection mid-command: never hand it back for reuse.
+			defer func() {
+				if sw.status >= 500 {
+					conn.MarkBroken()
+				}
+			}()
 		}
 		fn(m)
 	})
@@ -146,6 +159,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		if in.Parent != "" {
 			folders, err := mailops.ListFolders(m.ctx, m.conn)
 			if err != nil {
+				m.conn.MarkBroken()
 				s.fail(m.w, m.r, err)
 				return
 			}
@@ -158,7 +172,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			name = in.Parent + delim + name
 		}
 		if err := mailops.CreateFolder(m.ctx, m.conn, name); err != nil {
-			s.fail(m.w, m.r, &core.ValidationError{Msg: "could not create folder: " + err.Error()})
+			s.folderFailure(m, "create", err)
 			return
 		}
 		writeJSON(m.w, http.StatusOK, map[string]string{"name": name})
@@ -176,12 +190,20 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		if strings.EqualFold(in.Name, "INBOX") || in.NewName == "" {
+		in.NewName = strings.TrimSpace(in.NewName)
+		if in.Name == "" || in.NewName == "" || strings.ContainsAny(in.NewName, "\r\n") {
 			s.fail(m.w, m.r, &core.ValidationError{Msg: "this folder cannot be renamed"})
 			return
 		}
+		if protected, err := s.protectedFolder(m, in.Name); err != nil {
+			s.fail(m.w, m.r, err)
+			return
+		} else if protected {
+			s.fail(m.w, m.r, &core.ValidationError{Msg: "special folders (Inbox, Sent, Drafts, Trash, Junk, Archive) cannot be renamed"})
+			return
+		}
 		if err := mailops.RenameFolder(m.ctx, m.conn, in.Name, in.NewName); err != nil {
-			s.fail(m.w, m.r, &core.ValidationError{Msg: "could not rename folder: " + err.Error()})
+			s.folderFailure(m, "rename", err)
 			return
 		}
 		writeJSON(m.w, http.StatusOK, map[string]string{"name": in.NewName})
@@ -192,12 +214,19 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			return
 		}
 		name := m.r.URL.Query().Get("name")
-		if strings.EqualFold(name, "INBOX") || name == "" {
+		if name == "" {
 			s.fail(m.w, m.r, &core.ValidationError{Msg: "this folder cannot be deleted"})
 			return
 		}
+		if protected, err := s.protectedFolder(m, name); err != nil {
+			s.fail(m.w, m.r, err)
+			return
+		} else if protected {
+			s.fail(m.w, m.r, &core.ValidationError{Msg: "special folders (Inbox, Sent, Drafts, Trash, Junk, Archive) cannot be deleted"})
+			return
+		}
 		if err := mailops.DeleteFolder(m.ctx, m.conn, name); err != nil {
-			s.fail(m.w, m.r, &core.ValidationError{Msg: "could not delete folder: " + err.Error()})
+			s.folderFailure(m, "delete", err)
 			return
 		}
 		writeJSON(m.w, http.StatusOK, map[string]bool{"ok": true})
@@ -236,7 +265,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		msg, err := mailops.GetMessage(m.ctx, m.conn, folder, uint32(uid), mailops.RenderOptions{
 			AllowRemote: m.r.URL.Query().Get("remote") == "1",
 			PartURL: func(path string) string {
-				return base + "/parts/" + path + "?folder=" + urlQuery(folder) + "&t=" + token
+				return partURL(base, path, folder, token)
 			},
 			MaxBodyBytes: 2 << 20,
 		})
@@ -259,7 +288,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		writeJSON(m.w, http.StatusOK, map[string]any{
 			"message":   msg,
 			"viewToken": token,
-			"viewUrl":   base + "/view?folder=" + urlQuery(folder) + "&t=" + token,
+			"viewUrl":   base + "/view?folder=" + url.QueryEscape(folder) + "&t=" + url.QueryEscape(token),
 			"team":      team,
 			"key":       key,
 		})
@@ -273,7 +302,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			msg, err := mailops.GetMessage(ctx, conn, folder, uid, mailops.RenderOptions{
 				AllowRemote: allowRemote,
 				PartURL: func(path string) string {
-					return base + "/parts/" + path + "?folder=" + urlQuery(folder) + "&t=" + token
+					return partURL(base, path, folder, token)
 				},
 			})
 			if err != nil {
@@ -310,19 +339,9 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 				return
 			}
 			name := mailops.SafeFilename(part.Filename, "part-"+path)
-			ct := part.MIME
-			disposition := "attachment"
-			if r.URL.Query().Get("inline") == "1" || (part.IsInline && strings.HasPrefix(ct, "image/")) {
-				disposition = "inline"
-			}
-			if !isSafeInlineType(ct) {
-				disposition = "attachment"
-				if strings.HasPrefix(ct, "text/html") || ct == "image/svg+xml" || strings.Contains(ct, "xml") {
-					ct = "application/octet-stream"
-				}
-			}
+			ct, disposition := partHeaders(part.MIME, part.Charset, part.IsInline, r.URL.Query().Get("inline") == "1")
 			w.Header().Set("Content-Type", ct)
-			w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, asciiName(name), urlQuery(name)))
+			w.Header().Set("Content-Disposition", contentDisposition(disposition, name))
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("Cache-Control", "private, max-age=3600")
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
@@ -568,6 +587,13 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, &core.ValidationError{Msg: "message key is required"})
 			return
 		}
+		// Read-only access lets people follow and annotate a conversation;
+		// assigning and resolving change shared state and need send access,
+		// like changing flags.
+		if (in.Action == "assign" || in.Action == "status") && !m.mc.CanSend() {
+			s.fail(m.w, m.r, core.ErrForbidden)
+			return
+		}
 		var err error
 		switch in.Action {
 		case "assign":
@@ -701,12 +727,12 @@ func (s *Server) serveWithToken(w http.ResponseWriter, r *http.Request, fn func(
 		s.fail(w, r, core.ErrForbidden)
 		return
 	}
-	org, err := s.Svc.Org(r.Context())
+	orgID, err := s.orgID(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	mc, err := s.Svc.ResolveMailbox(ctx, org.ID, memberID, id)
+	mc, err := s.Svc.ResolveMailbox(ctx, orgID, memberID, id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -721,6 +747,47 @@ func (s *Server) serveWithToken(w http.ResponseWriter, r *http.Request, fn func(
 	}
 	defer s.Pool.Put(conn)
 	fn(ctx, mc, conn, folder, uid, token)
+}
+
+// folderFailure answers a failed CREATE/RENAME/DELETE. A refusal by the
+// server (NO/BAD) is reported with its standard response code only, not the
+// server's free-form text; any other failure breaks the connection.
+func (s *Server) folderFailure(m *mailReq, op string, err error) {
+	var refused *imap.Error
+	if errors.As(err, &refused) {
+		msg := "the mail server refused to " + op + " this folder"
+		if refused.Code != "" {
+			msg += " (" + strings.ToLower(string(refused.Code)) + ")"
+		}
+		s.fail(m.w, m.r, &core.ValidationError{Msg: msg})
+		return
+	}
+	m.conn.MarkBroken()
+	s.fail(m.w, m.r, err)
+}
+
+// protectedFolder reports whether name is INBOX or a folder the mailbox
+// uses for a special role (mapped explicitly or by SPECIAL-USE); sending,
+// drafts and deletion depend on those folders existing.
+func (s *Server) protectedFolder(m *mailReq, name string) (bool, error) {
+	if strings.EqualFold(name, "INBOX") {
+		return true, nil
+	}
+	folders, err := mailops.ListFolders(m.ctx, m.conn)
+	if err != nil {
+		m.conn.MarkBroken()
+		return false, err
+	}
+	mapping := m.mc.Mailbox.FolderMapping
+	for role, explicit := range map[string]*string{mailops.RoleSent: mapping.Sent, mailops.RoleDrafts: mapping.Drafts, mailops.RoleTrash: mapping.Trash, mailops.RoleJunk: mapping.Junk, mailops.RoleArchive: mapping.Archive} {
+		if resolved, err := mailops.ResolveSpecialFolder(folders, role, explicit); err == nil && resolved == name {
+			return true, nil
+		}
+		if explicit != nil && *explicit == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func allowedFlag(f string) bool {
@@ -742,10 +809,39 @@ func isSafeInlineType(ct string) bool {
 	return false
 }
 
+// partHeaders decides how a message part is served. The declared type is
+// normalised first; anything outside the inline allow-list is served as an
+// opaque download whatever its spelling, so a part can never be rendered
+// as an active document.
+func partHeaders(declared, charset string, partInline, wantInline bool) (contentType, disposition string) {
+	mediaType, _, err := mime.ParseMediaType(declared)
+	if err != nil || !isSafeInlineType(mediaType) {
+		return "application/octet-stream", "attachment"
+	}
+	mediaType = strings.ToLower(mediaType)
+	disposition = "attachment"
+	if wantInline || (partInline && strings.HasPrefix(mediaType, "image/")) {
+		disposition = "inline"
+	}
+	contentType = mediaType
+	if mediaType == "text/plain" && charset != "" {
+		if formatted := mime.FormatMediaType(mediaType, map[string]string{"charset": charset}); formatted != "" {
+			contentType = formatted
+		}
+	}
+	return contentType, disposition
+}
+
+// contentDisposition builds a Content-Disposition value with an ASCII
+// fallback name and an RFC 5987 encoded UTF-8 name.
+func contentDisposition(disposition, name string) string {
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, asciiName(name), rfc5987Encode(name))
+}
+
 func asciiName(name string) string {
 	var b strings.Builder
 	for _, r := range name {
-		if r < 128 && r != '"' && r != '\\' {
+		if r >= 32 && r < 127 && r != '"' && r != '\\' {
 			b.WriteRune(r)
 		} else {
 			b.WriteRune('_')
@@ -754,8 +850,25 @@ func asciiName(name string) string {
 	return b.String()
 }
 
-func urlQuery(s string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(s, "%", "%25"), "&", "%26"), "+", "%2B"), " ", "%20")
+// rfc5987Encode percent-encodes every byte outside RFC 5987 attr-char.
+func rfc5987Encode(s string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("!#$&+-.^_`|~", c) >= 0 {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&15])
+	}
+	return b.String()
+}
+
+func partURL(base, path, folder, token string) string {
+	return base + "/parts/" + url.PathEscape(path) + "?folder=" + url.QueryEscape(folder) + "&t=" + url.QueryEscape(token)
 }
 
 func jsonMarshal(v any) ([]byte, error) {
