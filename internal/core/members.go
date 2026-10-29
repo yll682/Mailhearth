@@ -409,7 +409,19 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password, displayName
 }
 
 // SetPassword sets a member's password (admin reset or self-service).
+// revokeOthers signs the member out everywhere.
 func (s *Service) SetPassword(ctx context.Context, orgID, actor, memberID int64, password string, revokeOthers bool) error {
+	return s.setPassword(ctx, orgID, actor, memberID, password, revokeOthers, "")
+}
+
+// ChangeOwnPassword is the self-service password change: every other
+// session of the member is revoked, the session identified by
+// keepSessionHash stays signed in.
+func (s *Service) ChangeOwnPassword(ctx context.Context, orgID, memberID int64, password, keepSessionHash string) error {
+	return s.setPassword(ctx, orgID, memberID, memberID, password, true, keepSessionHash)
+}
+
+func (s *Service) setPassword(ctx context.Context, orgID, actor, memberID int64, password string, revokeOthers bool, keepSessionHash string) error {
 	if err := checkPasswordStrength(password); err != nil {
 		return err
 	}
@@ -441,7 +453,7 @@ func (s *Service) SetPassword(ctx context.Context, orgID, actor, memberID int64,
 			return ErrNotFound
 		}
 		if revokeOthers {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE member_id=?`, memberID); err != nil {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE member_id=? AND token_hash!=?`, memberID, keepSessionHash); err != nil {
 				return err
 			}
 		}
@@ -451,7 +463,7 @@ func (s *Service) SetPassword(ctx context.Context, orgID, actor, memberID int64,
 		return err
 	}
 	if revokeOthers {
-		s.cancelMailRequests(memberID, 0)
+		s.cancelMailRequestsExcept(memberID, keepSessionHash)
 	}
 	s.audit(ctx, orgID, actor, "member.password", "member", fmt.Sprint(memberID), map[string]any{"self": actor == memberID})
 	return nil

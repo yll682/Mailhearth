@@ -46,6 +46,8 @@ type Config struct {
 	IMAPIdleTimeout     time.Duration
 	MaxUploadBytes      int64
 	MaxMessageBytes     int64
+	UploadQuotaBytes    int64 // pending (unsent) uploads per member
+	TrustedProxies      []*net.IPNet
 	SessionTTL          time.Duration
 	InviteTTL           time.Duration
 	TrustProxyHeader    bool
@@ -103,6 +105,7 @@ func Load() (*Config, error) {
 		IMAPIdleTimeout:  time.Duration(envInt("MAILHEARTH_IMAP_IDLE_SECONDS", 90)) * time.Second,
 		MaxUploadBytes:   int64(envInt("MAILHEARTH_MAX_UPLOAD_MB", 25)) << 20,
 		MaxMessageBytes:  int64(envInt("MAILHEARTH_MAX_MESSAGE_MB", 40)) << 20,
+		UploadQuotaBytes: int64(envInt("MAILHEARTH_UPLOAD_QUOTA_MB", 0)) << 20,
 		SessionTTL:       time.Duration(envInt("MAILHEARTH_SESSION_DAYS", 30)) * 24 * time.Hour,
 		InviteTTL:        time.Duration(envInt("MAILHEARTH_INVITE_DAYS", 7)) * 24 * time.Hour,
 		TrustProxyHeader: envBool("MAILHEARTH_TRUST_PROXY", false),
@@ -130,6 +133,13 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("MAILHEARTH_ALLOWED_MAIL_NETWORKS: CIDR 无效")
 		}
 		c.AllowedMailNetworks = append(c.AllowedMailNetworks, network)
+	}
+	if c.UploadQuotaBytes <= 0 {
+		c.UploadQuotaBytes = 3 * c.MaxMessageBytes
+	}
+	c.TrustedProxies, err = ParseCIDRs("MAILHEARTH_TRUSTED_PROXIES", env("MAILHEARTH_TRUSTED_PROXIES", DefaultTrustedProxies))
+	if err != nil {
+		return nil, err
 	}
 	c.CABundles = map[int64]*x509.CertPool{}
 	if path := os.Getenv("MAILHEARTH_CA_BUNDLES_FILE"); path != "" {
@@ -161,4 +171,32 @@ func Load() (*Config, error) {
 		}
 	}
 	return c, nil
+}
+
+// DefaultTrustedProxies covers reverse proxies on the same host or on a
+// private container network.
+const DefaultTrustedProxies = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+
+// ParseCIDRs parses a comma-separated list of CIDRs or bare IPs.
+func ParseCIDRs(key, value string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !strings.Contains(item, "/") {
+			if ip := net.ParseIP(item); ip != nil && ip.To4() != nil {
+				item += "/32"
+			} else {
+				item += "/128"
+			}
+		}
+		_, network, err := net.ParseCIDR(item)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid CIDR %q", key, item)
+		}
+		out = append(out, network)
+	}
+	return out, nil
 }

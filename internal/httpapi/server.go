@@ -26,6 +26,7 @@ import (
 	"mailhearth/internal/model"
 	"mailhearth/internal/provider"
 	"mailhearth/internal/purelymail"
+	"mailhearth/internal/secrets"
 )
 
 const sessionCookie = "mh_session"
@@ -51,7 +52,15 @@ func New(cfg *config.Config, svc *core.Service, pool *imappool.Pool, static http
 
 type ctxKey int
 
-const principalKey ctxKey = 1
+const (
+	principalKey ctxKey = 1
+	requestIDKey ctxKey = 2
+)
+
+func requestID(r *http.Request) string {
+	id, _ := r.Context().Value(requestIDKey).(string)
+	return id
+}
 
 // principal is the authenticated member for a request.
 type principal struct {
@@ -133,6 +142,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 			status = http.StatusGatewayTimeout
 		case "api_replaced":
 			status = http.StatusGone
+		case "message_too_large":
+			status = http.StatusRequestEntityTooLarge
+		}
+		if status >= 500 {
+			s.Log.Warn("request failed", "method", r.Method, "path", r.URL.Path, "requestId", requestID(r), "code", typed.Code, "err", err)
 		}
 		writeJSON(w, status, apiError{Error: typed.Message, Code: typed.Code, OperationID: typed.OperationID, Details: typed.Details})
 	case errors.As(err, &ve):
@@ -161,12 +175,13 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		}
 		writeJSON(w, status, apiError{Error: "ManageSieve 认证结果需要检查", Code: sieveAuth.Code})
 	case errors.As(err, &ue), errors.As(err, &pe):
-		s.Log.Warn("服务商请求失败", "path", r.URL.Path)
+		s.Log.Warn("upstream request failed", "method", r.Method, "path", r.URL.Path, "requestId", requestID(r), "err", err)
 		writeJSON(w, http.StatusBadGateway, apiError{Error: "服务商请求失败", Code: "upstream_failed"})
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		s.Log.Info("request timed out or was cancelled", "method", r.Method, "path", r.URL.Path, "requestId", requestID(r), "err", err)
 		writeJSON(w, http.StatusGatewayTimeout, apiError{Error: "the mail server took too long to respond", Code: "timeout"})
 	default:
-		s.Log.Error("内部请求失败", "path", r.URL.Path)
+		s.Log.Error("internal request failure", "method", r.Method, "path", r.URL.Path, "requestId", requestID(r), "err", err)
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: "internal error", Code: "internal"})
 	}
 }
@@ -186,20 +201,75 @@ func queryInt(r *http.Request, name string, def int) int {
 	return def
 }
 
-func clientIP(r *http.Request, trustProxy bool) string {
-	if trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
-		}
-		if rip := r.Header.Get("X-Real-IP"); rip != "" {
-			return rip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+func remoteHost(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return r.RemoteAddr
+		return addr
 	}
 	return host
+}
+
+func (s *Server) trustedProxies() []*net.IPNet {
+	if len(s.Cfg.TrustedProxies) > 0 {
+		return s.Cfg.TrustedProxies
+	}
+	return defaultTrustedProxies
+}
+
+var defaultTrustedProxies, _ = config.ParseCIDRs("default", config.DefaultTrustedProxies)
+
+func ipInNetworks(ip net.IP, networks []*net.IPNet) bool {
+	for _, network := range networks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// fromTrustedProxy reports whether forwarding headers on r may be used: the
+// operator enabled them and the direct peer is a trusted proxy.
+func (s *Server) fromTrustedProxy(r *http.Request) bool {
+	if !s.Cfg.TrustProxyHeader {
+		return false
+	}
+	ip := net.ParseIP(remoteHost(r.RemoteAddr))
+	return ip != nil && ipInNetworks(ip, s.trustedProxies())
+}
+
+// clientIP returns the address used for rate limiting and session records.
+// X-Forwarded-For is read right to left, skipping trusted proxies, so that
+// a client cannot choose its own address by sending the header itself.
+func (s *Server) clientIP(r *http.Request) string {
+	remote := remoteHost(r.RemoteAddr)
+	if !s.fromTrustedProxy(r) {
+		return remote
+	}
+	var hops []string
+	for _, value := range r.Header.Values("X-Forwarded-For") {
+		for _, hop := range strings.Split(value, ",") {
+			if hop = strings.TrimSpace(hop); hop != "" {
+				hops = append(hops, hop)
+			}
+		}
+	}
+	if len(hops) > 0 {
+		trusted := s.trustedProxies()
+		for i := len(hops) - 1; i >= 0; i-- {
+			ip := net.ParseIP(hops[i])
+			if ip == nil {
+				return hops[i]
+			}
+			if !ipInNetworks(ip, trusted) {
+				return ip.String()
+			}
+		}
+		return hops[0]
+	}
+	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
+		return ip.String()
+	}
+	return remote
 }
 
 // --- middleware ---
@@ -292,14 +362,28 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// logging assigns every request an id (echoed as X-Request-ID and attached
+// to error logs) and logs API responses by severity: 5xx as errors, other
+// 4xx as info, routine 401/404 and successes only at debug.
 func (s *Server) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		id := secrets.RandomToken(9)
+		w.Header().Set("X-Request-ID", id)
+		r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
 		rw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rw, r)
-		if strings.HasPrefix(r.URL.Path, "/api/") && (rw.status >= 400 || s.Log.Enabled(r.Context(), slog.LevelDebug)) {
-			s.Log.Debug("http", "method", r.Method, "path", r.URL.Path, "status", rw.status, "ms", time.Since(start).Milliseconds())
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			return
 		}
+		level := slog.LevelDebug
+		switch {
+		case rw.status >= 500:
+			level = slog.LevelError
+		case rw.status >= 400 && rw.status != http.StatusUnauthorized && rw.status != http.StatusNotFound:
+			level = slog.LevelInfo
+		}
+		s.Log.Log(r.Context(), level, "http", "method", r.Method, "path", r.URL.Path, "status", rw.status, "ms", time.Since(start).Milliseconds(), "requestId", id)
 	})
 }
 

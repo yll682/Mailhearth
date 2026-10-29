@@ -209,3 +209,111 @@ func TestMemberManagementCannotEscalate(t *testing.T) {
 	orgManager.do("POST", "/api/admin/roles", map[string]any{"name": "Wider", "permissions": []string{model.PermOrgManage, model.PermMembersManage}}, 403, nil)
 	orgManager.do("PATCH", "/api/admin/roles/"+strconv.FormatInt(orgRole.ID, 10), map[string]any{"name": "Org", "permissions": []string{model.PermOrgManage, model.PermAuditRead}}, 403, nil)
 }
+
+// #7: changing one's own password signs out every other session but keeps
+// the session that made the change.
+func TestOwnPasswordChangeRevokesOtherSessions(t *testing.T) {
+	env := newTestEnv(t)
+	other := newClient(t, env.base)
+	other.do("POST", "/api/auth/login", map[string]any{"email": "owner@example.org", "password": "owner-password-1"}, 200, nil)
+	other.do("GET", "/api/auth/me", nil, 200, nil)
+	env.owner.do("POST", "/api/auth/password", map[string]any{"current": "owner-password-1", "new": "owner-password-2"}, 200, nil)
+	env.owner.do("GET", "/api/auth/me", nil, 200, nil)
+	other.do("GET", "/api/auth/me", nil, 401, nil)
+}
+
+// #3: forwarded headers from an untrusted peer are ignored, and one account
+// cannot be guessed at faster by rotating source addresses.
+func TestLoginRateLimitPerAccount(t *testing.T) {
+	env := newTestEnv(t, func(c *config.Config) { c.TrustProxyHeader = true })
+	c := newClient(t, env.base)
+	limited := false
+	for i := 0; i < 40 && !limited; i++ {
+		req, err := http.NewRequest("POST", env.base+"/api/auth/login", strings.NewReader(`{"email":"owner@example.org","password":"wrong-password"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Requested-With", "Mailhearth")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i))
+		resp, err := c.http.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		limited = resp.StatusCode == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("轮换 X-Forwarded-For 绕过了登录限流")
+	}
+}
+
+// #6: pending uploads are capped per member.
+func TestUploadQuota(t *testing.T) {
+	env := newTestEnv(t, func(c *config.Config) { c.MaxUploadBytes = 1 << 20; c.UploadQuotaBytes = 2 << 20 })
+	chunk := bytes.Repeat([]byte("x"), 900<<10)
+	upload(env.owner, "a.bin", chunk, 200)
+	upload(env.owner, "b.bin", chunk, 200)
+	upload(env.owner, "c.bin", chunk, 400)
+	var count int
+	if err := env.db.QueryRow(`SELECT COUNT(*) FROM uploads`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(env.root, "uploads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 || len(entries) != 2 {
+		t.Fatalf("超出配额的上传被保存：数据库 %d 条，磁盘 %d 个文件", count, len(entries))
+	}
+}
+
+// #12: role × route matrix for the management API. Members get 403
+// everywhere; administrators reach everything but owner-only actions.
+func TestManagementPermissionMatrix(t *testing.T) {
+	env := newTestEnv(t)
+	member, _ := env.addMember("member@example.org", env.roleID(model.RoleMember))
+	admin, _ := env.addMember("admin@example.org", env.roleID(model.RoleAdmin))
+	routes := []struct {
+		method, path string
+		body         any
+		ownerOnly    bool
+	}{
+		{"GET", "/api/admin/overview", nil, false},
+		{"GET", "/api/admin/members", nil, false},
+		{"GET", "/api/admin/audit", nil, false},
+		{"POST", "/api/admin/roles", map[string]any{"name": "Matrix", "permissions": []string{}}, false},
+		{"POST", "/api/admin/connections", map[string]any{"providerKind": "manual", "label": "matrix"}, false},
+		{"PATCH", "/api/admin/org", map[string]any{"name": "Matrix org"}, false},
+		{"POST", "/api/admin/org/transfer", map[string]any{"memberId": env.ownerID}, true},
+		{"POST", "/api/admin/members/" + strconv.FormatInt(env.ownerID, 10) + "/password", map[string]any{"password": "matrix-password"}, true},
+	}
+	status := func(c *client, method, path string, body any) int {
+		data, _ := json.Marshal(body)
+		req, err := http.NewRequest(method, env.base+path, bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Requested-With", "Mailhearth")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := c.http.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for _, route := range routes {
+		body := route.body
+		if got := status(member, route.method, route.path, body); got != http.StatusForbidden {
+			t.Errorf("member %s %s 返回 %d，要求 403", route.method, route.path, got)
+		}
+		got := status(admin, route.method, route.path, body)
+		if route.ownerOnly && got != http.StatusForbidden {
+			t.Errorf("admin %s %s 返回 %d，要求 403", route.method, route.path, got)
+		}
+		if !route.ownerOnly && (got == http.StatusForbidden || got == http.StatusUnauthorized) {
+			t.Errorf("admin %s %s 返回 %d，要求获得授权", route.method, route.path, got)
+		}
+	}
+}
