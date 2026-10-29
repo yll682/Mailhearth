@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { t } from "@/lib/i18n";
-import { get, type AccessibleMailbox, type Folder, type MessageResponse, type Summary, type TeamState } from "@/lib/api";
+import { get, post, type AccessibleMailbox, type Folder, type MessageResponse, type Summary, type TeamState } from "@/lib/api";
 import { fmtDate, fmtSize, addrName } from "@/lib/format";
 import { Button, Icon, Spinner, Avatar, Menu, ErrorBox } from "@/ui";
 import { openCompose } from "./MailApp";
@@ -34,11 +34,17 @@ export function MessageView(p: Props) {
   const load = () => {
     setError("");
     setData(null);
-    get<MessageResponse>(`${base}?folder=${encodeURIComponent(p.folder)}${remote ? "&remote=1" : ""}${canWrite ? "" : "&markRead=0"}`).then(
+    get<MessageResponse>(`${base}?folder=${encodeURIComponent(p.folder)}${remote ? "&remote=1" : ""}`).then(
       (d) => {
         setData(d);
-        if (!d.message.seen && canWrite) p.onChanged({ uid: p.uid, seen: true });
-        else if (d.message.seen) p.onChanged({ uid: p.uid, seen: true });
+        if (d.message.seen) p.onChanged({ uid: p.uid, seen: true });
+        else if (canWrite) {
+          // Reading never changes state by itself; marking as read is an explicit write.
+          post(`/api/mail/mailboxes/${p.mailbox.id}/messages/flags`, { folder: p.folder, uids: [p.uid], add: ["\\Seen"], remove: [] }).then(
+            () => p.onChanged({ uid: p.uid, seen: true }),
+            () => {},
+          );
+        }
       },
       (e) => setError(e.status === 404 ? t("Message not found. It may have been moved or deleted.") : e.message),
     );

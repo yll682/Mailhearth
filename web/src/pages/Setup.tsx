@@ -11,7 +11,7 @@ import { t } from "@/lib/i18n";
 
 export function Setup({ status, onDone }: { status: SetupStatus; onDone: () => Promise<void> }) {
   const [step, setStep] = useState(status.step);
-  const [org, setOrg] = useState({ orgName: status.orgName ?? "", adminName: "", adminEmail: "", password: "" });
+  const [org, setOrg] = useState({ orgName: status.orgName ?? "", adminName: "", adminEmail: "", password: "", setupToken: "" });
   const [connection, setConnection] = useState<MailConnection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,8 +26,9 @@ export function Setup({ status, onDone }: { status: SetupStatus; onDone: () => P
     <ol class="steps">{[{ key: "org", label: t("Organisation") }, { key: "connection", label: t("Mail connection") }, { key: "mailboxes", label: t("Mailboxes") }].map((item, index) => <li key={item.key} class={step === item.key ? "current" : ""}><span class="step-num">{index + 1}</span>{item.label}</li>)}</ol>
     {step === "org" && <form onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); setError("");
-      try { await post("/api/setup/init", org); await onDone(); setStep("connection"); } catch (error) { setError((error as Error).message); } finally { setBusy(false); }
+      try { const { setupToken, ...fields } = org; await post("/api/setup/init", status.setupTokenRequired ? org : fields); await onDone(); setStep("connection"); } catch (error) { setError((error as Error).message); } finally { setBusy(false); }
     }}>
+      {status.setupTokenRequired ? <Field label={t("Setup token")} hint={t("The value of MAILHEARTH_SETUP_TOKEN on the server.")}><input required autocomplete="off" value={org.setupToken} onInput={(event) => setOrg({ ...org, setupToken: event.currentTarget.value })} /></Field> : null}
       <Field label={t("Organisation name")}><input required value={org.orgName} onInput={(event) => setOrg({ ...org, orgName: event.currentTarget.value })} /></Field>
       <Field label={t("Administrator name")}><input required value={org.adminName} onInput={(event) => setOrg({ ...org, adminName: event.currentTarget.value })} /></Field>
       <Field label={t("Administrator email")}><input type="email" required value={org.adminEmail} onInput={(event) => setOrg({ ...org, adminEmail: event.currentTarget.value })} /></Field>

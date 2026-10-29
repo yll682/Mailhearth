@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"mime"
 	"net/http"
@@ -279,11 +278,12 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			uidv = sel.UIDValidity
 		}
 		key := core.MessageKey(msg.MessageID, folder, uidv, msg.UID)
-		team, _ := s.Svc.GetMessageState(m.ctx, m.mc.Mailbox.ID, key)
-		if m.r.URL.Query().Get("markRead") != "0" && !msg.Seen && m.mc.CanSend() {
-			if err := mailops.StoreFlags(m.ctx, m.conn, folder, []uint32{msg.UID}, []string{`\Seen`}, nil); err == nil {
-				msg.Seen = true
-			}
+		// Reading is free of side effects: clients mark messages as read with
+		// POST .../messages/flags, which carries the CSRF header.
+		team, err := s.Svc.GetMessageState(m.ctx, m.mc.Mailbox.ID, key)
+		if err != nil {
+			s.fail(m.w, m.r, err)
+			return
 		}
 		writeJSON(m.w, http.StatusOK, map[string]any{
 			"message":   msg,
@@ -899,5 +899,3 @@ blockquote,.mh-quote{margin:4px 0 4px 0;padding-left:12px;border-left:3px solid 
 a{color:#0a58ca}
 ` + textCSS + `</style></head><body>` + fragment + `</body></html>`
 }
-
-var _ = html.EscapeString

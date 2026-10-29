@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -225,5 +224,3 @@ func (s *Service) memberPermissions(ctx context.Context, memberID int64) ([]stri
 	json.Unmarshal([]byte(perms), &out)
 	return out, key, nil
 }
-
-var _ = sql.ErrNoRows

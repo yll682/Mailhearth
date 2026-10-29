@@ -37,6 +37,7 @@ Todas las opciones son variables de entorno. Los valores mal formados o fuera de
 | `MAILHEARTH_LISTEN` | `:8080` | Dirección de escucha HTTP. |
 | `MAILHEARTH_DATA_DIR` | `./data` (`/data` en el contenedor) | Base de datos SQLite, clave maestra, archivos subidos y copias previas a las migraciones. |
 | `MAILHEARTH_MASTER_KEY` | generada en `<data>/master.key` | Clave de 32 bytes (base64 o hex) que cifra las credenciales guardadas. |
+| `MAILHEARTH_SETUP_TOKEN` | vacío | Si se define, crear la organización en una instancia nueva exige este token, para que quien llegue primero a la instancia no pueda apropiarse de ella. Recomendado si la instancia es accesible antes de terminar la configuración. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` o `error`. |
 | `MAILHEARTH_TRUST_PROXY` | `false` | Leer `X-Forwarded-For` / `X-Forwarded-Host` de los proxies de confianza. |
 | `MAILHEARTH_TRUSTED_PROXIES` | loopback y redes privadas | CIDR o direcciones de tus proxies inversos, separados por comas. Las cabeceras de reenvío de cualquier otro par se ignoran. |

@@ -73,7 +73,7 @@ func run(seedDemo bool) error {
 		"trustProxy", cfg.TrustProxyHeader, "trustedProxies", len(cfg.TrustedProxies), "allowedMailNetworks", len(cfg.AllowedMailNetworks),
 		"imapMaxConns", cfg.IMAPMaxConns, "imapIdle", cfg.IMAPIdleTimeout, "maxUploadMB", cfg.MaxUploadBytes>>20,
 		"maxMessageMB", cfg.MaxMessageBytes>>20, "uploadQuotaMB", cfg.UploadQuotaBytes>>20, "session", cfg.SessionTTL,
-		"sessionMax", cfg.SessionMaxAge, "invite", cfg.InviteTTL, "devStack", cfg.DevStack, "logLevel", cfg.LogLevel)
+		"sessionMax", cfg.SessionMaxAge, "invite", cfg.InviteTTL, "devStack", cfg.DevStack, "logLevel", cfg.LogLevel, "setupTokenRequired", cfg.SetupToken != "")
 
 	// Keep the Go heap modest by default; operators can override via GOMEMLIMIT.
 	if os.Getenv("GOMEMLIMIT") == "" {
@@ -144,6 +144,7 @@ func run(seedDemo bool) error {
 	defer func() { stop(); svc.WaitSubmissions() }()
 	go svc.RunSessionJanitor(ctx, time.Hour)
 	api := httpapi.New(cfg, svc, pool, web.Handler(), signKey, log)
+	defer api.Close()
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

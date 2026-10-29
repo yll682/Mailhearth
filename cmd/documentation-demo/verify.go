@@ -125,7 +125,7 @@ func verifyDemo(ctx context.Context, svc *core.Service, handler http.Handler) {
 	var sharedDetail struct {
 		Team core.MessageState `json:"team"`
 	}
-	require(json.Unmarshal(get(fmt.Sprintf("/api/mail/mailboxes/%d/messages/%d?folder=INBOX&markRead=0", shared, sharedPage.Messages[0].UID)), &sharedDetail))
+	require(json.Unmarshal(get(fmt.Sprintf("/api/mail/mailboxes/%d/messages/%d?folder=INBOX", shared, sharedPage.Messages[0].UID)), &sharedDetail))
 	if sharedDetail.Team.AssigneeID == nil || len(sharedDetail.Team.Activity) < 2 {
 		panic("演示邮件缺少负责人或内部备注")
 	}
@@ -146,7 +146,7 @@ func verifyDemo(ctx context.Context, svc *core.Service, handler http.Handler) {
 		ViewURL   string `json:"viewUrl"`
 		ViewToken string `json:"viewToken"`
 	}
-	require(json.Unmarshal(get(fmt.Sprintf("/api/mail/mailboxes/%d/messages/%d?folder=INBOX&markRead=0", mailbox, page.Messages[0].UID)), &detail))
+	require(json.Unmarshal(get(fmt.Sprintf("/api/mail/mailboxes/%d/messages/%d?folder=INBOX", mailbox, page.Messages[0].UID)), &detail))
 	get(detail.ViewURL)
 	if len(detail.Message.Attachments) != 2 {
 		panic("演示邮件附件数量不正确")

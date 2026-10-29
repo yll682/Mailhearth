@@ -192,6 +192,10 @@ func (s *Server) routesSetup(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("POST /api/setup/init", func(w http.ResponseWriter, r *http.Request) {
+		if !s.limiter.allow("setup:"+s.clientIP(r), 10, time.Minute) {
+			writeJSON(w, http.StatusTooManyRequests, apiError{Error: "too many attempts, try again in a minute", Code: "rate_limited"})
+			return
+		}
 		var in core.InitRequest
 		if err := readJSON(r, &in); err != nil {
 			s.fail(w, r, err)

@@ -94,6 +94,9 @@ func principalFrom(r *http.Request) *principal {
 	return p
 }
 
+// Close stops background work started by New (the upload janitor).
+func (s *Server) Close() { s.uploads.close() }
+
 // --- JSON helpers ---
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -385,6 +388,20 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 	})
 }
 
+// methodOverride lets clients send a DELETE that carries a JSON body as
+// POST with "X-HTTP-Method-Override: DELETE": some proxies drop DELETE
+// bodies. Only DELETE can be requested this way, and it runs inside the
+// CSRF check, which already treats the request as state-changing.
+func methodOverride(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.EqualFold(r.Header.Get("X-HTTP-Method-Override"), http.MethodDelete) && strings.HasPrefix(r.URL.Path, "/api/") {
+			r = r.Clone(r.Context())
+			r.Method = http.MethodDelete
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -544,6 +561,7 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", s.Static)
 	}
 	var h http.Handler = mux
+	h = methodOverride(h)
 	h = s.csrf(h)
 	h = s.withSession(h)
 	h = securityHeaders(h)

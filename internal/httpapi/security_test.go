@@ -66,6 +66,7 @@ func newTestEnv(t *testing.T, mutate ...func(*config.Config)) *testEnv {
 	}
 	t.Cleanup(func() { stop(); svc.WaitOperations() })
 	api := httpapi.New(cfg, svc, nil, web.Handler(), master, slog.Default())
+	t.Cleanup(api.Close)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -75,12 +76,19 @@ func newTestEnv(t *testing.T, mutate ...func(*config.Config)) *testEnv {
 	t.Cleanup(func() { server.Close() })
 	env := &testEnv{t: t, root: root, db: database, svc: svc, base: "http://" + listener.Addr().String()}
 	env.owner = newClient(t, env.base)
+	if cfg.SetupToken == "" {
+		env.setup("")
+	}
+	return env
+}
+
+func (e *testEnv) setup(token string) {
+	e.t.Helper()
 	var me struct {
 		Member model.Member `json:"member"`
 	}
-	env.owner.do("POST", "/api/setup/init", core.InitRequest{OrgName: "安全测试", AdminName: "所有者", AdminEmail: "owner@example.org", Password: "owner-password-1"}, 200, &me)
-	env.ownerID = me.Member.ID
-	return env
+	e.owner.do("POST", "/api/setup/init", core.InitRequest{OrgName: "安全测试", AdminName: "所有者", AdminEmail: "owner@example.org", Password: "owner-password-1", SetupToken: token}, 200, &me)
+	e.ownerID = me.Member.ID
 }
 
 // roleID returns the id of the role with key.
@@ -371,4 +379,59 @@ func TestSessionAbsoluteLifetime(t *testing.T) {
 	if n, err := env.svc.PurgeExpiredSessions(context.Background()); err != nil || n != 0 {
 		t.Fatalf("过期会话应已在查询时删除：%d %v", n, err)
 	}
+}
+
+// #38: with MAILHEARTH_SETUP_TOKEN set, a fresh instance cannot be claimed
+// without the token.
+func TestSetupToken(t *testing.T) {
+	env := newTestEnv(t, func(c *config.Config) { c.SetupToken = "operator-token" })
+	var status core.SetupStatus
+	env.owner.do("GET", "/api/setup/status", nil, 200, &status)
+	if !status.NeedsSetup || !status.SetupTokenRequired {
+		t.Fatalf("初始化状态没有要求令牌：%+v", status)
+	}
+	request := core.InitRequest{OrgName: "抢注", AdminName: "x", AdminEmail: "x@example.org", Password: "attacker-password"}
+	env.owner.do("POST", "/api/setup/init", request, 403, nil)
+	request.SetupToken = "wrong-token"
+	env.owner.do("POST", "/api/setup/init", request, 403, nil)
+	env.setup("operator-token")
+	env.owner.do("GET", "/api/setup/status", nil, 200, &status)
+	if status.NeedsSetup && status.Step == "org" {
+		t.Fatal("正确令牌没有完成组织创建")
+	}
+}
+
+// #39: DELETE with a JSON body also works as POST + X-HTTP-Method-Override,
+// for proxies that drop DELETE bodies; plain DELETE keeps working.
+func TestDeleteMethodOverride(t *testing.T) {
+	env := newTestEnv(t)
+	invite := func(email string) model.Member {
+		var operation core.OperationView
+		env.owner.do("POST", "/api/admin/members", map[string]any{"requestId": uuid.NewString(), "displayName": email, "loginEmail": email, "mailboxAction": "none", "sendInvite": true}, 202, &operation)
+		operation = env.owner.await(operation.ID)
+		var created struct {
+			MemberID int64 `json:"memberId"`
+		}
+		if err := json.Unmarshal(operation.Result, &created); err != nil {
+			t.Fatal(err)
+		}
+		return env.member(env.owner, created.MemberID)
+	}
+	first := invite("first@example.org")
+	body, _ := json.Marshal(map[string]any{"expectedRevision": first.Revision})
+	req, err := http.NewRequest("POST", env.base+"/api/admin/members/"+strconv.FormatInt(first.ID, 10), bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-HTTP-Method-Override", "DELETE")
+	env.owner.request(req, 403, nil) // still subject to the CSRF header check
+	req, _ = http.NewRequest("POST", env.base+"/api/admin/members/"+strconv.FormatInt(first.ID, 10), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-HTTP-Method-Override", "DELETE")
+	req.Header.Set("X-Requested-With", "Mailhearth")
+	env.owner.request(req, 200, nil)
+	env.owner.do("GET", "/api/admin/members/"+strconv.FormatInt(first.ID, 10), nil, 404, nil)
+	second := invite("second@example.org")
+	env.owner.do("DELETE", "/api/admin/members/"+strconv.FormatInt(second.ID, 10), map[string]any{"expectedRevision": second.Revision}, 200, nil)
 }
