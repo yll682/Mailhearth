@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"mailhearth/internal/db"
 	"mailhearth/internal/model"
@@ -27,6 +28,98 @@ func requireManagementPermission(ctx context.Context, q managementQuery, orgID, 
 		return ErrForbidden
 	}
 	return nil
+}
+
+// activeMemberPermissions returns the permission list and role key of an
+// active member of orgID.
+func activeMemberPermissions(ctx context.Context, q managementQuery, orgID, memberID int64) ([]string, string, error) {
+	var body, key string
+	err := q.QueryRowContext(ctx, `SELECT r.permissions_json,r.key FROM members m JOIN roles r ON r.id=m.role_id AND r.org_id=m.org_id WHERE m.org_id=? AND m.id=? AND m.status=?`, orgID, memberID, model.MemberActive).Scan(&body, &key)
+	if db.IsNotFound(err) {
+		return nil, "", ErrForbidden
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	var permissions []string
+	if err := json.Unmarshal([]byte(body), &permissions); err != nil {
+		return nil, "", err
+	}
+	return permissions, key, nil
+}
+
+// permissionsCover reports whether holder includes every permission in want.
+func permissionsCover(holder, want []string) bool {
+	for _, p := range want {
+		if !HasPermission(holder, p) {
+			return false
+		}
+	}
+	return true
+}
+
+// requireMemberManageable stops a manager from acting on a member whose
+// role is the owner or carries permissions the manager does not hold
+// (password reset, invite, profile/role edits, status, offboarding,
+// deletion). Acting on oneself is always allowed here; callers apply their
+// own self-service rules.
+func requireMemberManageable(ctx context.Context, q managementQuery, orgID, actor, target int64) error {
+	if actor == target {
+		return nil
+	}
+	actorPermissions, _, err := activeMemberPermissions(ctx, q, orgID, actor)
+	if err != nil {
+		return err
+	}
+	var body, key string
+	err = q.QueryRowContext(ctx, `SELECT r.permissions_json,r.key FROM members m JOIN roles r ON r.id=m.role_id AND r.org_id=m.org_id WHERE m.org_id=? AND m.id=?`, orgID, target).Scan(&body, &key)
+	if db.IsNotFound(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if key == model.RoleOwner {
+		return fmt.Errorf("%w: only the owner can manage the owner account", ErrForbidden)
+	}
+	var targetPermissions []string
+	if err := json.Unmarshal([]byte(body), &targetPermissions); err != nil {
+		return err
+	}
+	if !permissionsCover(actorPermissions, targetPermissions) {
+		return fmt.Errorf("%w: this member has permissions you do not hold", ErrForbidden)
+	}
+	return nil
+}
+
+// requirePermissionsGrantable stops a manager from granting (via role
+// assignment or role edits) permissions they do not hold themselves.
+func requirePermissionsGrantable(ctx context.Context, q managementQuery, orgID, actor int64, permissions []string) error {
+	actorPermissions, _, err := activeMemberPermissions(ctx, q, orgID, actor)
+	if err != nil {
+		return err
+	}
+	if !permissionsCover(actorPermissions, permissions) {
+		return fmt.Errorf("%w: you cannot grant permissions you do not hold", ErrForbidden)
+	}
+	return nil
+}
+
+// requireRoleGrantable applies requirePermissionsGrantable to a role id.
+func requireRoleGrantable(ctx context.Context, q managementQuery, orgID, actor, roleID int64) error {
+	var body string
+	err := q.QueryRowContext(ctx, `SELECT permissions_json FROM roles WHERE id=? AND org_id=?`, roleID, orgID).Scan(&body)
+	if db.IsNotFound(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var permissions []string
+	if err := json.Unmarshal([]byte(body), &permissions); err != nil {
+		return err
+	}
+	return requirePermissionsGrantable(ctx, q, orgID, actor, permissions)
 }
 
 func requireResourceAvailable(ctx context.Context, q managementQuery, orgID int64, keys ...string) error {

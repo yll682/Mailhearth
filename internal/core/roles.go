@@ -128,6 +128,12 @@ func (s *Service) CreateRole(ctx context.Context, orgID, actor int64, in RoleInp
 	if err != nil {
 		return nil, err
 	}
+	if err := requireManagementPermission(ctx, s.DB, orgID, actor, model.PermOrgManage); err != nil {
+		return nil, err
+	}
+	if err := requirePermissionsGrantable(ctx, s.DB, orgID, actor, perms); err != nil {
+		return nil, err
+	}
 	key := "custom-" + strings.ToLower(strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
 			return r
@@ -161,6 +167,12 @@ func (s *Service) UpdateRole(ctx context.Context, orgID, actor, id int64, in Rol
 	}
 	perms, err := validatePermissions(in.Permissions)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireManagementPermission(ctx, s.DB, orgID, actor, model.PermOrgManage); err != nil {
+		return nil, err
+	}
+	if err := requirePermissionsGrantable(ctx, s.DB, orgID, actor, perms); err != nil {
 		return nil, err
 	}
 	if _, err := s.DB.ExecContext(ctx, `UPDATE roles SET name = ?, description = ?, permissions_json = ? WHERE id = ?`, name, strings.TrimSpace(in.Description), toJSON(perms), id); err != nil {

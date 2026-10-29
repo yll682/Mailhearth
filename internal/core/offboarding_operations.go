@@ -99,6 +99,9 @@ func prepareOffboardQuery(ctx context.Context, q managementQuery, orgID, actor i
 	if role == model.RoleOwner {
 		return nil, provider.Errorf("invalid", "组织所有者需要完成所有权转移")
 	}
+	if err := requireMemberManageable(ctx, q, orgID, actor, in.MemberID); err != nil {
+		return nil, err
+	}
 	if revision != in.Request.ExpectedRevision {
 		return nil, provider.Errorf("revision_conflict", "成员已经更新")
 	}
