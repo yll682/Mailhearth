@@ -192,13 +192,20 @@ func RandomToken(n int) string {
 // RandomPassword returns a strong password suitable for Purelymail users.
 func RandomPassword() string {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.!"
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	out := make([]byte, len(b))
-	for i, v := range b {
-		out[i] = alphabet[int(v)%len(alphabet)]
+	// Rejection sampling: bytes at or above the largest multiple of the
+	// alphabet size are discarded so every character is equally likely.
+	limit := 256 - 256%len(alphabet)
+	out := make([]byte, 0, 24)
+	buf := make([]byte, 32)
+	for len(out) < 24 {
+		if _, err := rand.Read(buf); err != nil {
+			panic(err)
+		}
+		for _, v := range buf {
+			if int(v) < limit && len(out) < 24 {
+				out = append(out, alphabet[int(v)%len(alphabet)])
+			}
+		}
 	}
 	return string(out)
 }
@@ -209,10 +216,11 @@ func HashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Hint returns a masked preview of a secret for display.
+// Hint returns a masked preview of a secret for display: only the last two
+// characters of secrets long enough that they reveal little.
 func Hint(secret string) string {
-	if len(secret) <= 6 {
+	if len(secret) < 12 {
 		return "****"
 	}
-	return secret[:3] + "..." + secret[len(secret)-2:]
+	return "…" + secret[len(secret)-2:]
 }

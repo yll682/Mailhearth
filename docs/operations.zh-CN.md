@@ -37,6 +37,7 @@ Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP 监听地址。 |
 | `MAILHEARTH_DATA_DIR` | `./data`（容器内为 `/data`） | SQLite 数据库、主密钥、上传文件与迁移前备份。 |
 | `MAILHEARTH_MASTER_KEY` | 自动生成到 `<data>/master.key` | 32 字节密钥（base64 或 hex），用于加密保存的凭据。 |
+| `MAILHEARTH_SETUP_TOKEN` | 空 | 设置后，在全新实例上创建组织时必须提供该令牌，避免抢先访问实例的人占用所有者身份。若实例在完成初始化前即可被访问，建议设置。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
 | `MAILHEARTH_TRUST_PROXY` | `false` | 从受信代理读取 `X-Forwarded-For` / `X-Forwarded-Host`。 |
 | `MAILHEARTH_TRUSTED_PROXIES` | 本机回环与私有网段 | 反向代理的 CIDR 或地址，以逗号分隔。来自其他对端的转发标头会被忽略。 |

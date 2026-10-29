@@ -37,6 +37,7 @@ Mailhearth は極めて小さなフットプリントで動作するように設
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP の待ち受けアドレス。 |
 | `MAILHEARTH_DATA_DIR` | `./data`（コンテナ内では `/data`） | SQLite データベース、マスターキー、アップロードファイル、マイグレーション前のバックアップ。 |
 | `MAILHEARTH_MASTER_KEY` | `<data>/master.key` に自動生成 | 保存された認証情報を暗号化する 32 バイトの鍵（base64 または hex）。 |
+| `MAILHEARTH_SETUP_TOKEN` | 空 | 設定すると、新しいインスタンスで組織を作成する際にこのトークンが必要になり、最初にアクセスした人にオーナーを奪われるのを防ぎます。セットアップ完了前にインスタンスへアクセスできる場合は設定を推奨します。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` のいずれか。 |
 | `MAILHEARTH_TRUST_PROXY` | `false` | 信頼済みプロキシからの `X-Forwarded-For` / `X-Forwarded-Host` を読み取ります。 |
 | `MAILHEARTH_TRUSTED_PROXIES` | ループバックとプライベートネットワーク | リバースプロキシの CIDR またはアドレス（カンマ区切り）。その他の接続元からの転送ヘッダーは無視されます。 |

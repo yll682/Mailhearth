@@ -6,7 +6,6 @@ package devstack
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -251,5 +250,3 @@ func (s *smtpSession) Logout() error { return nil }
 type quietLogger struct{}
 
 func (quietLogger) Printf(format string, v ...interface{}) {}
-
-var _ = context.Background

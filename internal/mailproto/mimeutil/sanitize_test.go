@@ -71,3 +71,14 @@ func TestDecodeBody(t *testing.T) {
 		t.Errorf("gbk: %q", got)
 	}
 }
+
+// #35: messages cannot claim the viewer's internal classes.
+func TestSanitizeStripsInternalClasses(t *testing.T) {
+	res := SanitizeHTML(`<div class="mh-text keep">x</div><p class="MH-quote">y</p><img src="https://example.org/a.png" class="mh-blocked logo">`, SanitizeOptions{})
+	if strings.Contains(res.HTML, "mh-text") || strings.Contains(strings.ToLower(res.HTML), "mh-quote") {
+		t.Fatalf("内部 class 没有被移除：%s", res.HTML)
+	}
+	if !strings.Contains(res.HTML, `class="keep"`) || !strings.Contains(res.HTML, `class="logo mh-blocked"`) {
+		t.Fatalf("普通 class 或占位图标记丢失：%s", res.HTML)
+	}
+}

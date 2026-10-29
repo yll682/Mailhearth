@@ -24,6 +24,11 @@ export function setUnauthorizedHandler(fn: () => void) {
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown, init?: { raw?: boolean; signal?: AbortSignal }): Promise<T> {
   const headers: Record<string, string> = { "X-Requested-With": "Mailhearth" };
+  // Some proxies drop DELETE bodies; send those as POST with a method override.
+  if (method === "DELETE" && body !== undefined) {
+    method = "POST";
+    headers["X-HTTP-Method-Override"] = "DELETE";
+  }
   let payload: BodyInit | undefined;
   if (body instanceof FormData) payload = body;
   else if (body !== undefined) {
@@ -57,7 +62,7 @@ export const del = <T,>(p: string, b?: unknown) => api<T>("DELETE", p, b);
 // --- Types ---
 
 export interface Member {
-	 revision: number;
+  revision: number;
   id: number; displayName: string; loginEmail: string; roleId: number; roleKey: string; roleName: string; title: string; department: string;
   status: "invited" | "active" | "disabled" | "departed"; hasPassword: boolean; createdAt: string; updatedAt: string; lastLoginAt: string | null; departedAt: string | null;
 }
@@ -72,7 +77,7 @@ export interface MailboxSettings { sieveRules: SieveRule[]; vacation?: Vacation 
 export interface FolderMapping { sent: string | null; drafts: string | null; trash: string | null; junk: string | null; archive: string | null }
 export interface FolderMappingView { mailboxId: number; revision: number; mapping: FolderMapping; sentCopyMode: "append" | "server" }
 export interface Mailbox {
-	protocols: { imap: ProtocolStatus | null; smtp: ProtocolStatus | null; managesieve: ProtocolStatus | null };
+  protocols: { imap: ProtocolStatus | null; smtp: ProtocolStatus | null; managesieve: ProtocolStatus | null };
   connectionId: number; connectionLabel: string; addressKey: string; managementMode: "api" | "external"; remoteState: string;
   revision: number; accessRevision: number; sentCopyMode: "append" | "server"; folderMapping: FolderMapping;
   id: number; kind: "personal" | "shared"; address: string; domainId: number | null; displayName: string; ownerMemberId: number | null; ownerName: string;
@@ -96,19 +101,19 @@ export interface Domain {
   status: string; mailboxCount: number; addressCount: number; createdAt: string;
 }
 export interface Address {
-	connectionId: number; domainBindingId?: number; revision: number; managementMode: "api" | "external"; syncState: string; desiredTargets: string[]; observedTargets: string[];
+  connectionId: number; domainBindingId?: number; revision: number; managementMode: "api" | "external"; syncState: string; desiredTargets: string[]; observedTargets: string[];
   id: number; domainId: number; domain: string; localPart: string; address: string; kind: "primary" | "alias" | "forward" | "group" | "catchall" | "prefix" | "external_rule";
   mailboxId: number | null; groupId: number | null; targets: string[]; pmRuleId: number | null; isPrefix: boolean; isCatchall: boolean; note: string; createdAt: string;
 }
 export interface Group { id: number; name: string; description: string; memberIds: number[]; address: Address | null; revision: number; createdAt: string }
 export interface ResourceOptions {
-	 domains: { id: number; name: string }[];
+  domains: { id: number; name: string }[];
   connections: Pick<MailConnection, "id" | "providerKind" | "label" | "enabled" | "revision" | "protocolDefaults" | "capabilities">[];
   bindings: Pick<DomainBinding, "id" | "domainId" | "domainName" | "connectionId" | "connectionLabel" | "managementMode" | "remoteState" | "revision">[];
 }
 export interface MailboxForwarding { id: number; mailboxId: number; revision: number; targets: string[]; deliveryMode: "redirect" | "copy" | "unverified"; syncState: string; remoteStatus: { desiredTargets?: string[]; observedTargets?: string[]; statusByTarget?: Record<string, string>; remoteStates?: Record<string, string>; systemVerified?: boolean; verificationSource?: string } }
 export interface AuditEntry { id: number; actorId: number | null; actorName: string; action: string; targetType: string; targetId: string; detail: unknown; createdAt: string }
-export interface SetupStatus { needsSetup: boolean; step: "org" | "connection" | "mailboxes" | "done"; orgName?: string; devStack: boolean }
+export interface SetupStatus { needsSetup: boolean; step: "org" | "connection" | "mailboxes" | "done"; orgName?: string; devStack: boolean; setupTokenRequired: boolean }
 
 export type ProviderKind = "purelymail" | "migadu" | "manual";
 export interface ProtocolTemplate { enabled: boolean; host?: string; port?: number; tlsMode?: "tls" | "starttls"; caBundleId?: number | null }

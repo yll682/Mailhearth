@@ -37,6 +37,7 @@ All options are environment variables. Malformed or out-of-range values stop sta
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP listen address. |
 | `MAILHEARTH_DATA_DIR` | `./data` (`/data` in the container) | SQLite database, master key, uploads and pre-migration backups. |
 | `MAILHEARTH_MASTER_KEY` | generated into `<data>/master.key` | 32-byte key (base64 or hex) that encrypts stored credentials. |
+| `MAILHEARTH_SETUP_TOKEN` | empty | When set, creating the organisation on a fresh instance requires this token, so whoever reaches the instance first cannot claim it. Recommended for instances reachable before setup is finished. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `MAILHEARTH_TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Host` from trusted proxies. |
 | `MAILHEARTH_TRUSTED_PROXIES` | loopback and private networks | Comma-separated CIDRs or addresses of your reverse proxies. Forwarding headers from any other peer are ignored. |

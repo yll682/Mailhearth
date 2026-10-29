@@ -32,8 +32,9 @@ type Config struct {
 	BaseURL    string // optional; used to build invite links when set
 	MasterKey  []byte // 32 bytes
 	LogLevel   string
-	DevStack   bool // start the embedded fake Purelymail/IMAP/SMTP stack
-	SecureCook bool // set Secure on cookies (auto: true when BaseURL is https)
+	DevStack   bool   // start the embedded fake Purelymail/IMAP/SMTP stack
+	SetupToken string // when set, required to create the organisation
+	SecureCook bool   // set Secure on cookies (auto: true when BaseURL is https)
 
 	PurelymailAPIURL string
 
@@ -127,6 +128,7 @@ func Load() (*Config, error) {
 		DataDir:          env("MAILHEARTH_DATA_DIR", "./data"),
 		BaseURL:          strings.TrimRight(env("MAILHEARTH_BASE_URL", ""), "/"),
 		LogLevel:         strings.ToLower(env("MAILHEARTH_LOG_LEVEL", "info")),
+		SetupToken:       env("MAILHEARTH_SETUP_TOKEN", ""),
 		DevStack:         l.bool("MAILHEARTH_DEV_STACK", false),
 		PurelymailAPIURL: strings.TrimRight(env("MAILHEARTH_PURELYMAIL_API_URL", "https://purelymail.com/api/v0"), "/"),
 		IMAPAddr:         env("MAILHEARTH_IMAP_ADDR", "imap.purelymail.com:993"),

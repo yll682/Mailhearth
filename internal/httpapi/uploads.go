@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"mailhearth/internal/core"
@@ -20,17 +19,30 @@ import (
 
 // uploadStore keeps composer attachments on disk until they are sent.
 type uploadStore struct {
-	dir string
-	svc *core.Service
-	log *slog.Logger
+	dir  string
+	svc  *core.Service
+	log  *slog.Logger
+	stop chan struct{}
+	done chan struct{}
+	once sync.Once
 }
 
 func newUploadStore(dataDir string, svc *core.Service, log *slog.Logger) *uploadStore {
 	dir := filepath.Join(dataDir, "uploads")
-	os.MkdirAll(dir, 0o700)
-	u := &uploadStore{dir: dir, svc: svc, log: log}
-	go u.janitor()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Error("cannot create uploads directory", "dir", dir, "err", err)
+	}
+	u := &uploadStore{dir: dir, svc: svc, log: log, stop: make(chan struct{}), done: make(chan struct{})}
+	go u.janitor(time.Hour)
 	return u
+}
+
+// close stops the janitor and waits for it to finish.
+func (u *uploadStore) close() {
+	u.once.Do(func() {
+		close(u.stop)
+		<-u.done
+	})
 }
 
 type uploadInfo struct {
@@ -174,42 +186,77 @@ func (u *uploadStore) delete(ctx context.Context, memberID int64, id string) err
 	return nil
 }
 
-func (u *uploadStore) janitor() {
+func (u *uploadStore) janitor(interval time.Duration) {
+	defer close(u.done)
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
-		time.Sleep(time.Hour)
-		ctx := context.Background()
-		cutoff := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
-		rows, err := u.svc.DB.QueryContext(ctx, `SELECT id FROM uploads WHERE created_at < ?`, cutoff)
-		if err != nil {
-			continue
-		}
-		var ids []string
-		for rows.Next() {
-			var id string
-			rows.Scan(&id)
-			ids = append(ids, id)
-		}
-		rows.Close()
-		for _, id := range ids {
-			os.Remove(u.path(id))
-			u.svc.DB.ExecContext(ctx, `DELETE FROM uploads WHERE id = ?`, id)
-		}
-		// Orphaned files (crash between write and insert).
-		entries, _ := os.ReadDir(u.dir)
-		for _, e := range entries {
-			info, err := e.Info()
-			if err != nil || info.ModTime().After(time.Now().Add(-24*time.Hour)) {
-				continue
+		select {
+		case <-u.stop:
+			return
+		case <-t.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			if err := u.sweep(ctx, time.Now().Add(-24*time.Hour)); err != nil {
+				u.log.Warn("upload cleanup failed", "err", err)
 			}
-			var n int
-			u.svc.DB.QueryRowContext(ctx, `SELECT COUNT(1) FROM uploads WHERE id = ?`, e.Name()).Scan(&n)
-			if n == 0 {
-				os.Remove(u.path(e.Name()))
-			}
+			cancel()
 		}
 	}
 }
 
-var errUploadTooLarge = errors.New("upload too large")
-
-var _ = json.Marshal
+// sweep removes uploads (rows and files) created before cutoff, and files
+// without a row (a crash between writing the file and inserting the row).
+func (u *uploadStore) sweep(ctx context.Context, cutoff time.Time) error {
+	rows, err := u.svc.DB.QueryContext(ctx, `SELECT id FROM uploads WHERE created_at < ?`, cutoff.UTC().Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if path := u.path(id); path != "" {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if _, err := u.svc.DB.ExecContext(ctx, `DELETE FROM uploads WHERE id = ?`, id); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(u.dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		path := u.path(e.Name())
+		if path == "" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		var n int
+		if err := u.svc.DB.QueryRowContext(ctx, `SELECT COUNT(1) FROM uploads WHERE id = ?`, e.Name()).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	return nil
+}

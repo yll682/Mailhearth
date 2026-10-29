@@ -58,6 +58,7 @@ var policy = func() *bluemonday.Policy {
 var (
 	cssDangerRe = regexp.MustCompile(`(?i)(expression\s*\(|javascript:|vbscript:|@import|behavior\s*:|-moz-binding|position\s*:\s*fixed)`)
 	cssURLRe    = regexp.MustCompile(`(?i)url\s*\(`)
+	cssRemoteRe = regexp.MustCompile(`(?i)url\s*\(\s*['"]?\s*https?:`)
 	whitespace  = regexp.MustCompile(`\s+`)
 )
 
@@ -79,7 +80,7 @@ func sanitizeCSS(style string) (string, bool) {
 			continue
 		}
 		if cssURLRe.MatchString(d) {
-			if regexp.MustCompile(`(?i)url\s*\(\s*['"]?\s*https?:`).MatchString(d) {
+			if cssRemoteRe.MatchString(d) {
 				remote = true
 			}
 			continue
@@ -123,6 +124,27 @@ func isRemoteURL(u string) bool {
 	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "//")
 }
 
+// stripInternalClasses removes "mh-" classes from untrusted markup: the
+// viewer gives them meaning (plain-text layout, blocked-image placeholder,
+// quote levels), so a message must not be able to claim them.
+func stripInternalClasses(n *html.Node) {
+	value, i := attr(n, "class")
+	if i < 0 {
+		return
+	}
+	var kept []string
+	for _, class := range strings.Fields(value) {
+		if !strings.HasPrefix(strings.ToLower(class), "mh-") {
+			kept = append(kept, class)
+		}
+	}
+	if len(kept) == 0 {
+		delAttr(n, "class")
+		return
+	}
+	setAttr(n, "class", strings.Join(kept, " "))
+}
+
 // SanitizeHTML returns a safe HTML fragment for rendering inside a sandboxed
 // iframe. It is a two-stage process: bluemonday enforces the element and
 // attribute whitelist, then a DOM pass rewrites image and link references.
@@ -137,6 +159,7 @@ func SanitizeHTML(input string, opts SanitizeOptions) SanitizeResult {
 	var walk func(n *html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
+			stripInternalClasses(n)
 			if style, _ := attr(n, "style"); style != "" {
 				cleaned, remote := sanitizeCSS(style)
 				if remote {
