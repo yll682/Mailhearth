@@ -83,6 +83,9 @@ func (s *Service) prepareMemberCreation(ctx context.Context, orgID, actor int64,
 	if role.Key == model.RoleOwner {
 		return nil, provider.Errorf("invalid", "组织所有者通过所有权转移操作设置")
 	}
+	if err := requireRoleGrantable(ctx, s.DB, orgID, actor, role.ID); err != nil {
+		return nil, err
+	}
 	plan.RoleID = role.ID
 	if in.Password != "" {
 		if err := checkPasswordStrength(in.Password); err != nil {

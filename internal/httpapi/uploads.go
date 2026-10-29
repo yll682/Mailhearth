@@ -40,7 +40,27 @@ type uploadInfo struct {
 	Size     int64  `json:"size"`
 }
 
-func (u *uploadStore) path(id string) string { return filepath.Join(u.dir, id) }
+// validUploadID matches ids minted by save (secrets.RandomToken(16)).
+func validUploadID(id string) bool {
+	if len(id) != 22 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// path maps an upload id to its file; ids that are not plain upload ids
+// map to "" so that no caller can reach outside the uploads directory.
+func (u *uploadStore) path(id string) string {
+	if !validUploadID(id) {
+		return ""
+	}
+	return filepath.Join(u.dir, id)
+}
 
 func (u *uploadStore) save(ctx context.Context, memberID int64, filename, mimeType string, r io.Reader, limit int64) (*uploadInfo, error) {
 	id := secrets.RandomToken(16)
@@ -73,6 +93,9 @@ func (u *uploadStore) save(ctx context.Context, memberID int64, filename, mimeTy
 }
 
 func (u *uploadStore) get(ctx context.Context, memberID int64, id string) (*uploadInfo, error) {
+	if !validUploadID(id) {
+		return nil, core.ErrNotFound
+	}
 	var info uploadInfo
 	err := u.svc.DB.QueryRowContext(ctx, `SELECT id, filename, mime, size FROM uploads WHERE id = ? AND member_id = ?`, id, memberID).Scan(&info.ID, &info.Filename, &info.MIME, &info.Size)
 	if err != nil {
@@ -81,11 +104,38 @@ func (u *uploadStore) get(ctx context.Context, memberID int64, id string) (*uplo
 	return &info, nil
 }
 
-func (u *uploadStore) open(id string) (io.ReadCloser, error) { return os.Open(u.path(id)) }
+func (u *uploadStore) open(id string) (io.ReadCloser, error) {
+	path := u.path(id)
+	if path == "" {
+		return nil, core.ErrNotFound
+	}
+	return os.Open(path)
+}
 
-func (u *uploadStore) delete(ctx context.Context, memberID int64, id string) {
-	u.svc.DB.ExecContext(ctx, `DELETE FROM uploads WHERE id = ? AND member_id = ?`, id, memberID)
-	os.Remove(u.path(id))
+// delete removes the caller's own upload. The file is only touched after
+// the database confirms that the id belongs to memberID.
+func (u *uploadStore) delete(ctx context.Context, memberID int64, id string) error {
+	path := u.path(id)
+	if path == "" {
+		return core.ErrNotFound
+	}
+	res, err := u.svc.DB.ExecContext(ctx, `DELETE FROM uploads WHERE id = ? AND member_id = ?`, id, memberID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		// Already gone (or not ours): deletion is idempotent, but only a
+		// confirmed owner row ever leads to touching the filesystem.
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (u *uploadStore) janitor() {

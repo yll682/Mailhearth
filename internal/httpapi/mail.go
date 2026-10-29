@@ -461,7 +461,10 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		writeJSON(w, http.StatusOK, out)
 	}))
 	mux.HandleFunc("DELETE /api/mail/uploads/{uploadId}", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		s.uploads.delete(r.Context(), principalFrom(r).Member.ID, r.PathValue("uploadId"))
+		if err := s.uploads.delete(r.Context(), principalFrom(r).Member.ID, r.PathValue("uploadId")); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}))
 

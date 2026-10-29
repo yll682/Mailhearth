@@ -50,6 +50,9 @@ func (s *Service) prepareMemberStatus(ctx context.Context, orgID, actor int64, p
 	if member.Status == model.MemberDeparted {
 		return nil, provider.Errorf("invalid", "离职成员不能通过启用或停用操作修改")
 	}
+	if err := requireMemberManageable(ctx, s.DB, orgID, actor, member.ID); err != nil {
+		return nil, err
+	}
 	if !*in.Enabled && (member.ID == actor || member.RoleKey == model.RoleOwner) {
 		return nil, provider.Errorf("invalid", "不能停用当前成员或组织所有者")
 	}

@@ -219,6 +219,14 @@ func (s *Service) UpdateMember(ctx context.Context, orgID, actor, id int64, in M
 		if err := requireManagementPermission(ctx, tx, orgID, actor, model.PermMembersManage); err != nil {
 			return err
 		}
+		if err := requireMemberManageable(ctx, tx, orgID, actor, id); err != nil {
+			return err
+		}
+		if roleID != m.RoleID {
+			if err := requireRoleGrantable(ctx, tx, orgID, actor, roleID); err != nil {
+				return err
+			}
+		}
 		if err := requireResourceAvailable(ctx, tx, orgID, "member:"+fmtID(id), "member-login:"+login); err != nil {
 			return err
 		}
@@ -274,6 +282,9 @@ func (s *Service) CreateInvite(ctx context.Context, orgID, actor, memberID int64
 	now := time.Now().UTC()
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := requireManagementPermission(ctx, tx, orgID, actor, model.PermMembersManage); err != nil {
+			return err
+		}
+		if err := requireMemberManageable(ctx, tx, orgID, actor, memberID); err != nil {
 			return err
 		}
 		if err := requireResourceAvailable(ctx, tx, orgID, "member:"+fmtID(memberID)); err != nil {
@@ -407,6 +418,14 @@ func (s *Service) SetPassword(ctx context.Context, orgID, actor, memberID int64,
 		return err
 	}
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if actor != memberID {
+			if err := requireManagementPermission(ctx, tx, orgID, actor, model.PermMembersManage); err != nil {
+				return err
+			}
+			if err := requireMemberManageable(ctx, tx, orgID, actor, memberID); err != nil {
+				return err
+			}
+		}
 		if err := requireResourceAvailable(ctx, tx, orgID, "member:"+fmtID(memberID)); err != nil {
 			return err
 		}
@@ -645,6 +664,9 @@ func (s *Service) DeleteMember(ctx context.Context, orgID, actor, id int64, expe
 	}
 	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := requireManagementPermission(ctx, tx, orgID, actor, model.PermMembersManage); err != nil {
+			return err
+		}
+		if err := requireMemberManageable(ctx, tx, orgID, actor, id); err != nil {
 			return err
 		}
 		if err := requireResourceAvailable(ctx, tx, orgID, "member:"+fmtID(id), "member-login:"+m.LoginEmail); err != nil {
