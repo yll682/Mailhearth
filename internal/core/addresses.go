@@ -24,16 +24,16 @@ func sanitizeSignature(html string) string {
 	return mimeutil.SanitizeSignature(html)
 }
 
-const addressSelect = `SELECT a.id,a.domain_id,d.name,a.local_part,a.address,a.kind,a.mailbox_id,a.group_id,a.targets_json,a.pm_rule_id,a.is_prefix,a.is_catchall,a.note,a.created_at,a.org_id,a.connection_id,a.domain_binding_id,a.address_key,a.management_mode,a.sync_state,a.revision,a.desired_targets_json,a.observed_targets_json FROM addresses a JOIN domains d ON d.id=a.domain_id`
+const addressSelect = `SELECT a.id,a.domain_id,d.name,a.local_part,a.address,a.kind,a.mailbox_id,a.group_id,a.targets_json,a.is_prefix,a.is_catchall,a.note,a.created_at,a.org_id,a.connection_id,a.domain_binding_id,a.address_key,a.management_mode,a.sync_state,a.revision,a.desired_targets_json,a.observed_targets_json FROM addresses a JOIN domains d ON d.id=a.domain_id`
 
 func scanAddress(row interface{ Scan(...any) error }) (*model.Address, error) {
 	var a model.Address
-	var mailbox, group, rule, binding sql.NullInt64
+	var mailbox, group, binding sql.NullInt64
 	var targets, desired, observed string
-	if err := row.Scan(&a.ID, &a.DomainID, &a.Domain, &a.LocalPart, &a.Address, &a.Kind, &mailbox, &group, &targets, &rule, &a.IsPrefix, &a.IsCatchall, &a.Note, &a.CreatedAt, &a.OrgID, &a.ConnectionID, &binding, &a.AddressKey, &a.ManagementMode, &a.SyncState, &a.Revision, &desired, &observed); err != nil {
+	if err := row.Scan(&a.ID, &a.DomainID, &a.Domain, &a.LocalPart, &a.Address, &a.Kind, &mailbox, &group, &targets, &a.IsPrefix, &a.IsCatchall, &a.Note, &a.CreatedAt, &a.OrgID, &a.ConnectionID, &binding, &a.AddressKey, &a.ManagementMode, &a.SyncState, &a.Revision, &desired, &observed); err != nil {
 		return nil, err
 	}
-	a.MailboxID, a.GroupID, a.PMRuleID, a.DomainBindingID = nullInt(mailbox), nullInt(group), nullInt(rule), nullInt(binding)
+	a.MailboxID, a.GroupID, a.DomainBindingID = nullInt(mailbox), nullInt(group), nullInt(binding)
 	if err := json.Unmarshal([]byte(targets), &a.Targets); err != nil {
 		return nil, err
 	}

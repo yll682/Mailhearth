@@ -147,15 +147,11 @@ func TestRoutingRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create alias: %v", err)
 	}
-	if alias.PMRuleID == nil {
-		t.Fatal("alias was stored without a Purelymail rule id")
-	}
-	h.TrackRule(*alias.PMRuleID, alias.Address)
-
 	live := h.RuleFor(ctx, aliasLocal)
 	if live == nil {
 		t.Fatalf("Purelymail has no routing rule for %s", alias.Address)
 	}
+	h.TrackRule(live.ID, alias.Address)
 	if len(live.TargetAddresses) != 1 || !strings.EqualFold(live.TargetAddresses[0], mb.Address) {
 		t.Fatalf("alias rule targets %v, want %s", live.TargetAddresses, mb.Address)
 	}
@@ -199,15 +195,14 @@ func TestGroupDistribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	if g.Address == nil || g.Address.PMRuleID == nil {
-		t.Fatalf("group has no distribution rule: %+v", g)
+	if g.Address == nil {
+		t.Fatalf("group has no distribution address: %+v", g)
 	}
-	h.TrackRule(*g.Address.PMRuleID, g.Address.Address)
-
 	live := h.RuleFor(ctx, groupLocal)
 	if live == nil {
 		t.Fatalf("Purelymail has no rule for group address %s", g.Address.Address)
 	}
+	h.TrackRule(live.ID, g.Address.Address)
 	if len(live.TargetAddresses) != 2 {
 		t.Fatalf("group rule should target both members, got %v", live.TargetAddresses)
 	}
@@ -273,7 +268,7 @@ func TestSharedMailboxAccess(t *testing.T) {
 // ManageSieve and proves the provider actually files mail with it.
 func TestSieveRules(t *testing.T) {
 	h := integration.New(t)
-	if h.Cfg.SieveAddr == "" {
+	if h.Env.SieveAddr == "" {
 		t.Skip("no ManageSieve address configured")
 	}
 	ctx, cancel := h.Ctx(10 * time.Minute)
@@ -449,15 +444,11 @@ func TestExternalForwarding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create forward: %v", err)
 	}
-	if addr.PMRuleID == nil {
-		t.Fatal("forward was stored without a Purelymail rule id")
-	}
-	h.TrackRule(*addr.PMRuleID, addr.Address)
-
 	live := h.RuleFor(ctx, local)
 	if live == nil || len(live.TargetAddresses) != 1 || !strings.EqualFold(live.TargetAddresses[0], h.Env.External) {
 		t.Fatalf("forward rule should target %s, got %+v", h.Env.External, live)
 	}
+	h.TrackRule(live.ID, addr.Address)
 	h.Logf("forward %s -> %s is live; check that mailbox manually for delivery", addr.Address, h.Env.External)
 }
 

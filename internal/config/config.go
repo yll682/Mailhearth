@@ -16,15 +16,6 @@ import (
 	"time"
 )
 
-// TLSMode describes how a protocol connection is secured.
-type TLSMode string
-
-const (
-	TLSImplicit TLSMode = "tls"      // TLS from the first byte (IMAPS 993, SMTPS 465)
-	TLSStart    TLSMode = "starttls" // plaintext upgrade (SMTP 587, ManageSieve 4190)
-	TLSNone     TLSMode = "none"     // only for the embedded dev stack
-)
-
 // Config is the fully-resolved runtime configuration.
 type Config struct {
 	Listen     string
@@ -35,15 +26,6 @@ type Config struct {
 	DevStack   bool   // start the embedded fake Purelymail/IMAP/SMTP stack
 	SetupToken string // when set, required to create the organisation
 	SecureCook bool   // set Secure on cookies (auto: true when BaseURL is https)
-
-	PurelymailAPIURL string
-
-	IMAPAddr  string
-	IMAPTLS   TLSMode
-	SMTPAddr  string
-	SMTPTLS   TLSMode
-	SieveAddr string
-	SieveTLS  TLSMode
 
 	IMAPMaxConns        int
 	IMAPIdleTimeout     time.Duration
@@ -109,15 +91,6 @@ func (l *loader) int(key string, def, min, max int) int {
 	return v
 }
 
-func envTLS(key string, def TLSMode) (TLSMode, error) {
-	v := TLSMode(strings.ToLower(env(key, string(def))))
-	switch v {
-	case TLSImplicit, TLSStart, TLSNone:
-		return v, nil
-	}
-	return "", fmt.Errorf("%s: unknown TLS mode %q (want tls|starttls|none)", key, v)
-}
-
 // Load reads configuration from the environment. Malformed or
 // out-of-range values are errors; values the runtime adjusts (such as the
 // IMAP connection cap) are reported in Warnings.
@@ -130,10 +103,6 @@ func Load() (*Config, error) {
 		LogLevel:         strings.ToLower(env("MAILHEARTH_LOG_LEVEL", "info")),
 		SetupToken:       env("MAILHEARTH_SETUP_TOKEN", ""),
 		DevStack:         l.bool("MAILHEARTH_DEV_STACK", false),
-		PurelymailAPIURL: strings.TrimRight(env("MAILHEARTH_PURELYMAIL_API_URL", "https://purelymail.com/api/v0"), "/"),
-		IMAPAddr:         env("MAILHEARTH_IMAP_ADDR", "imap.purelymail.com:993"),
-		SMTPAddr:         env("MAILHEARTH_SMTP_ADDR", "smtp.purelymail.com:465"),
-		SieveAddr:        env("MAILHEARTH_SIEVE_ADDR", "mailserver.purelymail.com:4190"),
 		IMAPMaxConns:     l.int("MAILHEARTH_IMAP_MAX_CONNS", 24, 1, 10000),
 		IMAPIdleTimeout:  time.Duration(l.int("MAILHEARTH_IMAP_IDLE_SECONDS", 90, 10, 3600)) * time.Second,
 		MaxUploadBytes:   int64(l.int("MAILHEARTH_MAX_UPLOAD_MB", 25, 1, 2048)) << 20,
@@ -145,15 +114,6 @@ func Load() (*Config, error) {
 		TrustProxyHeader: l.bool("MAILHEARTH_TRUST_PROXY", false),
 	}
 	var err error
-	if c.IMAPTLS, err = envTLS("MAILHEARTH_IMAP_TLS", TLSImplicit); err != nil {
-		l.errs = append(l.errs, err)
-	}
-	if c.SMTPTLS, err = envTLS("MAILHEARTH_SMTP_TLS", TLSImplicit); err != nil {
-		l.errs = append(l.errs, err)
-	}
-	if c.SieveTLS, err = envTLS("MAILHEARTH_SIEVE_TLS", TLSStart); err != nil {
-		l.errs = append(l.errs, err)
-	}
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
 	default:

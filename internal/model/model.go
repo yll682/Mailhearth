@@ -296,7 +296,6 @@ type Address struct {
 	ManagementMode  string   `json:"managementMode"`
 	SyncState       string   `json:"syncState"`
 	Revision        int64    `json:"revision"`
-	PMRuleID        *int64   `json:"-"`
 	IsPrefix        bool     `json:"isPrefix"`
 	IsCatchall      bool     `json:"isCatchall"`
 	Note            string   `json:"note"`

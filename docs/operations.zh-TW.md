@@ -35,7 +35,7 @@ Mailhearth 專為超低資源耗用的輕量化主機設計，即使在市面上
 | --- | --- | --- |
 | `MAILHEARTH_BASE_URL` | 空 | 對外公開 URL，用於產生邀請連結。使用 `https://` 位址時會啟用 `Secure` Cookie。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP 監聽位址。 |
-| `MAILHEARTH_DATA_DIR` | `./data`（容器內為 `/data`） | SQLite 資料庫、主金鑰、上傳檔案與遷移前備份。 |
+| `MAILHEARTH_DATA_DIR` | `./data`（容器內為 `/data`） | SQLite 資料庫、主金鑰與上傳檔案。 |
 | `MAILHEARTH_MASTER_KEY` | 自動產生到 `<data>/master.key` | 32 位元組金鑰（base64 或 hex），用於加密儲存的憑證。 |
 | `MAILHEARTH_SETUP_TOKEN` | 空 | 設定後，在全新實例上建立組織時必須提供此權杖，避免搶先存取實例的人佔用擁有者身分。若實例在完成初始化前即可被存取，建議設定。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
@@ -54,8 +54,6 @@ Mailhearth 專為超低資源耗用的輕量化主機設計，即使在市面上
 | `MAILHEARTH_INVITE_DAYS` | `7` | 邀請連結有效天數（1 到 90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 僅供開發：行程內模擬服務商、IMAP 與 SMTP。 |
 | `GOMEMLIMIT` | 未設定時為 `160MiB` | Go 堆積記憶體上限。 |
-
-`MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR` 與 `MAILHEARTH_SIEVE_TLS` 只會在升級「郵件連線」功能出現之前建立的安裝時讀取一次，並轉換為其第一個連線。除此之外，連線與協定端點皆在管理後台中設定。
 
 ## 資料備份與災難復原
 
@@ -88,19 +86,21 @@ docker compose start
 2. 將備份的 `mailhearth.db`（或熱備份產生的 `.db` 檔案重新命名為 `mailhearth.db`）與 `master.key` 放置於新伺服器的資料目錄中；
 3. 啟動 `docker compose up -d`，系統啟動時將自動識別資料、驗證主金鑰並平順接手運作。
 
-## 系統升級與資料庫遷移
+## 系統升級與資料庫結構
 
-Mailhearth 內建了宣告式的資料庫遷移引擎（`internal/db/migrations`）。
+資料庫結構定義於 `internal/db/migrations/0001_init.sql`。在資料目錄為空的情況下首次啟動時，該結構會在單一交易中套用；任何一條陳述式失敗都會還原整筆交易，資料庫維持為空。結構版本記錄於 SQLite 的 `PRAGMA user_version`。
 
-1. **自動遷移機制**：當啟動新版本二進位檔時，系統會自動偵測現有資料庫結構版本，依序執行所需的資料表演進、外部鍵關聯重建與資料完整性檢驗。修改既有資料庫之前，系統會在同一目錄寫入一份副本，命名為 `mailhearth.db.pre-<遷移名稱>-<時間戳記>.bak`。
-2. **升級前準備**：在拉取新版本映像檔前，務必依前述步驟先完成一次完整的資料庫熱備份與 `master.key` 備份。
-3. **執行升級**：
+對於並非由 Mailhearth 建立的資料庫（例如預發行版本遺留的資料庫），以及結構版本高於目前二進位檔的資料庫，Mailhearth 會拒絕啟動。前一種情況請以空的資料目錄重新啟動；後一種情況請執行相符的版本。
+
+後續的結構變更會以新增的編號檔案發布，每個檔案在各自獨立的交易中套用。
+
+1. **升級前準備**：先完成一次備份（見上文），並核對 `master.key` 備份。
+2. **執行升級**：
    ```bash
-   git pull
    docker compose pull
-   docker compose up -d --build
+   docker compose up -d
    ```
-4. **版本還原說明**：Mailhearth 的資料庫遷移僅支援向前相容。若升級後遇到不可預期的狀況需要還原舊版本，**不支援跨遷移版本直接降級執行**；請切換回舊版本映像檔，並還原升級前儲存的資料庫備份。也可以直接還原自動產生的 `.bak` 副本；確認升級無誤後可刪除舊的 `.bak` 副本。
+3. **版本還原**：舊版本二進位檔無法在較新的資料庫結構上執行。還原時請同時還原升級前的備份並切換回舊版本映像檔。
 
 ## 反向代理與 TLS 設定
 
@@ -206,8 +206,8 @@ docker compose logs -f --tail=100 mailhearth
 # 執行全部基準測試
 go test ./... -run '^$'
 
-# 執行多服務商模型與核心領域測試
-go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+# 執行資料庫結構、領域模型、HTTP API 與全新安裝測試
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhearth
 
 # 程式碼靜態品質檢查
 go vet ./...

@@ -101,8 +101,7 @@ func main() {
 	defer database.Close()
 	cfg := &config.Config{
 		Listen: *listen, DataDir: abs, BaseURL: "http://" + *listen, DevStack: true,
-		PurelymailAPIURL: stack.APIURL, IMAPAddr: stack.IMAPAddr, IMAPTLS: config.TLSImplicit,
-		SMTPAddr: stack.SMTPAddr, SMTPTLS: config.TLSImplicit, CABundles: map[int64]*x509.CertPool{1: roots},
+		CABundles:    map[int64]*x509.CertPool{1: roots},
 		IMAPMaxConns: 24, IMAPIdleTimeout: 90 * time.Second,
 		MaxUploadBytes: 25 << 20, MaxMessageBytes: 40 << 20,
 		SessionTTL: 30 * 24 * time.Hour, InviteTTL: 7 * 24 * time.Hour,

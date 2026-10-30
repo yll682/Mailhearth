@@ -34,11 +34,11 @@ type Env struct {
 	Prefix    string
 	APIURL    string
 	IMAPAddr  string
-	IMAPTLS   config.TLSMode
+	IMAPTLS   string
 	SMTPAddr  string
-	SMTPTLS   config.TLSMode
+	SMTPTLS   string
 	SieveAddr string
-	SieveTLS  config.TLSMode
+	SieveTLS  string
 	External  string        // optional address outside the account, for forward tests
 	Deliver   time.Duration // how long to wait for a message to arrive
 	Keep      bool          // leave created objects behind for inspection
@@ -51,9 +51,9 @@ func envStr(key, def string) string {
 	return def
 }
 
-func envTLS(key string, def config.TLSMode) config.TLSMode {
-	switch v := config.TLSMode(strings.ToLower(envStr(key, string(def)))); v {
-	case config.TLSImplicit, config.TLSStart, config.TLSNone:
+func envTLS(key string, def string) string {
+	switch v := strings.ToLower(envStr(key, def)); v {
+	case "tls", "starttls", "none":
 		return v
 	default:
 		return def
@@ -80,9 +80,9 @@ func LoadEnv(t *testing.T) Env {
 		External:  strings.ToLower(strings.TrimSpace(os.Getenv("MAILHEARTH_IT_EXTERNAL"))),
 		Keep:      strings.TrimSpace(os.Getenv("MAILHEARTH_IT_KEEP")) != "",
 	}
-	e.IMAPTLS = envTLS("MAILHEARTH_IT_IMAP_TLS", config.TLSImplicit)
-	e.SMTPTLS = envTLS("MAILHEARTH_IT_SMTP_TLS", config.TLSImplicit)
-	e.SieveTLS = envTLS("MAILHEARTH_IT_SIEVE_TLS", config.TLSStart)
+	e.IMAPTLS = envTLS("MAILHEARTH_IT_IMAP_TLS", "tls")
+	e.SMTPTLS = envTLS("MAILHEARTH_IT_SMTP_TLS", "tls")
+	e.SieveTLS = envTLS("MAILHEARTH_IT_SIEVE_TLS", "starttls")
 	secs := 180
 	if v := strings.TrimSpace(os.Getenv("MAILHEARTH_IT_DELIVER_SECONDS")); v != "" {
 		if n, err := time.ParseDuration(v + "s"); err == nil {
@@ -127,20 +127,13 @@ func New(t *testing.T) *Harness {
 
 	dir := t.TempDir()
 	cfg := &config.Config{
-		DataDir:          dir,
-		PurelymailAPIURL: env.APIURL,
-		IMAPAddr:         env.IMAPAddr,
-		IMAPTLS:          env.IMAPTLS,
-		SMTPAddr:         env.SMTPAddr,
-		SMTPTLS:          env.SMTPTLS,
-		SieveAddr:        env.SieveAddr,
-		SieveTLS:         env.SieveTLS,
-		IMAPMaxConns:     8,
-		IMAPIdleTimeout:  90 * time.Second,
-		MaxUploadBytes:   25 << 20,
-		MaxMessageBytes:  40 << 20,
-		SessionTTL:       24 * time.Hour,
-		InviteTTL:        24 * time.Hour,
+		DataDir:         dir,
+		IMAPMaxConns:    8,
+		IMAPIdleTimeout: 90 * time.Second,
+		MaxUploadBytes:  25 << 20,
+		MaxMessageBytes: 40 << 20,
+		SessionTTL:      24 * time.Hour,
+		InviteTTL:       24 * time.Hour,
 	}
 
 	database, err := db.Open(filepath.Join(dir, "mailhearth.db"))
@@ -159,7 +152,7 @@ func New(t *testing.T) *Harness {
 	}
 
 	pool := imappool.New(imappool.Config{
-		Addr: cfg.IMAPAddr, TLSMode: string(cfg.IMAPTLS), MaxConns: cfg.IMAPMaxConns,
+		Addr: env.IMAPAddr, TLSMode: env.IMAPTLS, MaxConns: cfg.IMAPMaxConns,
 		PerCredIdle: 2, IdleTimeout: cfg.IMAPIdleTimeout, Logger: log,
 	})
 	t.Cleanup(pool.Close)

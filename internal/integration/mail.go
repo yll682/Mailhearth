@@ -39,7 +39,7 @@ func (h *Harness) withConn(ctx context.Context, cred imappool.Cred, fn func(*ima
 // that the provider has since revoked.
 func (h *Harness) dialFresh(ctx context.Context, cred imappool.Cred) error {
 	pool := imappool.New(imappool.Config{
-		Addr: h.Cfg.IMAPAddr, TLSMode: string(h.Cfg.IMAPTLS),
+		Addr: h.Env.IMAPAddr, TLSMode: h.Env.IMAPTLS,
 		MaxConns: 1, PerCredIdle: 0, IdleTimeout: 30 * time.Second, Logger: h.Log,
 	})
 	defer pool.Close()
@@ -169,8 +169,8 @@ func (h *Harness) Send(ctx context.Context, cred imappool.Cred, to []string, sub
 func (h *Harness) SendRaw(ctx context.Context, cred imappool.Cred, to []string, raw []byte) {
 	h.T.Helper()
 	cfg := mailops.SMTPConfig{
-		Addr:    h.Cfg.SMTPAddr,
-		TLSMode: string(h.Cfg.SMTPTLS),
+		Addr:    h.Env.SMTPAddr,
+		TLSMode: h.Env.SMTPTLS,
 		Timeout: 60 * time.Second,
 	}
 	if err := mailops.Send(ctx, cfg, cred.User, cred.Pass, cred.User, to, raw); err != nil {
@@ -302,8 +302,8 @@ func (h *Harness) Message(ctx context.Context, cred imappool.Cred, folder string
 // sieveClient opens a ManageSieve session for the credential.
 func (h *Harness) sieveClient(ctx context.Context, cred imappool.Cred) *sieve.Client {
 	h.T.Helper()
-	host, _, _ := strings.Cut(h.Cfg.SieveAddr, ":")
-	c, err := sieve.Dial(ctx, h.Cfg.SieveAddr, string(h.Cfg.SieveTLS), &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+	host, _, _ := strings.Cut(h.Env.SieveAddr, ":")
+	c, err := sieve.Dial(ctx, h.Env.SieveAddr, h.Env.SieveTLS, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
 	if err != nil {
 		h.T.Fatalf("managesieve connect: %v", err)
 	}

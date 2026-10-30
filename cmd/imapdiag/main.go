@@ -55,7 +55,7 @@ func credFromDataDir(dataDir string, mailboxID int64) (imappool.Cred, error) {
 	if err != nil {
 		return imappool.Cred{}, err
 	}
-	database, err := db.Open(filepath.Join(dataDir, "mailhearth.db"), db.MigrationInputs{PurelymailAPIURL: cfg.PurelymailAPIURL, IMAPAddr: cfg.IMAPAddr, IMAPTLS: string(cfg.IMAPTLS), SMTPAddr: cfg.SMTPAddr, SMTPTLS: string(cfg.SMTPTLS), SieveAddr: cfg.SieveAddr, SieveTLS: string(cfg.SieveTLS), CredentialsBox: box, AllowDevelopmentPlaintext: cfg.DevStack})
+	database, err := db.Open(filepath.Join(dataDir, "mailhearth.db"))
 	if err != nil {
 		return imappool.Cred{}, err
 	}

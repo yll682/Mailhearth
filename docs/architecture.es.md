@@ -11,9 +11,9 @@ La división de responsabilidades del sistema es nítida:
 - **Núcleo de Mailhearth**: Opera como capa de gestión y aplicación superior, manteniendo la estructura de la organización, cuentas y roles, almacenamiento cifrado de credenciales, mapeo de recursos, tareas asíncronas de control, registros de entrega y metadatos de colaboración en equipo.
 
 Responsabilidades de los componentes principales:
-- `cmd/mailhearth`: Punto de entrada del servicio; gestiona la carga de configuración, derivación y validación de la clave maestra, ejecución de migraciones de base de datos, inicialización del grupo de conexiones IMAP, orquestación de subprocesos en segundo plano y vinculación del servidor HTTP/SSE.
+- `cmd/mailhearth`: Punto de entrada del servicio; gestiona la carga de configuración, derivación y validación de la clave maestra, inicialización de la base de datos, inicialización del grupo de conexiones IMAP, orquestación de subprocesos en segundo plano y vinculación del servidor HTTP/SSE.
 - `internal/config`, `internal/secrets`: Validación de variables de entorno; cifrado AES-256-GCM con derivación HKDF; cálculo seguro de hash de contraseñas con argon2id y ciclo de vida de tokens de sesión.
-- `internal/db`, `internal/model`: Motor integrado de migraciones SQL, restricciones de integridad referencial, entidades de dominio y modelos persistentes.
+- `internal/db`, `internal/model`: Esquema integrado aplicado en una única transacción, restricciones de clave foránea y de ámbito de inquilino, entidades de dominio y modelos persistentes.
 - `internal/provider`: Interfaz abstracta unificada para proveedores de correo y adaptadores dedicados para Purelymail, Migadu y conexiones manuales estándar IMAP/SMTP.
 - `internal/purelymail`: Cliente de transporte de API de bajo nivel y mapeo de errores estructurados para la API de gestión de Purelymail.
 - `internal/core`: Lógica de negocio central que gestiona conexiones, descubrimiento e importación de recursos, permisos organizativos, ciclo de vida de buzones, operaciones persistentes asíncronas (Operation) y seguimiento de envíos (Submission).

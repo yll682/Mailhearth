@@ -227,7 +227,7 @@ func newRulePlan(ctx context.Context, q managementQuery, orgID, connectionID, bi
 		}
 	}
 	var exists bool
-	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM addresses WHERE connection_id=? AND address_key=?)`, connectionID, plan.Address).Scan(&exists); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM addresses WHERE connection_id=? AND address_key=?)`, connectionID, strings.ToLower(plan.Address)).Scan(&exists); err != nil {
 		return plan, err
 	}
 	if exists {
@@ -553,7 +553,7 @@ func (s *Service) reserveRouting(ctx context.Context, tx *sql.Tx, orgID int64, i
 			if rule.Kind == model.AddressGroup {
 				groupID = plan.GroupID
 			}
-			result, err := tx.ExecContext(ctx, `INSERT INTO addresses(org_id,connection_id,domain_id,domain_binding_id,local_part,address,address_key,kind,mailbox_id,group_id,management_mode,desired_targets_json,sync_state,is_prefix,is_catchall,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?)`, orgID, rule.ConnectionID, rule.DomainID, sqlNullInt(rule.BindingID), rule.Local, rule.Address, rule.Address, rule.Kind, sqlNullInt(rule.MailboxID), groupID, rule.Mode, toJSON(rule.Targets), boolInt(rule.Kind == model.AddressPrefix), boolInt(rule.Kind == model.AddressCatchall), rule.Note, now, now)
+			result, err := tx.ExecContext(ctx, `INSERT INTO addresses(org_id,connection_id,domain_id,domain_binding_id,local_part,address,address_key,kind,mailbox_id,group_id,management_mode,desired_targets_json,sync_state,is_prefix,is_catchall,note,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?)`, orgID, rule.ConnectionID, rule.DomainID, sqlNullInt(rule.BindingID), rule.Local, rule.Address, strings.ToLower(rule.Address), rule.Kind, sqlNullInt(rule.MailboxID), groupID, rule.Mode, toJSON(rule.Targets), boolInt(rule.Kind == model.AddressPrefix), boolInt(rule.Kind == model.AddressCatchall), rule.Note, now, now)
 			if err != nil {
 				return err
 			}

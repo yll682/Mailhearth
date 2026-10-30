@@ -35,7 +35,7 @@ Todas las opciones son variables de entorno. Los valores mal formados o fuera de
 | --- | --- | --- |
 | `MAILHEARTH_BASE_URL` | vacío | URL pública, usada en los enlaces de invitación. Una URL `https://` activa las cookies `Secure`. |
 | `MAILHEARTH_LISTEN` | `:8080` | Dirección de escucha HTTP. |
-| `MAILHEARTH_DATA_DIR` | `./data` (`/data` en el contenedor) | Base de datos SQLite, clave maestra, archivos subidos y copias previas a las migraciones. |
+| `MAILHEARTH_DATA_DIR` | `./data` (`/data` en el contenedor) | Base de datos SQLite, clave maestra y archivos subidos. |
 | `MAILHEARTH_MASTER_KEY` | generada en `<data>/master.key` | Clave de 32 bytes (base64 o hex) que cifra las credenciales guardadas. |
 | `MAILHEARTH_SETUP_TOKEN` | vacío | Si se define, crear la organización en una instancia nueva exige este token, para que quien llegue primero a la instancia no pueda apropiarse de ella. Recomendado si la instancia es accesible antes de terminar la configuración. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` o `error`. |
@@ -54,8 +54,6 @@ Todas las opciones son variables de entorno. Los valores mal formados o fuera de
 | `MAILHEARTH_INVITE_DAYS` | `7` | Validez de los enlaces de invitación (1 a 90). |
 | `MAILHEARTH_DEV_STACK` | `false` | Solo desarrollo: proveedor, IMAP y SMTP simulados en el propio proceso. |
 | `GOMEMLIMIT` | `160MiB` si no se define | Límite del heap de Go. |
-
-`MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` y `MAILHEARTH_SIEVE_TLS` solo se leen una vez, al actualizar una instalación creada antes de que existieran las conexiones de correo: se convierten en su primera conexión. En los demás casos, las conexiones y los endpoints de protocolo se configuran en la consola de administración.
 
 ## Copias de seguridad y recuperación ante desastres
 
@@ -88,19 +86,21 @@ Restaurar Mailhearth en una máquina limpia se reduce a tres sencillos pasos:
 2. Copia la base de datos `mailhearth.db` respaldada (o renombra la copia en caliente a `mailhearth.db`) y el archivo `master.key` dentro del directorio de datos del host;
 3. Ejecuta `docker compose up -d`. El sistema validará la clave maestra, ejecutará las comprobaciones necesarias y reanudará el servicio sin fricción.
 
-## Actualizaciones del sistema y migraciones de esquemas
+## Actualizaciones y esquema de la base de datos
 
-Mailhearth incorpora un motor de migraciones declarativas (`internal/db/migrations`).
+El esquema se define en `internal/db/migrations/0001_init.sql`. En el primer arranque con un directorio de datos vacío se aplica en una única transacción; si alguna sentencia falla, la transacción se revierte y la base de datos queda vacía. La versión del esquema se guarda en `PRAGMA user_version` de SQLite.
 
-1. **Migración automática**: Al iniciar una nueva versión del binario, el sistema detecta la versión del esquema actual y aplica en una transacción atómica las actualizaciones de tablas, claves foráneas y comprobaciones de integridad pertinentes. Antes de modificar una base de datos existente, escribe una copia junto a ella con el nombre `mailhearth.db.pre-<migración>-<marca de tiempo>.bak`.
-2. **Medida preventiva**: Antes de descargar nuevas imágenes de contenedores, realiza siempre una copia de seguridad coherente de la base de datos y de `master.key`.
-3. **Aplicar la actualización**:
+Mailhearth se niega a arrancar sobre una base de datos que no haya creado (por ejemplo, una que haya dejado una versión preliminar) y sobre una base de datos cuyo esquema sea más reciente que el binario en ejecución. En el primer caso, arranca con un directorio de datos vacío; en el segundo, ejecuta la versión correspondiente.
+
+Los cambios de esquema posteriores se publicarán como archivos numerados adicionales, cada uno aplicado en su propia transacción.
+
+1. **Antes de actualizar**: realiza una copia de seguridad (ver más arriba) y verifica la copia de `master.key`.
+2. **Aplicar la actualización**:
    ```bash
-   git pull
    docker compose pull
-   docker compose up -d --build
+   docker compose up -d
    ```
-4. **Política de reversión (Rollback)**: Las migraciones solo garantizan compatibilidad hacia adelante. Si surge una incidencia y se necesita volver atrás, **no está permitido ejecutar versiones antiguas sobre esquemas migrados**; restaura la copia de seguridad de la base de datos previa a la actualización y vuelve a la imagen anterior. También puedes restaurar la copia `.bak` automática; elimina las copias `.bak` antiguas cuando confirmes que la actualización funciona.
+3. **Reversión**: los binarios antiguos no se ejecutan sobre un esquema más reciente. Para volver atrás, restaura la copia de seguridad previa a la actualización junto con la imagen anterior.
 
 ## Proxy inverso y configuración de TLS
 
@@ -206,8 +206,8 @@ docker compose logs -f --tail=100 mailhearth
 # Ejecutar pruebas base
 go test ./... -run '^$'
 
-# Validar modelos multiproveedor y pruebas de dominio
-go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+# Pruebas de esquema de base de datos, modelo de dominio, API HTTP e instalación nueva
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhearth
 
 # Análisis estático de código
 go vet ./...

@@ -147,11 +147,11 @@ func seedDatabase(ctx context.Context, svc *core.Service, stack *devstack.Stack)
 		}
 		domains, bindings := map[string]int64{}, map[string]int64{}
 		for i, name := range domainNames {
-			dmarc, result := 1, "pass"
+			result := "pass"
 			if i == 2 {
-				dmarc, result = 0, "fail"
+				result = "fail"
 			}
-			domains[name] = insert("INSERT INTO domains(org_id,name,dns_mx,dns_spf,dns_dkim,dns_dmarc,dns_checked_at,created_at,updated_at) VALUES (?,?,1,1,1,?,?,?,?)", org.ID, name, dmarc, now, now, now)
+			domains[name] = insert("INSERT INTO domains(org_id,name,created_at,updated_at) VALUES (?,?,?,?)", org.ID, name, now, now)
 			bindings[name] = insert("INSERT INTO domain_bindings(org_id,domain_id,connection_id,management_mode,remote_state,dns_status_json,dns_checked_at,created_at,updated_at) VALUES (?,?,?,'api','present',?,?,?,?)", org.ID, domains[name], connection, jsonText(map[string]string{"mx": "pass", "spf": "pass", "dkim": "pass", "dmarc": result}), now, now, now)
 			insert("INSERT INTO provider_resources(connection_id,resource_type,remote_key,remote_locator_json,purpose,remote_state,domain_binding_id,created_at,updated_at) VALUES (?,'domain',?,?,'domain','present',?,?,?)", connection, name, jsonText(map[string]string{"domain": name}), bindings[name], now, now)
 		}

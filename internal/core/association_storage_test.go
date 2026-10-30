@@ -36,7 +36,7 @@ func TestMultiProviderStorageAssociationOwnership(t *testing.T) {
 	if _, _, err := s.ReserveSubmission(ctx, m.OrgID, m.ID, mailboxID, input); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.DB.ExecContext(ctx, `DELETE FROM mailboxes WHERE id=?`, mailboxID); err == nil || !strings.Contains(err.Error(), "mailbox_has_history") {
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM mailboxes WHERE id=?`, mailboxID); err == nil || !strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
 		t.Fatalf("数据库没有保护邮箱历史：%v", err)
 	}
 	var count int

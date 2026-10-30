@@ -35,7 +35,7 @@ Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上
 | --- | --- | --- |
 | `MAILHEARTH_BASE_URL` | 空 | 对外公开 URL，用于生成邀请链接。使用 `https://` 地址时会启用 `Secure` Cookie。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP 监听地址。 |
-| `MAILHEARTH_DATA_DIR` | `./data`（容器内为 `/data`） | SQLite 数据库、主密钥、上传文件与迁移前备份。 |
+| `MAILHEARTH_DATA_DIR` | `./data`（容器内为 `/data`） | SQLite 数据库、主密钥与上传文件。 |
 | `MAILHEARTH_MASTER_KEY` | 自动生成到 `<data>/master.key` | 32 字节密钥（base64 或 hex），用于加密保存的凭据。 |
 | `MAILHEARTH_SETUP_TOKEN` | 空 | 设置后，在全新实例上创建组织时必须提供该令牌，避免抢先访问实例的人占用所有者身份。若实例在完成初始化前即可被访问，建议设置。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
@@ -54,8 +54,6 @@ Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上
 | `MAILHEARTH_INVITE_DAYS` | `7` | 邀请链接有效天数（1 到 90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 仅用于开发：进程内模拟服务商、IMAP 与 SMTP。 |
 | `GOMEMLIMIT` | 未设置时为 `160MiB` | Go 堆内存上限。 |
-
-`MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR` 与 `MAILHEARTH_SIEVE_TLS` 只会在升级“邮件连接”功能出现之前创建的安装时读取一次，并被转换为其第一个连接。除此之外，连接与协议端点均在管理后台中配置。
 
 ## 数据备份与灾难恢复
 
@@ -88,19 +86,21 @@ docker compose start
 2. 将备份的 `mailhearth.db`（或热备生成的 `.db` 文件重命名为 `mailhearth.db`）与 `master.key` 放置在新服务器的数据目录中；
 3. 启动 `docker compose up -d`，系统启动时将自动识别数据、验证主密钥并平滑接管运行。
 
-## 系统升级与数据迁移
+## 系统升级与数据库结构
 
-Mailhearth 内置了声明式的数据库迁移引擎（`internal/db/migrations`）。
+数据库结构定义在 `internal/db/migrations/0001_init.sql` 中。在数据目录为空的情况下首次启动时，该结构会在单个事务中应用；任何一条语句失败都会回滚整个事务，数据库保持为空。结构版本记录在 SQLite 的 `PRAGMA user_version` 中。
 
-1. **自动迁移机制**：当启动新版本二进制时，系统会自动探测数据库架构版本，按序执行所需的表结构演进、外键关系重构与数据完整性校验。修改已有数据库之前，系统会在同一目录写入一份副本，命名为 `mailhearth.db.pre-<迁移名>-<时间戳>.bak`。
-2. **升级前准备**：在拉取新版本镜像之前，务必按上述步骤先完成一次完整的数据库热备份与 `master.key` 备份。
-3. **执行升级**：
+对于并非由 Mailhearth 创建的数据库（例如预发布版本遗留的数据库），以及结构版本高于当前二进制的数据库，Mailhearth 会拒绝启动。前一种情况请使用空的数据目录重新启动；后一种情况请运行与之匹配的版本。
+
+后续的结构变更会以新增的编号文件发布，每个文件在各自独立的事务中应用。
+
+1. **升级前准备**：先完成一次备份（见上文），并核对 `master.key` 备份。
+2. **执行升级**：
    ```bash
-   git pull
    docker compose pull
-   docker compose up -d --build
+   docker compose up -d
    ```
-4. **版本回滚说明**：Mailhearth 的数据库迁移仅向前兼容。若升级后遇到不可预期的异常需要回滚旧版本，**不支持跨迁移版本直接降级运行**；请切回旧版本镜像，并还原升级前保存的数据库备份。也可以直接还原自动生成的 `.bak` 副本；确认升级无误后可删除旧的 `.bak` 副本。
+3. **版本回滚**：旧版本二进制无法在更新的数据库结构上运行。回滚时请同时还原升级前的备份并切回旧版本镜像。
 
 ## 反向代理与 TLS 配置
 
@@ -206,8 +206,8 @@ docker compose logs -f --tail=100 mailhearth
 # 运行全部基准测试
 go test ./... -run '^$'
 
-# 运行多服务商模型与核心业务测试
-go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+# 运行数据库结构、领域模型、HTTP API 与全新安装测试
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhearth
 
 # 代码静态质量检查
 go vet ./...

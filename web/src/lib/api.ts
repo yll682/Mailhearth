@@ -103,7 +103,7 @@ export interface Domain {
 export interface Address {
   connectionId: number; domainBindingId?: number; revision: number; managementMode: "api" | "external"; syncState: string; desiredTargets: string[]; observedTargets: string[];
   id: number; domainId: number; domain: string; localPart: string; address: string; kind: "primary" | "alias" | "forward" | "group" | "catchall" | "prefix" | "external_rule";
-  mailboxId: number | null; groupId: number | null; targets: string[]; pmRuleId: number | null; isPrefix: boolean; isCatchall: boolean; note: string; createdAt: string;
+  mailboxId: number | null; groupId: number | null; targets: string[]; isPrefix: boolean; isCatchall: boolean; note: string; createdAt: string;
 }
 export interface Group { id: number; name: string; description: string; memberIds: number[]; address: Address | null; revision: number; createdAt: string }
 export interface ResourceOptions {

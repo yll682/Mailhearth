@@ -1,4 +1,4 @@
-// Package db opens the SQLite database and applies embedded migrations.
+// Package db opens the SQLite database and applies the embedded schema.
 //
 // SQLite is deliberately the only storage engine: Mailhearth targets very
 // small servers and must not require a separate database process.
@@ -16,35 +16,23 @@ import (
 	"strings"
 	"time"
 
-	"mailhearth/internal/secrets"
-
 	_ "modernc.org/sqlite"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
+// schemaFiles is the source of schema files; tests substitute it.
+var schemaFiles fs.FS = migrationFS
+
 // DB wraps *sql.DB with helpers.
 type DB struct {
 	*sql.DB
-	path string
 }
 
-// MigrationInputs carries the old installation inputs needed by version 2.
-type MigrationInputs struct {
-	PurelymailAPIURL          string
-	IMAPAddr                  string
-	IMAPTLS                   string
-	SMTPAddr                  string
-	SMTPTLS                   string
-	SieveAddr                 string
-	SieveTLS                  string
-	CredentialsBox            *secrets.Box
-	AllowDevelopmentPlaintext bool
-}
-
-// Open opens (creating if needed) the database at path and migrates it.
-func Open(path string, inputs ...MigrationInputs) (*DB, error) {
+// Open opens (creating if needed) the database at path and brings its
+// schema up to date.
+func Open(path string) (*DB, error) {
 	p := filepath.ToSlash(path)
 	// 写入事务在开始时取得写入权限，保持候选检查与提交处于同一事务。
 	dsn := "file:" + p + "?_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-4000)"
@@ -57,203 +45,85 @@ func Open(path string, inputs ...MigrationInputs) (*DB, error) {
 	sqldb.SetMaxOpenConns(4)
 	sqldb.SetMaxIdleConns(2)
 	sqldb.SetConnMaxIdleTime(5 * time.Minute)
-	d := &DB{DB: sqldb, path: path}
-	var in MigrationInputs
-	if len(inputs) > 0 {
-		in = inputs[0]
-	}
-	if err := d.migrate(context.Background(), in); err != nil {
+	d := &DB{DB: sqldb}
+	if err := d.migrate(context.Background()); err != nil {
 		sqldb.Close()
 		return nil, err
 	}
 	return d, nil
 }
 
-func (d *DB) migrate(ctx context.Context, inputs MigrationInputs) error {
-	if _, err := d.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
-		return err
-	}
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+// migrations returns the embedded schema files in order. The schema version
+// stored in PRAGMA user_version is the number of files applied.
+func migrations() ([]string, error) {
+	entries, err := fs.ReadDir(schemaFiles, "migrations")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	names := make([]string, 0, len(entries))
+	var names []string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".sql") {
 			names = append(names, e.Name())
 		}
 	}
 	sort.Strings(names)
-	var pending []string
-	for _, name := range names {
-		applied, err := migrationApplied(ctx, d, name)
-		if err != nil {
-			return err
-		}
-		if !applied {
-			pending = append(pending, name)
-		}
-	}
-	if err := d.backupBeforeMigration(ctx, len(names)-len(pending), pending); err != nil {
-		return err
-	}
-	for _, name := range pending {
-		body, err := migrationFS.ReadFile("migrations/" + name)
-		if err != nil {
-			return err
-		}
-		if name == "0002_multi_provider.sql" {
-			if err := d.migrateV2(ctx, string(body), inputs); err != nil {
-				return fmt.Errorf("migration %s: %w", name, err)
-			}
-			continue
-		}
-		if name == "0009_restrict_management_references.sql" || name == "0013_forwarding_observations.sql" {
-			if err := d.migrateStructural(ctx, name, string(body)); err != nil {
-				return fmt.Errorf("migration %s: %w", name, err)
-			}
-			continue
-		}
-		tx, err := d.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		// The write lock is held from BEGIN (_txlock=immediate): re-check
-		// here so a second process starting at the same time skips instead
-		// of failing.
-		if applied, err := migrationApplied(ctx, tx, name); err != nil || applied {
-			tx.Rollback()
-			if err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %s: %w", name, err)
-		}
-		if name == "0005_association_scopes.sql" {
-			if err := validateAssociationScopes(ctx, tx); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("migration %s: %w", name, err)
-			}
-		}
-		if name == "0006_resource_ownership.sql" {
-			var kind, id, related string
-			err := tx.QueryRowContext(ctx, `SELECT object_type,object_id,COALESCE(related_id,0) FROM additional_scope_errors ORDER BY object_type,object_id LIMIT 1`).Scan(&kind, &id, &related)
-			if err != nil && !IsNotFound(err) {
-				tx.Rollback()
-				return err
-			}
-			if err == nil {
-				tx.Rollback()
-				return fmt.Errorf("migration %s: association_scope_conflict: %s id=%s relatedId=%s", name, kind, id, related)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)`, name, Now()); err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return names, nil
 }
 
-func migrationApplied(ctx context.Context, q Querier, version string) (bool, error) {
-	var exists int
-	if err := q.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE version = ?`, version).Scan(&exists); err != nil {
+// migrate applies every pending schema file in its own transaction; a
+// failure rolls the transaction back and leaves the database untouched.
+func (d *DB) migrate(ctx context.Context) error {
+	names, err := migrations()
+	if err != nil {
+		return err
+	}
+	for {
+		done, err := d.migrateNext(ctx, names)
+		if err != nil || done {
+			return err
+		}
+	}
+}
+
+func (d *DB) migrateNext(ctx context.Context, names []string) (done bool, err error) {
+	// _txlock=immediate: the write lock is held from BEGIN, so a second
+	// process starting at the same time waits and then sees the new version.
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
 		return false, err
 	}
-	return exists > 0, nil
-}
-
-// backupBeforeMigration copies an existing database next to itself before
-// pending migrations change it, so an upgrade can be rolled back by
-// restoring the copy. Fresh databases (nothing applied yet) are skipped.
-func (d *DB) backupBeforeMigration(ctx context.Context, applied int, pending []string) error {
-	if applied == 0 || len(pending) == 0 || d.path == "" {
-		return nil
-	}
-	target := fmt.Sprintf("%s.pre-%s-%s.bak", d.path, strings.TrimSuffix(pending[0], ".sql"), time.Now().UTC().Format("20060102T150405"))
-	if _, err := d.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
-		return fmt.Errorf("backup before migration %s: %w", pending[0], err)
-	}
-	return nil
-}
-
-// migrateV2 runs the structural migration on a dedicated connection, with
-// foreign keys disabled outside the transaction and checked before commit.
-func (d *DB) migrateV2(ctx context.Context, body string, inputs MigrationInputs) error {
-	conn, err := d.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
-		return fmt.Errorf("disable foreign keys: %w", err)
-	}
-	defer conn.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
 	defer tx.Rollback()
-	if applied, err := migrationApplied(ctx, tx, "0002_multi_provider.sql"); err != nil || applied {
-		return err
+	var version int
+	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return false, err
 	}
-	if err := validateLegacyInputs(ctx, tx, inputs); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, body); err != nil {
-		tx.Rollback()
-		return err
-	}
-	if inputs.PurelymailAPIURL != "" {
-		if _, err := tx.ExecContext(ctx, `UPDATE mail_connections SET api_base_url=? WHERE provider_kind='purelymail'`, inputs.PurelymailAPIURL); err != nil {
-			tx.Rollback()
-			return err
+	switch {
+	case version > len(names):
+		return false, fmt.Errorf("database schema version %d is newer than this build supports (%d)", version, len(names))
+	case version == len(names):
+		return true, nil
+	case version == 0:
+		var objects int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_schema`).Scan(&objects); err != nil {
+			return false, err
+		}
+		if objects > 0 {
+			return false, errors.New("database was not created by this version of Mailhearth; start with an empty data directory")
 		}
 	}
-	if err := convertLegacyProtocols(ctx, tx, inputs); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES ('0002_multi_provider.sql', ?)`, Now()); err != nil {
-		return err
-	}
-	var violations []string
-	rows, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	name := names[version]
+	body, err := fs.ReadFile(schemaFiles, "migrations/"+name)
 	if err != nil {
-		tx.Rollback()
-		return err
+		return false, err
 	}
-	for rows.Next() {
-		var table string
-		var rowid int64
-		var parent string
-		var parentID int64
-		if err := rows.Scan(&table, &rowid, &parent, &parentID); err != nil {
-			rows.Close()
-			tx.Rollback()
-			return err
-		}
-		violations = append(violations, fmt.Sprintf("%s row %d parent %s %d", table, rowid, parent, parentID))
+	if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+		return false, fmt.Errorf("schema %s: %w", name, err)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		tx.Rollback()
-		return err
+	// PRAGMA does not take bound parameters; version is an int.
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version=%d`, version+1)); err != nil {
+		return false, err
 	}
-	rows.Close()
-	if len(violations) > 0 {
-		tx.Rollback()
-		return fmt.Errorf("foreign key check failed: %s", strings.Join(violations, "; "))
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
+	return false, tx.Commit()
 }
 
 // Now returns the canonical timestamp string used across the schema.

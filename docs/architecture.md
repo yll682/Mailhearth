@@ -11,9 +11,9 @@ System responsibilities are cleanly bifurcated:
 - **Mailhearth Core**: Operates as the management and application layer, persisting team structure, access controls, encrypted credentials, resource associations, asynchronous operations, message sending states, and team collaboration metadata.
 
 Core subsystems across the repository:
-- `cmd/mailhearth`: Main application entry point; handles configuration loading, master key derivation, database schema migrations, IMAP connection pool initialization, background worker orchestration, and HTTP/SSE server binding.
+- `cmd/mailhearth`: Main application entry point; handles configuration loading, master key derivation, database initialisation, IMAP connection pool initialization, background worker orchestration, and HTTP/SSE server binding.
 - `internal/config`, `internal/secrets`: Environment configuration validation; AES-256-GCM encryption with HKDF key derivation; argon2id password hashing and session token lifecycle management.
-- `internal/db`, `internal/model`: Embedded migration runner, foreign key integrity checks, core domain entities, and data persistence models.
+- `internal/db`, `internal/model`: Embedded schema applied in one transaction, foreign key and tenant-scope constraints, core domain entities, and data persistence models.
 - `internal/provider`: Unified interface abstractions for email providers, alongside dedicated adapters for Purelymail, Migadu, and generic manual IMAP/SMTP setups.
 - `internal/purelymail`: Low-level API client and structured error mappings for the Purelymail management service.
 - `internal/core`: Core domain services handling mail connections, resource discovery and ingestion, organizational permissions, mailbox lifecycle, persistent operations, and message submission tracking.

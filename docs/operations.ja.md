@@ -35,7 +35,7 @@ Mailhearth は極めて小さなフットプリントで動作するように設
 | --- | --- | --- |
 | `MAILHEARTH_BASE_URL` | 空 | 公開 URL。招待リンクの生成に使用します。`https://` の URL では `Secure` Cookie が有効になります。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP の待ち受けアドレス。 |
-| `MAILHEARTH_DATA_DIR` | `./data`（コンテナ内では `/data`） | SQLite データベース、マスターキー、アップロードファイル、マイグレーション前のバックアップ。 |
+| `MAILHEARTH_DATA_DIR` | `./data`（コンテナ内では `/data`） | SQLite データベース、マスターキー、アップロードファイル。 |
 | `MAILHEARTH_MASTER_KEY` | `<data>/master.key` に自動生成 | 保存された認証情報を暗号化する 32 バイトの鍵（base64 または hex）。 |
 | `MAILHEARTH_SETUP_TOKEN` | 空 | 設定すると、新しいインスタンスで組織を作成する際にこのトークンが必要になり、最初にアクセスした人にオーナーを奪われるのを防ぎます。セットアップ完了前にインスタンスへアクセスできる場合は設定を推奨します。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` のいずれか。 |
@@ -54,8 +54,6 @@ Mailhearth は極めて小さなフットプリントで動作するように設
 | `MAILHEARTH_INVITE_DAYS` | `7` | 招待リンクの有効日数（1〜90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 開発専用：プロセス内の疑似プロバイダー、IMAP、SMTP。 |
 | `GOMEMLIMIT` | 未設定時は `160MiB` | Go ヒープの上限。 |
-
-`MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR`、`MAILHEARTH_SIEVE_TLS` は、メール接続機能が導入される前に作成されたインストールをアップグレードするときに一度だけ読み取られ、最初の接続に変換されます。それ以外の場合、接続とプロトコルエンドポイントは管理コンソールで設定します。
 
 ## バックアップとディザスタリカバリ
 
@@ -88,19 +86,21 @@ docker compose start
 2. バックアップした `mailhearth.db`（ホットバックアップの場合はファイル名を `mailhearth.db` に変更）と `master.key` をホスト側のデータディレクトリに配置します；
 3. `docker compose up -d` を実行します。起動時にマスターキーの検証と必要なスキーマチェックが自動実行され、シームレスに運用が再開されます。
 
-## システムアップグレードとスキーママイグレーション
+## アップグレードとデータベーススキーマ
 
-Mailhearth は組み込みのデータベースマイグレーションエンジン（`internal/db/migrations`）を備えています。
+スキーマは `internal/db/migrations/0001_init.sql` で定義されています。空のデータディレクトリで初めて起動すると、スキーマは単一のトランザクション内で適用されます。いずれかのステートメントが失敗した場合はトランザクション全体がロールバックされ、データベースは空のまま残ります。スキーマバージョンは SQLite の `PRAGMA user_version` に記録されます。
 
-1. **自動マイグレーション**：新しいバイナリが起動すると、現在のスキーマバージョンを検知し、テーブル構造の更新、外部キー制約、整合性チェックを単一のトランザクション内で自動適用します。既存のデータベースを変更する前に、同じディレクトリに `mailhearth.db.pre-<マイグレーション名>-<タイムスタンプ>.bak` という名前でコピーを書き出します。
-2. **アップグレード前の安全策**：新しいコンテナイメージを取得する前に、必ず上記のバックアップ手順に従ってデータベースの完全なスナップショットと `master.key` のバックアップを保存してください。
-3. **アップグレードの適用**：
+Mailhearth は、自身が作成していないデータベース（例：プレリリース版が残したもの）や、実行中のバイナリより新しいスキーマを持つデータベースでは起動を拒否します。前者の場合は空のデータディレクトリで起動し、後者の場合は対応するリリースを実行してください。
+
+今後のスキーマ変更は番号付きの追加ファイルとして提供され、それぞれ個別のトランザクションで適用されます。
+
+1. **アップグレード前**：バックアップを取得し（上記参照）、`master.key` のバックアップを確認してください。
+2. **アップグレードの適用**：
    ```bash
-   git pull
    docker compose pull
-   docker compose up -d --build
+   docker compose up -d
    ```
-4. **ロールバックに関する方針**：データベースマイグレーションは前方互換のみを前提としています。万が一以前のバージョンに切り戻す必要がある場合、**新しいスキーマに対して古いバイナリを実行することはサポートされていません**。古いイメージに戻すと同時に、アップグレード直前に取得したデータベースバックアップを復元してください。自動生成された `.bak` コピーを復元することもできます。アップグレードに問題がないことを確認したら、古い `.bak` コピーは削除してください。
+3. **ロールバック**：古いバイナリは新しいスキーマ上では動作しません。ロールバックする場合は、アップグレード前のバックアップを復元し、以前のイメージに戻してください。
 
 ## リバースプロキシと TLS 設定
 
@@ -206,8 +206,8 @@ docker compose logs -f --tail=100 mailhearth
 # 基本テストの実行
 go test ./... -run '^$'
 
-# マルチプロバイダーモデルおよびコアロジックの検証
-go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+# データベーススキーマ、ドメインモデル、HTTP API、新規インストールのテスト
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhearth
 
 # 静的解析
 go vet ./...

@@ -35,7 +35,7 @@ All options are environment variables. Malformed or out-of-range values stop sta
 | --- | --- | --- |
 | `MAILHEARTH_BASE_URL` | empty | Public URL, used for invite links. An `https://` URL enables `Secure` cookies. |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP listen address. |
-| `MAILHEARTH_DATA_DIR` | `./data` (`/data` in the container) | SQLite database, master key, uploads and pre-migration backups. |
+| `MAILHEARTH_DATA_DIR` | `./data` (`/data` in the container) | SQLite database, master key and uploads. |
 | `MAILHEARTH_MASTER_KEY` | generated into `<data>/master.key` | 32-byte key (base64 or hex) that encrypts stored credentials. |
 | `MAILHEARTH_SETUP_TOKEN` | empty | When set, creating the organisation on a fresh instance requires this token, so whoever reaches the instance first cannot claim it. Recommended for instances reachable before setup is finished. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
@@ -54,8 +54,6 @@ All options are environment variables. Malformed or out-of-range values stop sta
 | `MAILHEARTH_INVITE_DAYS` | `7` | Invite link validity (1 to 90). |
 | `MAILHEARTH_DEV_STACK` | `false` | Development only: in-process fake provider, IMAP and SMTP. |
 | `GOMEMLIMIT` | `160MiB` when unset | Go heap limit. |
-
-`MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` and `MAILHEARTH_SIEVE_TLS` are only read once, when upgrading an installation created before mail connections existed: they are converted into its first connection. Connections and protocol endpoints are otherwise configured in the admin console.
 
 ## Backups & Disaster Recovery
 
@@ -88,19 +86,21 @@ Restoring Mailhearth on a fresh host is a simple three-step process:
 2. Place the restored `mailhearth.db` and matching `master.key` inside the designated host volume;
 3. Run `docker compose up -d`. Mailhearth will verify the master key, execute any pending schema checks, and resume operations seamlessly.
 
-## System Upgrades & Schema Migrations
+## Upgrades & Database Schema
 
-Mailhearth includes an embedded database migration engine (`internal/db/migrations`).
+The schema is defined in `internal/db/migrations/0001_init.sql`. On first start with an empty data directory it is applied in a single transaction; if any statement fails the transaction is rolled back and the database is left empty. The schema version is stored in SQLite's `PRAGMA user_version`.
 
-1. **Automatic Schema Migrations**: When launching a new binary, Mailhearth detects the existing schema version and automatically executes required schema updates, foreign key checks, and data invariants in an isolated transaction. Before changing an existing database it writes a copy next to it, named `mailhearth.db.pre-<migration>-<timestamp>.bak`.
-2. **Pre-Upgrade Safeguard**: Always perform a complete database snapshot and verify your `master.key` backup before pulling new container images.
-3. **Applying Upgrades**:
+Mailhearth refuses to start on a database it did not create (for example one left behind by a pre-release build) and on a database whose schema is newer than the running binary. In the first case start with an empty data directory; in the second, run the matching release.
+
+Later schema changes ship as additional numbered files, each applied in its own transaction.
+
+1. **Before upgrading**: take a backup (see above) and verify your `master.key` backup.
+2. **Applying upgrades**:
    ```bash
-   git pull
    docker compose pull
-   docker compose up -d --build
+   docker compose up -d
    ```
-4. **Rollback Policy**: Database migrations are strictly forward-compatible. If an upgrade must be rolled back, **running older binaries across newer schema versions is unsupported**; revert the container image to the prior version and restore your pre-upgrade database backup (or the automatic `.bak` copy). Delete old `.bak` copies once an upgrade is confirmed.
+3. **Rollback**: older binaries do not run against a newer schema. Roll back by restoring the pre-upgrade backup together with the previous image.
 
 ## Reverse Proxy & TLS Setup
 
@@ -206,8 +206,8 @@ docker compose logs -f --tail=100 mailhearth
 # Run baseline tests
 go test ./... -run '^$'
 
-# Verify multiprovider database and domain model suites
-go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./internal/mailproto/sieve ./internal/provider -run '^TestMultiProvider'
+# Database schema, domain model, HTTP API and fresh-install suites
+go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhearth
 
 # Static analysis
 go vet ./...

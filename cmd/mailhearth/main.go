@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,13 +43,17 @@ func main() {
 		fmt.Println("mailhearth", version)
 		return
 	}
-	if err := run(*seedDemo); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, *seedDemo, nil); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
 		os.Exit(1)
 	}
 }
 
-func run(seedDemo bool) error {
+// run starts the server and blocks until ctx is cancelled or a background
+// worker fails. onListen, when set, receives the bound address.
+func run(ctx context.Context, seedDemo bool, onListen func(net.Addr)) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -90,11 +95,7 @@ func run(seedDemo bool) error {
 			return err
 		}
 		defer stack.Close()
-		cfg.PurelymailAPIURL = stack.APIURL
-		cfg.IMAPAddr, cfg.IMAPTLS = stack.IMAPAddr, config.TLSNone
-		cfg.SMTPAddr, cfg.SMTPTLS = stack.SMTPAddr, config.TLSNone
-		cfg.SieveAddr = ""
-		log.Warn("DEV STACK ENABLED: using an in-memory fake Purelymail/IMAP/SMTP; mail is not persisted", "apiToken", stack.Token)
+		log.Warn("DEV STACK ENABLED: using an in-memory fake Purelymail/IMAP/SMTP; mail is not persisted", "apiURL", stack.APIURL, "apiToken", stack.Token, "imap", stack.IMAPAddr, "smtp", stack.SMTPAddr)
 		if seedDemo {
 			seed(stack, log)
 		}
@@ -116,23 +117,19 @@ func run(seedDemo bool) error {
 		return err
 	}
 
-	database, err := db.Open(filepath.Join(cfg.DataDir, "mailhearth.db"), db.MigrationInputs{
-		PurelymailAPIURL: cfg.PurelymailAPIURL, IMAPAddr: cfg.IMAPAddr, IMAPTLS: string(cfg.IMAPTLS),
-		SMTPAddr: cfg.SMTPAddr, SMTPTLS: string(cfg.SMTPTLS), SieveAddr: cfg.SieveAddr, SieveTLS: string(cfg.SieveTLS),
-		CredentialsBox: box, AllowDevelopmentPlaintext: cfg.DevStack,
-	})
+	database, err := db.Open(filepath.Join(cfg.DataDir, "mailhearth.db"))
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer database.Close()
 
 	pool := imappool.New(imappool.Config{
-		Addr: cfg.IMAPAddr, TLSMode: string(cfg.IMAPTLS), MaxConns: cfg.IMAPMaxConns, PerCredIdle: 2, IdleTimeout: cfg.IMAPIdleTimeout, Logger: log,
+		MaxConns: cfg.IMAPMaxConns, PerCredIdle: 2, IdleTimeout: cfg.IMAPIdleTimeout, Logger: log,
 	})
 	defer pool.Close()
 
 	svc := core.New(database, cfg, box, pool, log)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	if err := svc.StartOperations(ctx); err != nil {
 		return err
@@ -155,19 +152,24 @@ func run(seedDemo bool) error {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    64 << 10,
 	}
-	go func() {
-		log.Info("mailhearth listening", "addr", cfg.Listen, "version", version, "data", cfg.DataDir)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("http server", "err", err)
-			os.Exit(1)
-		}
-	}()
+	ln, err := net.Listen("tcp", cfg.Listen)
+	if err != nil {
+		return err
+	}
+	log.Info("mailhearth listening", "addr", ln.Addr().String(), "version", version, "data", cfg.DataDir)
+	if onListen != nil {
+		onListen(ln.Addr())
+	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
 
 	var workerErr error
 	select {
 	case <-ctx.Done():
 	case workerErr = <-svc.OperationErrors():
 		stop()
+	case err := <-serveErr:
+		return fmt.Errorf("http server: %w", err)
 	}
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
