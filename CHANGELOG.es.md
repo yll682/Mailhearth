@@ -6,9 +6,9 @@ Todos los cambios notables introducidos en Mailhearth quedan documentados en est
 
 El formato sigue las pautas de [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y el proyecto se rige por [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## [No publicado]
+## [0.2.0] - 2026-10-30
 
-### Cambios (incompatibles) — previstos para 0.2.0
+### Cambios (incompatibles)
 
 Mailhearth aún no se ha desplegado para usuarios reales, por lo que esta versión elimina toda compatibilidad con bases de datos, configuración y clientes anteriores.
 
@@ -43,5 +43,6 @@ Primera versión pública: plataforma de correo empresarial autoalojada y ligera
 - **Despliegue monolítico simplificado**: Binario ejecutable Go único con los recursos web estáticos incrustados, almacenamiento SQLite nativo con `modernc.org/sqlite`, `Dockerfile`, `docker-compose.yml` y flujos de integración continua en GitHub Actions.
 - **Herramientas de desarrollo y verificación**: Entorno mock en proceso con datos de demostración preconfigurados (`make dev`), scripts para captura automatizada de pantallas de interfaz y suite de pruebas de integración frente a proveedores reales.
 
-[No publicado]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
+[No publicado]: https://github.com/yll682/Mailhearth/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.2.0
 [0.1.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.1.0

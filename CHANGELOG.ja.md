@@ -6,9 +6,9 @@ Mailhearth のすべての重要な変更履歴をこのファイルに記録し
 
 フォーマットは [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) に準拠し、バージョン番号は[セマンティック バージョニング 2.0.0](https://semver.org/spec/v2.0.0.html) に従います。
 
-## [未リリース]
+## [0.2.0] - 2026-10-30
 
-### 変更（破壊的）— 0.2.0 として予定
+### 変更（破壊的）
 
 Mailhearth はまだ実ユーザー向けにデプロイされていないため、本リリースでは以前のデータベース、設定、クライアントとの互換性をすべて廃止します。
 
@@ -43,5 +43,6 @@ Mailhearth はまだ実ユーザー向けにデプロイされていないため
 - **単一バイナリによる容易なデプロイ**: Web クライアントを内包した単一の Go バイナリ、純粋な Go 実装 `modernc.org/sqlite` による組み込み SQLite ストレージ、軽量な `Dockerfile` および `docker-compose.yml`、自動 CI ワークフロー。
 - **充実の開発・テストツール**: 開発用モックプロバイダーとデモデータ環境（`make dev`）、UI 自動スクリーンショットスクリプト、実プロバイダーに対する結合テストスイート。
 
-[未リリース]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
+[未リリース]: https://github.com/yll682/Mailhearth/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.2.0
 [0.1.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.1.0

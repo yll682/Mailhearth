@@ -6,9 +6,9 @@
 
 版本格式严格遵从 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 规范，版本号命名遵循[语义化版本 2.0.0](https://semver.org/spec/v2.0.0.html)。
 
-## [未发布]
+## [0.2.0] - 2026-10-30
 
-### 变更（破坏性）— 计划作为 0.2.0 发布
+### 变更（破坏性）
 
 Mailhearth 尚未部署给真实用户，因此本版本放弃对早期数据库、配置及客户端的全部兼容。
 
@@ -43,5 +43,6 @@ Mailhearth 尚未部署给真实用户，因此本版本放弃对早期数据库
 - **极简单体部署体验**：内嵌全部前端静态资源的独立 Go 二进制单文件，基于纯 Go 驱动 `modernc.org/sqlite` 的嵌入式 SQLite 存储；配套轻量级 `Dockerfile` 与 `docker-compose.yml`，以及自动化 CI 流水线。
 - **完备的开发与测试套件**：内置进程内模拟邮件服务商与演示数据环境（`make dev`）；自动化浏览器截图测试脚本；以及面向真实邮件服务商的端到端集成测试套件。
 
-[未发布]: https://github.com/yll682/Mailhearth/compare/v0.1.0...HEAD
+[未发布]: https://github.com/yll682/Mailhearth/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.2.0
 [0.1.0]: https://github.com/yll682/Mailhearth/releases/tag/v0.1.0
