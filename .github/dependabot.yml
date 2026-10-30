@@ -1,14 +1,33 @@
 version: 2
+
+# Only routine updates are proposed automatically. Major bumps (vite 8,
+# preact 11, typescript 7, GitHub Action majors) change behaviour and need a
+# deliberate migration, so they are proposed by hand instead of opening a
+# pull request the moment the release appears.
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
