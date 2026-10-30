@@ -128,12 +128,15 @@ try {
   assert.ok(authHeight.content > authHeight.height, "登录页面检查需要长内容");
   await auth.locator(".lang-switch button").last().scrollIntoViewIfNeeded();
   const setupBase = process.env.MAILHEARTH_SETUP_UI_URL;
-  assert.ok(setupBase, "需要独立初始化环境的地址");
+  const setupToken = process.env.MAILHEARTH_SETUP_TOKEN;
+  assert.ok(setupBase && setupToken, "需要独立初始化环境的地址和它的 MAILHEARTH_SETUP_TOKEN");
   const setupStatus = await loggedOut.request.get(setupBase + "/api/setup/status");
   if ((await setupStatus.json()).step === "org") {
+    await auth.goto(setupBase + "/setup");
+    await auth.getByLabel("Setup token").waitFor();
     const created = await loggedOut.request.post(setupBase + "/api/setup/init", {
       headers: { "X-Requested-With": "Mailhearth" },
-      data: { orgName: "浏览器滚动检查", adminName: "滚动检查管理员", adminEmail: "scroll@example.test", password: "Mailhearth-Scroll-2026!" },
+      data: { orgName: "浏览器滚动检查", adminName: "滚动检查管理员", adminEmail: "scroll@example.test", password: "Mailhearth-Scroll-2026!", setupToken },
     });
     assert.equal(created.status(), 200);
   } else {

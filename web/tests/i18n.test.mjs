@@ -3,47 +3,68 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+// TypeScript 7 has no stable JS compiler API; Vite's bundled oxc parser
+// reads TS/TSX into an ESTree AST.
+import { parseSync } from "vite";
 
 const root = fileURLToPath(new URL("../src/", import.meta.url));
 const dictionaries = { zhCN: new Map(), zhTW: new Map(), ja: new Map(), es: new Map() };
-const source = ts.createSourceFile("i18n.ts", fs.readFileSync(path.join(root, "lib/i18n.ts"), "utf8"), ts.ScriptTarget.Latest, true);
+
+function parse(filename) {
+  const text = fs.readFileSync(filename, "utf8");
+  const result = parseSync(filename, text);
+  assert.deepEqual(result.errors, [], filename);
+  return { text, program: result.program };
+}
+// forEachChild visits every AST node below node.
+function forEachChild(node, fn) {
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) { for (const item of value) if (item && typeof item.type === "string") fn(item); }
+    else if (value && typeof value.type === "string") fn(value);
+  }
+}
+const isString = (node) => node?.type === "Literal" && typeof node.value === "string";
+const keyName = (key) => key.type === "Identifier" ? key.name : key.value;
+
+const i18n = parse(path.join(root, "lib/i18n.ts"));
 function collect(dictionary, object) {
-  assert.ok(ts.isObjectLiteralExpression(object));
+  assert.equal(object?.type, "ObjectExpression");
   for (const property of object.properties) {
-    assert.ok(ts.isPropertyAssignment(property) && ts.isStringLiteral(property.initializer));
-    dictionary.set(property.name.text, property.initializer.text);
+    assert.ok(property.type === "Property" && isString(property.value), "dictionary entries must be string literals");
+    dictionary.set(keyName(property.key), property.value.value);
   }
 }
 function visitDictionary(node) {
-  if (ts.isVariableDeclaration(node) && dictionaries[node.name.text]) collect(dictionaries[node.name.text], node.initializer);
-  if (ts.isCallExpression(node) && node.expression.getText(source) === "Object.assign") {
-    const target = node.arguments[0].getText(source);
+  if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && dictionaries[node.id.name]) collect(dictionaries[node.id.name], node.init);
+  if (node.type === "CallExpression" && i18n.text.slice(node.callee.start, node.callee.end) === "Object.assign") {
+    const target = i18n.text.slice(node.arguments[0].start, node.arguments[0].end);
     const name = { 'dicts["zh-CN"]': "zhCN", 'dicts["zh-TW"]': "zhTW", "dicts.ja": "ja", "dicts.es": "es" }[target] ?? target;
     if (dictionaries[name]) collect(dictionaries[name], node.arguments[1]);
   }
-  ts.forEachChild(node, visitDictionary);
+  forEachChild(node, visitDictionary);
 }
-visitDictionary(source);
+visitDictionary(i18n.program);
 const keys = new Set();
 const untranslated = [];
 function literals(node) {
-  if (ts.isStringLiteral(node)) keys.add(node.text);
-  if (ts.isConditionalExpression(node)) { literals(node.whenTrue); literals(node.whenFalse); }
+  if (isString(node)) keys.add(node.value);
+  if (node.type === "ConditionalExpression") { literals(node.consequent); literals(node.alternate); }
 }
+const han = /\p{Script=Han}/u;
 function walk(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const filename = path.join(directory, entry.name);
     if (entry.isDirectory()) { walk(filename); continue; }
     if (!/\.tsx?$/.test(filename)) continue;
-    const file = ts.createSourceFile(filename, fs.readFileSync(filename, "utf8"), ts.ScriptTarget.Latest, true, filename.endsWith("tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    const labels = filename.endsWith("resourceLabels.ts") || filename.endsWith("errorLabels.ts");
     function visit(node) {
-      if ((ts.isJsxText(node) || ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent)) && /\p{Script=Han}/u.test(node.text)) untranslated.push(`${filename}: ${node.text.trim()}`);
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "t" && node.arguments.length) literals(node.arguments[0]);
-      if ((filename.endsWith("resourceLabels.ts") || filename.endsWith("errorLabels.ts")) && ts.isPropertyAssignment(node) && ts.isStringLiteral(node.initializer)) keys.add(node.initializer.text);
-      ts.forEachChild(node, visit);
+      if (node.type === "JSXText" && han.test(node.value)) untranslated.push(`${filename}: ${node.value.trim()}`);
+      if (node.type === "JSXAttribute" && isString(node.value) && han.test(node.value.value)) untranslated.push(`${filename}: ${node.value.value.trim()}`);
+      if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "t" && node.arguments.length) literals(node.arguments[0]);
+      if (labels && node.type === "Property" && isString(node.value)) keys.add(node.value.value);
+      forEachChild(node, visit);
     }
-    visit(file);
+    visit(parse(filename).program);
   }
 }
 walk(root);

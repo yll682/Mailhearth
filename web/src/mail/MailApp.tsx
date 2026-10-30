@@ -229,7 +229,7 @@ export function MailApp() {
               key={f.name}
               href={mailPath(mailbox.id, f.name)}
               class={"folder" + (f.name === folder ? " active" : "") + (f.noSelect ? " noselect" : "")}
-              style={{ paddingLeft: 12 + f.depth * 14 }}
+              style={{ paddingLeft: `${12 + f.depth * 14}px` }}
               onClick={() => setDrawer(false)}
             >
               <Icon name={folderIcon(f.role)} size={16} />

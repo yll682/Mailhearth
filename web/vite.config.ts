@@ -11,7 +11,6 @@ export default defineConfig({
     target: "es2022",
     sourcemap: false,
     cssCodeSplit: false,
-    rollupOptions: { output: { manualChunks: undefined } },
   },
   server: {
     port: 5173,

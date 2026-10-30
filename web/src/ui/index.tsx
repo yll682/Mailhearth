@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { ComponentChildren, JSX } from "preact";
+import type { ButtonHTMLAttributes, ComponentChildren } from "preact";
 import { t } from "@/lib/i18n";
 import { toasts, dismissToast } from "@/lib/state";
 import { hueFor, initials } from "@/lib/format";
@@ -71,7 +71,7 @@ export function Icon({ name, size = 18, class: cls }: { name: string; size?: num
 }
 
 // --- Buttons ---
-type BtnProps = JSX.HTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "secondary" | "ghost" | "danger" | "icon"; busy?: boolean; icon?: string; size?: "sm" | "md"; disabled?: boolean; type?: "button" | "submit" };
+type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "secondary" | "ghost" | "danger" | "icon"; busy?: boolean; icon?: string; size?: "sm" | "md"; disabled?: boolean; type?: "button" | "submit" };
 export function Button({ kind = "secondary", busy, icon, size = "md", children, class: cls, disabled, type = "button", ...rest }: BtnProps) {
   return (
     <button type={type} {...rest} disabled={disabled || busy} class={`btn btn-${kind} btn-${size} ${cls ?? ""}`}>
@@ -82,7 +82,7 @@ export function Button({ kind = "secondary", busy, icon, size = "md", children, 
 }
 
 export function Spinner({ size = 18 }: { size?: number }) {
-  return <span class="spinner" style={{ width: size, height: size }} aria-label={t("Loading…")} />;
+  return <span class="spinner" style={{ width: `${size}px`, height: `${size}px` }} aria-label={t("Loading…")} />;
 }
 
 // Info is an ⓘ affordance: the short label stays visible, the long
@@ -153,7 +153,7 @@ export function Info({ text }: { text: string }) {
         <span
           class={"info-pop" + (box.below ? " below" : "")}
           role="tooltip"
-          style={{ top: box.top, left: box.left, maxWidth: Math.min(260, window.innerWidth - 24) }}
+          style={{ top: `${box.top}px`, left: `${box.left}px`, maxWidth: `${Math.min(260, window.innerWidth - 24)}px` }}
         >
           {text}
         </span>

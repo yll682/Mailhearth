@@ -242,7 +242,7 @@ export function MessageView(p: Props) {
           src={viewUrl}
           sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
           referrerpolicy="no-referrer"
-          style={{ height: frameH }}
+          style={{ height: `${frameH}px` }}
           onLoad={fit}
         />
 
