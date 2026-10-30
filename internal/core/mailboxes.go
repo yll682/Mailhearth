@@ -596,7 +596,7 @@ func (s *Service) CheckMailboxAccess(ctx context.Context, orgID, memberID, mailb
 // AccessibleMailbox is a mailbox as presented to a member.
 type AccessibleMailbox struct {
 	model.Mailbox
-	Level      string           `json:"level"`
+	Level      string           `json:"level" tstype:"\"full\" | \"send\" | \"read\""`
 	Identities []model.Identity `json:"identities"`
 }
 

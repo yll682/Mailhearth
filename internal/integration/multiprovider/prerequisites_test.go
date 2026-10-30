@@ -3,7 +3,6 @@ package multiprovider
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -209,5 +208,5 @@ func TestRealMultiProviderPrerequisites(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "prerequisites.json"), results, 0600); err != nil {
 		t.Fatal(err)
 	}
-	t.Log(fmt.Sprintf("真实管理和协议认证通过；记录目录：%s。T01–T40 与 V01–V07 继续独立验收。", dir))
+	t.Logf("真实管理和协议认证通过；记录目录：%s。T01–T40 与 V01–V07 继续独立验收。", dir)
 }

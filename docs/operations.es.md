@@ -96,6 +96,8 @@ Mailhearth se niega a arrancar sobre una base de datos que no haya creado (por e
 
 Los cambios de esquema posteriores se publicarán como archivos numerados adicionales, cada uno aplicado en su propia transacción.
 
+Las imágenes de contenedor se publican solo para etiquetas de versión: cada etiqueta `vX.Y.Z` genera `X.Y.Z` y la línea de versiones `X.Y` (y `X` a partir de 1.0). No existe una etiqueta móvil `latest` ni se construyen imágenes a partir de pushes a ramas. `docker-compose.yml` fija la línea de versiones `0.2`, que recibe versiones de parche compatibles; pasar a una nueva línea de versiones es un cambio deliberado de esa etiqueta.
+
 1. **Antes de actualizar**: realiza una copia de seguridad (ver más arriba) y verifica la copia de `master.key`.
 2. **Aplicar la actualización**:
    ```bash
@@ -213,6 +215,10 @@ go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhear
 
 # Análisis estático de código
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+# Regenerar web/src/lib/api-types.ts tras cambiar un tipo de respuesta de la API
+go run ./cmd/apitypes
 
 # Pruebas automatizadas y verificación de empaquetado del frontend
 npm --prefix web run test

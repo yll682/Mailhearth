@@ -73,6 +73,8 @@ cp .env.example .env            # .env を編集し、MAILHEARTH_BASE_URL に公
 docker compose up -d --build
 ```
 
+`--build` は現在チェックアウトしているコードをビルドします。公開済みのリリースを実行する場合は、代わりに `docker compose pull && docker compose up -d` を使用してください（compose ファイルは `0.2` リリースラインに固定されています）。
+
 起動後、ログから 1 回限りのセットアップトークンを確認するか（`docker compose logs mailhearth | grep 'FIRST-TIME SETUP'`）、`MAILHEARTH_SETUP_TOKEN` で独自のトークンを設定したうえで、設定した公開 URL にブラウザーでアクセスし、初回ウィザードに従って組織管理者アカウントを作成、メールプロバイダーを接続してリソースを取り込みます。メールの送受信を開始する前に、各プロトコルの認証情報が正しく設定・検証されていることを確認してください。
 
 > **バックアップに関する注意**: `/data` ボリュームにはシステムの主要データである SQLite データベースファイルと暗号化マスターキー `master.key` が保存されています。定期的なバックアップを必ず実施してください。

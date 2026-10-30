@@ -14,6 +14,7 @@ Mailhearth 采用极简高效的单体架构设计，后端使用 Go 编写，�
 - `cmd/mailhearth`：系统启动入口，负责配置加载、主密钥读取与校验、数据库初始化、IMAP 智能连接池初始化、后台异步工作协程组装以及 HTTP/SSE 服务器监听。
 - `internal/config`、`internal/secrets`：环境参数加载与校验；基于 AES-256-GCM 与 HKDF 的多级密钥派生；argon2id 密码安全哈希计算及令牌生命周期管理。
 - `internal/db`、`internal/model`：嵌入式数据库结构（单事务应用）、外键与租户范围约束、核心领域实体及持久化模型定义。
+- `cmd/apitypes`、`internal/apitypes`：根据 Go 响应类型生成 `web/src/lib/api-types.ts`（按 `encoding/json` 规则进行反射，字符串联合类型通过 `tstype` 标签声明）。Web 客户端只导入这些生成的类型；已提交的文件过期时，`go test` 与 CI 会失败。
 - `internal/provider`：多邮件服务商抽象层统一接口规范，以及面向 Purelymail、Migadu 和标准手动 IMAP/SMTP 协议的驱动适配器。
 - `internal/purelymail`：专用于 Purelymail 管理 API 的底层传输客户端与错误处理包装。
 - `internal/core`：核心业务逻辑服务，涵盖服务商连接管理、资源自动发现与导入、组织权限控制、邮箱全生命周期流转、异步持久化操作（Operation）及邮件投递管理（Submission）。

@@ -19,13 +19,14 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, maxAge in
 	})
 }
 
-type meResponse struct {
-	Member      *model.Member            `json:"member"`
-	Org         *model.Organization      `json:"org"`
+// MeResponse is the signed-in member's session payload.
+type MeResponse struct {
+	Member      model.Member             `json:"member"`
+	Org         model.Organization       `json:"org"`
 	RoleKey     string                   `json:"roleKey"`
 	Permissions []string                 `json:"permissions"`
 	Mailboxes   []core.AccessibleMailbox `json:"mailboxes"`
-	Setup       *core.SetupStatus        `json:"setup"`
+	Setup       core.SetupStatus         `json:"setup"`
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, p *principal) {
@@ -44,7 +45,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, p *principal) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, meResponse{Member: p.Member, Org: org, RoleKey: p.RoleKey, Permissions: p.Perms, Mailboxes: mbs, Setup: st})
+	writeJSON(w, http.StatusOK, MeResponse{Member: *p.Member, Org: *org, RoleKey: p.RoleKey, Permissions: p.Perms, Mailboxes: mbs, Setup: *st})
 }
 
 // startSession signs m in: it creates the session, sets the cookie and

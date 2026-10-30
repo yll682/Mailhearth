@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (breaking) — planned as 0.2.0
+
+Mailhearth has not been deployed to real users yet, so this release drops all compatibility with earlier databases, configuration and clients.
+
+- **Database**: the schema is a single `0001_init.sql` applied in one transaction (version in `PRAGMA user_version`). Databases created by earlier builds are refused at startup; start with an empty data directory. Unused legacy tables and columns were removed, mail history (`message_state`, `mail_activity`) now blocks mailbox deletion through `ON DELETE RESTRICT` foreign keys instead of a trigger, and missing foreign keys, `CHECK` constraints and indexes were added.
+- **Configuration**: `MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` and `MAILHEARTH_SIEVE_TLS` were removed. New secure defaults: a setup token is always required (generated and logged when `MAILHEARTH_SETUP_TOKEN` is unset); `Secure` cookies are on unless `MAILHEARTH_SECURE_COOKIES=false`; `MAILHEARTH_UPLOAD_QUOTA_MB` defaults to 120 and is always enforced; sessions default to 14 days sliding and 30 days absolute.
+- **HTTP API**: the `410 api_replaced` placeholder routes for the single-connection and domain-write endpoints were removed; `DELETE /api/mail/uploads/{id}` returns 404 for an id that is not the caller's; `setupTokenRequired` was removed from `/api/setup/status`; `Domain` no longer carries `isShared`, `allowAccountReset`, `symbolicSubaddressing`, `dns`, `dnsCheckedAt` and `status`.
+- **Web client**: Vite 8, Preact 11 and TypeScript 7; API types are generated from the Go response types.
+- **Releases**: images are published only for `vX.Y.Z` tags (`X.Y.Z` and `X.Y`), without `latest`; `docker-compose.yml` pins the `0.2` line. Vulnerability scanning (govulncheck, npm audit) and staticcheck are blocking in CI.
+
 ### Added & Improved
 
 - **Expanded Localization**: Full frontend and administrative interface translations for Traditional Chinese (Taiwan), Japanese, and Spanish, selectable from the login screen and Settings. Dictionary coverage and template variables are validated to 100% via TypeScript AST tests.

@@ -38,9 +38,9 @@ type SubmissionView struct {
 	MailboxID        int64                   `json:"mailboxId"`
 	MemberID         int64                   `json:"memberId"`
 	MessageID        string                  `json:"messageId"`
-	Status           string                  `json:"status"`
-	SMTPStatus       string                  `json:"smtpStatus"`
-	SentStatus       string                  `json:"sentStatus"`
+	Status           string                  `json:"status" tstype:"\"preparing\" | \"queued\" | \"running\" | \"sent\" | \"sent_copy_failed\" | \"failed\" | \"unknown\""`
+	SMTPStatus       string                  `json:"smtpStatus" tstype:"\"not_started\" | \"submitting\" | \"accepted\" | \"rejected\" | \"unknown\""`
+	SentStatus       string                  `json:"sentStatus" tstype:"\"not_started\" | \"saving\" | \"saved\" | \"server_managed\" | \"failed\" | \"unknown\""`
 	ErrorCode        *string                 `json:"errorCode"`
 	CleanupErrorCode *string                 `json:"cleanupErrorCode"`
 	SentLocator      *mailops.MessageLocator `json:"sentLocator"`

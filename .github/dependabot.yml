@@ -1,9 +1,9 @@
 version: 2
 
-# Only routine updates are proposed automatically. Major bumps (vite 8,
-# preact 11, typescript 7, GitHub Action majors) change behaviour and need a
-# deliberate migration, so they are proposed by hand instead of opening a
-# pull request the moment the release appears.
+# Only routine updates are proposed automatically. Major bumps (framework,
+# compiler or GitHub Action majors) change behaviour and need a deliberate
+# migration, so they are done by hand instead of opening a pull request the
+# moment the release appears.
 updates:
   - package-ecosystem: github-actions
     directory: /

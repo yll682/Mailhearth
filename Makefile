@@ -1,7 +1,9 @@
 SHELL := /bin/sh
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all web build run dev test test-integration lint docker clean
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
+
+.PHONY: all web build run dev test test-integration lint api-types docker clean
 
 all: build
 
@@ -14,6 +16,15 @@ build: web
 # Run against the embedded fake Purelymail/IMAP/SMTP with demo data.
 dev:
 	MAILHEARTH_DEV_STACK=1 MAILHEARTH_DATA_DIR=./data/dev MAILHEARTH_LOG_LEVEL=debug go run ./cmd/mailhearth -seed-demo
+
+lint:
+	test -z "$$(gofmt -l ./internal ./cmd)"
+	go vet ./...
+	go run $(STATICCHECK) ./...
+
+# Regenerate web/src/lib/api-types.ts after changing an API response type.
+api-types:
+	go run ./cmd/apitypes
 
 # MAILHEARTH_TEST_KEEP_DATA=1 keeps test databases under data/integration.
 test:

@@ -73,6 +73,8 @@ cp .env.example .env            # Edita .env y define MAILHEARTH_BASE_URL con tu
 docker compose up -d --build
 ```
 
+`--build` construye esta copia del repositorio; para ejecutar una versión publicada, usa en su lugar `docker compose pull && docker compose up -d` (el archivo compose fija la línea de versiones `0.2`).
+
 Una vez en marcha, lee en el registro el token de configuración de un solo uso (`docker compose logs mailhearth | grep 'FIRST-TIME SETUP'`) —o define el tuyo con `MAILHEARTH_SETUP_TOKEN`—, abre en el navegador la URL pública configurada y sigue el asistente inicial para crear la cuenta de administrador, conectar tu proveedor de correo e importar los buzones necesarios. Antes de comenzar a enviar y recibir correo, asegúrate de verificar las credenciales de cada protocolo.
 
 > **Aviso de copia de seguridad**: Asegúrate de respaldar regularmente el volumen persistente `/data`. Contiene la base de datos SQLite y la clave maestra de cifrado `master.key`.

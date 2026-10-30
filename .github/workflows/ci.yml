@@ -19,7 +19,7 @@ jobs:
           go-version: "1.27"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Web
@@ -37,6 +37,10 @@ jobs:
           mkdir -p "$GOTMPDIR"
           gofmt -l ./internal ./cmd | tee /dev/stderr | test -z "$(cat)"
           go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+          # web/src/lib/api-types.ts is generated from the Go response types.
+          go run ./cmd/apitypes
+          git diff --exit-code -- web/src/lib/api-types.ts
           # local runs take ~5 minutes for internal/core under -race; the
           # default 10m package timeout is too tight for a 2-vCPU runner.
           go test -race -timeout 30m ./...
@@ -45,9 +49,8 @@ jobs:
 
   vulnerabilities:
     runs-on: ubuntu-latest
-    # Reports known vulnerabilities in reachable Go code and npm packages.
-    # Non-blocking until the existing dependency set has been triaged once.
-    continue-on-error: true
+    # Blocking: known vulnerabilities in reachable Go code or in shipped npm
+    # packages (high and above) fail the build and hold back releases.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -55,15 +58,18 @@ jobs:
           go-version: "1.27"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version: "24"
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: npm audit
         run: cd web && npm audit --omit=dev --audit-level=high
 
+  # Images are published only for release tags (vX.Y.Z), never for branch
+  # pushes. Each release gets X.Y.Z and X.Y (and X once X >= 1); there is no
+  # moving "latest" tag, so deployments always name a release line.
   docker:
-    needs: test
-    if: github.event_name == 'push'
+    needs: [test, vulnerabilities]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,10 +86,11 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/mailhearth
+          flavor: latest=false
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .

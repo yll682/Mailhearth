@@ -124,7 +124,7 @@ type CapabilityConstraints struct {
 
 type Capability struct {
 	Key               string                `json:"key"`
-	Support           string                `json:"support"`
+	Support           string                `json:"support" tstype:"\"automatic\" | \"unsupported\" | \"external\" | \"unverified\""`
 	Readiness         string                `json:"readiness"`
 	PermissionAllowed bool                  `json:"permissionAllowed"`
 	Constraints       CapabilityConstraints `json:"constraints"`

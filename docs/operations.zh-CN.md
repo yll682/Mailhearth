@@ -96,6 +96,8 @@ docker compose start
 
 后续的结构变更会以新增的编号文件发布，每个文件在各自独立的事务中应用。
 
+容器镜像只针对发布标签构建：每个 `vX.Y.Z` 标签会生成 `X.Y.Z` 以及 `X.Y` 发布线（从 1.0 起还包括 `X`）。不提供随时变动的 `latest` 标签，分支推送也不会构建镜像。`docker-compose.yml` 固定使用 `0.2` 发布线，该发布线会持续接收兼容的补丁版本；切换到新的发布线需要有意识地修改该标签。
+
 1. **升级前准备**：先完成一次备份（见上文），并核对 `master.key` 备份。
 2. **执行升级**：
    ```bash
@@ -213,6 +215,10 @@ go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhear
 
 # 代码静态质量检查
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+# 修改 API 响应类型后重新生成 web/src/lib/api-types.ts
+go run ./cmd/apitypes
 
 # 前端自动化测试与生产打包校验
 npm --prefix web run test

@@ -38,7 +38,7 @@ type ConnectionView struct {
 	DomainScope        provider.DomainScope           `json:"domainScope"`
 	ProtocolDefaults   provider.ProtocolTemplates     `json:"protocolDefaults"`
 	LastAPICheckAt     *string                        `json:"lastApiCheckAt"`
-	LastAPICheckStatus string                         `json:"lastApiCheckStatus"`
+	LastAPICheckStatus string                         `json:"lastApiCheckStatus" tstype:"\"never\" | \"passed\" | \"failed\""`
 	LastAPIErrorCode   *string                        `json:"lastApiErrorCode"`
 	LastSyncAt         *string                        `json:"lastSyncAt"`
 	CreatedAt          string                         `json:"createdAt"`

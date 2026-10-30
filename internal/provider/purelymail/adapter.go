@@ -154,10 +154,6 @@ func scopeContains(scope provider.DomainScope, domain string) bool {
 	return false
 }
 
-func external(kind string) error {
-	return provider.Errorf("external_action_required", "Purelymail does not expose %s", kind)
-}
-
 func unsupported(kind string) error {
 	return provider.Errorf("unsupported_operation", "Purelymail does not support %s", kind)
 }
@@ -197,7 +193,7 @@ func (a *Adapter) CreateDomain(ctx context.Context, req provider.CreateDomainReq
 	if err := a.api.AddDomain(ctx, strings.ToLower(req.Domain)); err != nil {
 		return provider.CreateDomainResult{}, err
 	}
-	info, err := a.GetDomain(ctx, provider.GetDomainRequest{Domain: req.Domain})
+	info, err := a.GetDomain(ctx, provider.GetDomainRequest(req))
 	if err != nil {
 		return provider.CreateDomainResult{}, err
 	}
@@ -232,7 +228,7 @@ func (a *Adapter) CheckDNS(ctx context.Context, req provider.CheckDNSRequest) (p
 	if err := a.api.UpdateDomainSettings(ctx, purelymailclient.UpdateDomainSettingsRequest{Name: req.Domain, RecheckDNS: true}); err != nil {
 		return provider.CheckDNSResult{}, err
 	}
-	info, err := a.GetDomain(ctx, provider.GetDomainRequest{Domain: req.Domain})
+	info, err := a.GetDomain(ctx, provider.GetDomainRequest(req))
 	if err != nil {
 		return provider.CheckDNSResult{}, err
 	}

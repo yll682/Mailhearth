@@ -96,6 +96,8 @@ Mailhearth は、自身が作成していないデータベース（例：プレ
 
 今後のスキーマ変更は番号付きの追加ファイルとして提供され、それぞれ個別のトランザクションで適用されます。
 
+コンテナイメージはリリースタグに対してのみ公開されます。各 `vX.Y.Z` タグから `X.Y.Z` と `X.Y` リリースライン（1.0 以降は `X` も）が生成されます。随時更新される `latest` タグはなく、ブランチへのプッシュからイメージがビルドされることもありません。`docker-compose.yml` は互換性のあるパッチリリースを受け取る `0.2` リリースラインに固定されており、新しいリリースラインへの移行はこのタグを意図的に変更して行います。
+
 1. **アップグレード前**：バックアップを取得し（上記参照）、`master.key` のバックアップを確認してください。
 2. **アップグレードの適用**：
    ```bash
@@ -213,6 +215,10 @@ go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhear
 
 # 静的解析
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+# API レスポンス型を変更した後に web/src/lib/api-types.ts を再生成
+go run ./cmd/apitypes
 
 # フロントエンド自動テストと本番ビルド検証
 npm --prefix web run test

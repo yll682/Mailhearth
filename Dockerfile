@@ -1,5 +1,5 @@
 # --- Stage 1: web client ---------------------------------------------------
-FROM node:22-alpine AS web
+FROM node:24-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
@@ -17,7 +17,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/mailhearth ./cmd/mailhearth
 
 # --- Stage 3: runtime -------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 # sqlite is not used by the (CGO-free) binary; it provides the sqlite3 CLI
 # used for online backups in docs/operations.md.
 RUN apk add --no-cache ca-certificates tzdata sqlite && adduser -D -H -u 10001 mailhearth \

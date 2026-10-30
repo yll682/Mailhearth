@@ -14,6 +14,7 @@ Core subsystems across the repository:
 - `cmd/mailhearth`: Main application entry point; handles configuration loading, master key derivation, database initialisation, IMAP connection pool initialization, background worker orchestration, and HTTP/SSE server binding.
 - `internal/config`, `internal/secrets`: Environment configuration validation; AES-256-GCM encryption with HKDF key derivation; argon2id password hashing and session token lifecycle management.
 - `internal/db`, `internal/model`: Embedded schema applied in one transaction, foreign key and tenant-scope constraints, core domain entities, and data persistence models.
+- `cmd/apitypes`, `internal/apitypes`: Generates `web/src/lib/api-types.ts` from the Go response types (reflection over the `encoding/json` rules, with `tstype` tags for string unions). The web client imports only these generated types; `go test` and CI fail when the committed file is out of date.
 - `internal/provider`: Unified interface abstractions for email providers, alongside dedicated adapters for Purelymail, Migadu, and generic manual IMAP/SMTP setups.
 - `internal/purelymail`: Low-level API client and structured error mappings for the Purelymail management service.
 - `internal/core`: Core domain services handling mail connections, resource discovery and ingestion, organizational permissions, mailbox lifecycle, persistent operations, and message submission tracking.

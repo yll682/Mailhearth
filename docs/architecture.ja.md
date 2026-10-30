@@ -14,6 +14,7 @@ Mailhearth は極めてシンプルかつ高効率なモノリス（単一バイ
 - `cmd/mailhearth`：システムの起動エントリーポイント。環境設定の読み込み、マスターキーの導出と検証、データベースの初期化、IMAP コネクションプールの初期化、バックグラウンド非同期ワーカーの協調、および HTTP/SSE サーバーのバインドを担当します。
 - `internal/config`、`internal/secrets`：環境変数のバリデーション。AES-256-GCM と HKDF による多階層の鍵導出、argon2id パスワードハッシュ計算、セッショントークンのライフサイクル管理。
 - `internal/db`、`internal/model`：単一トランザクションで適用される組み込みスキーマ、外部キーおよびテナントスコープ制約、コア領域エンティティと永続化データモデルの定義。
+- `cmd/apitypes`、`internal/apitypes`：Go のレスポンス型から `web/src/lib/api-types.ts` を生成します（`encoding/json` のルールに沿ったリフレクションを行い、文字列ユニオン型は `tstype` タグで指定）。Web クライアントはこの生成された型のみをインポートし、コミット済みのファイルが古くなっている場合は `go test` と CI が失敗します。
 - `internal/provider`：複数メールプロバイダーの共通抽象インターフェース、ならびに Purelymail、Migadu、汎用手動 IMAP/SMTP 向けの専用アダプター。
 - `internal/purelymail`：Purelymail 管理 API との通信を担う低レベルクライアントおよび構造化エラーハンドリング。
 - `internal/core`：コアビジネスロジック。メール接続管理、リソースの自動検出と取り込み、組織権限管理、メールボックスのライフサイクル制御、永続化された非同期操作（Operation）、メール送信パイプライン（Submission）。

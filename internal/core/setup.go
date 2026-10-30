@@ -18,7 +18,7 @@ import (
 
 type SetupStatus struct {
 	NeedsSetup bool   `json:"needsSetup"`
-	Step       string `json:"step"`
+	Step       string `json:"step" tstype:"\"org\" | \"connection\" | \"mailboxes\" | \"done\""`
 	OrgName    string `json:"orgName,omitempty"`
 	DevStack   bool   `json:"devStack"`
 }
@@ -319,7 +319,7 @@ func (s *Service) CompleteSetup(ctx context.Context, orgID, actor int64, bindMai
 }
 
 type Overview struct {
-	Org            *model.Organization   `json:"org"`
+	Org            model.Organization    `json:"org"`
 	Connections    []OverviewConnection  `json:"connections"`
 	Members        map[string]int        `json:"members"`
 	Mailboxes      map[string]int        `json:"mailboxes"`
@@ -346,11 +346,11 @@ type OverviewConnection struct {
 
 func (s *Service) Overview(ctx context.Context, orgID int64) (*Overview, error) {
 	o := &Overview{Members: map[string]int{}, Mailboxes: map[string]int{}, Pool: map[string]int{}, Connections: []OverviewConnection{}, Unconnected: []model.Mailbox{}, Unassigned: []model.Mailbox{}}
-	var err error
-	o.Org, err = s.Org(ctx)
+	org, err := s.Org(ctx)
 	if err != nil {
 		return nil, err
 	}
+	o.Org = *org
 	connections, err := s.Connections(ctx, orgID)
 	if err != nil {
 		return nil, err

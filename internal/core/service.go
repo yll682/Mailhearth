@@ -43,22 +43,6 @@ func invalid(format string, args ...any) error {
 	return &ValidationError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// UpstreamError wraps a Purelymail/IMAP failure so the UI can explain it.
-type UpstreamError struct {
-	Op  string
-	Err error
-}
-
-func (e *UpstreamError) Error() string { return e.Op + ": " + e.Err.Error() }
-func (e *UpstreamError) Unwrap() error { return e.Err }
-
-func upstream(op string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return &UpstreamError{Op: op, Err: err}
-}
-
 // Service is the application service.
 type Service struct {
 	DB                 *db.DB
@@ -85,10 +69,7 @@ func New(database *db.DB, cfg *config.Config, box *secrets.Box, pool *imappool.P
 	return s
 }
 
-var (
-	localPartRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$`)
-	domainRe    = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
-)
+var localPartRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$`)
 
 // NormalizeEmail lower-cases and validates an address.
 func NormalizeEmail(s string) (string, error) {
@@ -113,7 +94,6 @@ func SplitAddress(addr string) (string, string) {
 }
 
 func validLocalPart(s string) bool { return localPartRe.MatchString(s) }
-func validDomain(s string) bool    { return domainRe.MatchString(s) }
 
 func nullStr(s sql.NullString) *string {
 	if !s.Valid {

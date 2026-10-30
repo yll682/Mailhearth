@@ -55,23 +55,6 @@ func (s *Service) Offboard(ctx context.Context, orgID, actor, memberID int64, re
 	return &OffboardResult{Member: m, Operation: op}, nil
 }
 
-func (s *Service) ownedMailboxes(ctx context.Context, orgID, memberID int64) ([]model.Mailbox, error) {
-	rows, err := s.DB.QueryContext(ctx, mailboxSelect+` WHERE b.org_id = ? AND b.owner_member_id = ?`, orgID, memberID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.Mailbox
-	for rows.Next() {
-		b, err := scanMailbox(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *b)
-	}
-	return out, rows.Err()
-}
-
 // --- team collaboration state on shared mailboxes ---
 
 // MessageState is the team view of a message.

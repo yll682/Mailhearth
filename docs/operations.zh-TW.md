@@ -96,6 +96,8 @@ docker compose start
 
 後續的結構變更會以新增的編號檔案發布，每個檔案在各自獨立的交易中套用。
 
+容器映像檔只針對發行標籤建置：每個 `vX.Y.Z` 標籤會產生 `X.Y.Z` 以及 `X.Y` 發行線（自 1.0 起還包括 `X`）。不提供隨時變動的 `latest` 標籤，分支推送也不會建置映像檔。`docker-compose.yml` 固定使用 `0.2` 發行線，該發行線會持續接收相容的修補版本；切換到新的發行線需要刻意修改該標籤。
+
 1. **升級前準備**：先完成一次備份（見上文），並核對 `master.key` 備份。
 2. **執行升級**：
    ```bash
@@ -213,6 +215,10 @@ go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhear
 
 # 程式碼靜態品質檢查
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+# 修改 API 回應型別後重新產生 web/src/lib/api-types.ts
+go run ./cmd/apitypes
 
 # 前端自動化測試與正式建置打包檢驗
 npm --prefix web run test

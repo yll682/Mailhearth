@@ -8,6 +8,16 @@
 
 ## [未發布]
 
+### 變更（破壞性）— 計畫作為 0.2.0 發布
+
+Mailhearth 尚未部署給真實使用者，因此本版本放棄對早期資料庫、設定及用戶端的全部相容性。
+
+- **資料庫**：資料庫結構合併為單一 `0001_init.sql`，在一筆交易中套用（版本記錄於 `PRAGMA user_version`）。早期建置所建立的資料庫會在啟動時被拒絕，請以空的資料目錄啟動。移除了不再使用的舊資料表與舊欄位；郵件歷史（`message_state`、`mail_activity`）現在透過 `ON DELETE RESTRICT` 外部鍵而非觸發程序阻止刪除信箱；並補齊了缺少的外部鍵、`CHECK` 約束與索引。
+- **設定**：移除了 `MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR` 與 `MAILHEARTH_SIEVE_TLS`。新的安全預設值：一律需要初始化權杖（未設定 `MAILHEARTH_SETUP_TOKEN` 時自動產生並寫入日誌）；除非設定 `MAILHEARTH_SECURE_COOKIES=false`，否則啟用 `Secure` Cookie；`MAILHEARTH_UPLOAD_QUOTA_MB` 預設為 120 且一律強制執行；工作階段預設滑動有效期 14 天、絕對有效期 30 天。
+- **HTTP API**：移除了單一連線與網域寫入端點的 `410 api_replaced` 佔位路由；`DELETE /api/mail/uploads/{id}` 對不屬於呼叫者的 id 回傳 404；`/api/setup/status` 移除了 `setupTokenRequired`；`Domain` 不再包含 `isShared`、`allowAccountReset`、`symbolicSubaddressing`、`dns`、`dnsCheckedAt` 與 `status`。
+- **Web 用戶端**：升級至 Vite 8、Preact 11 與 TypeScript 7；API 型別由 Go 回應型別產生。
+- **發行**：映像檔只針對 `vX.Y.Z` 標籤發布（`X.Y.Z` 與 `X.Y`），不再提供 `latest`；`docker-compose.yml` 固定使用 `0.2` 發行線。弱點掃描（govulncheck、npm audit）與 staticcheck 在 CI 中為阻斷項目。
+
 ### 新增與最佳化
 
 - **五國語言在地化支援**：新增繁體中文（台灣）、日文及西班牙文的前台與管理介面完整翻譯，可在登入頁及個人設定頁自由切換，介面詞條與樣板參數透過 TypeScript AST 靜態測試達成 100% 覆蓋。

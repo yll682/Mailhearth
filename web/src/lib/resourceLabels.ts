@@ -19,6 +19,6 @@ export function canImportResource(item: DiscoveryResource): boolean {
 
 export function resourceDescription(item: DiscoveryResource): string {
   if (item.forwarding) return `${item.forwarding.localPart}@${item.forwarding.domain} → ${item.forwarding.targets.join(", ")}`;
-  const description = item.summary.address ?? item.summary.name ?? item.resource.remoteKey;
-  return item.summary.mailboxAddress ? `${item.summary.mailboxAddress} → ${description}` : description;
+  const description = item.summary?.address ?? item.summary?.name ?? item.resource.remoteKey;
+  return item.summary?.mailboxAddress ? `${item.summary?.mailboxAddress} → ${description}` : description;
 }

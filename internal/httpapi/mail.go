@@ -99,9 +99,19 @@ func (s *Server) withMailbox(needConn bool, fn func(m *mailReq)) http.HandlerFun
 	})
 }
 
-type listResponse struct {
+// MessageListResponse is one page of a folder with team state per message.
+type MessageListResponse struct {
 	*mailops.Page
-	Team map[string]*core.MessageState `json:"team"`
+	Team map[string]*core.MessageState `json:"team" tstype:"Record<string, MessageState>"`
+}
+
+// MessageResponse is a single message with its sandboxed view URL.
+type MessageResponse struct {
+	Message   mailops.Message   `json:"message"`
+	ViewToken string            `json:"viewToken"`
+	ViewURL   string            `json:"viewUrl"`
+	Team      core.MessageState `json:"team"`
+	Key       string            `json:"key"`
 }
 
 func (s *Server) routesMail(mux *http.ServeMux) {
@@ -248,7 +258,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 		if team == nil {
 			team = map[string]*core.MessageState{}
 		}
-		writeJSON(m.w, http.StatusOK, listResponse{Page: page, Team: team})
+		writeJSON(m.w, http.StatusOK, MessageListResponse{Page: page, Team: team})
 	}))
 
 	// Single message (JSON)
@@ -285,12 +295,12 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(m.w, m.r, err)
 			return
 		}
-		writeJSON(m.w, http.StatusOK, map[string]any{
-			"message":   msg,
-			"viewToken": token,
-			"viewUrl":   base + "/view?folder=" + url.QueryEscape(folder) + "&t=" + url.QueryEscape(token),
-			"team":      team,
-			"key":       key,
+		writeJSON(m.w, http.StatusOK, MessageResponse{
+			Message:   *msg,
+			ViewToken: token,
+			ViewURL:   base + "/view?folder=" + url.QueryEscape(folder) + "&t=" + url.QueryEscape(token),
+			Team:      *team,
+			Key:       key,
 		})
 	}))
 
@@ -460,7 +470,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			s.fail(w, r, &core.ValidationError{Msg: "multipart form expected"})
 			return
 		}
-		var out []uploadInfo
+		var out []UploadInfo
 		for {
 			part, err := mr.NextPart()
 			if err == io.EOF {
@@ -481,7 +491,7 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			out = append(out, *info)
 		}
 		if out == nil {
-			out = []uploadInfo{}
+			out = []UploadInfo{}
 		}
 		writeJSON(w, http.StatusOK, out)
 	}))

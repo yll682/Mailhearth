@@ -96,6 +96,8 @@ Mailhearth refuses to start on a database it did not create (for example one lef
 
 Later schema changes ship as additional numbered files, each applied in its own transaction.
 
+Container images are published only for release tags: each `vX.Y.Z` tag produces `X.Y.Z` and the `X.Y` release line (and `X` from 1.0 on). There is no moving `latest` tag and no image is built from branch pushes. `docker-compose.yml` pins the `0.2` release line, which receives compatible patch releases; moving to a new release line is a deliberate change of that tag.
+
 1. **Before upgrading**: take a backup (see above) and verify your `master.key` backup.
 2. **Applying upgrades**:
    ```bash
@@ -213,6 +215,10 @@ go test -count=1 ./internal/db ./internal/core ./internal/httpapi ./cmd/mailhear
 
 # Static analysis
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+
+# Regenerate web/src/lib/api-types.ts after changing an API response type
+go run ./cmd/apitypes
 
 # Frontend test suite and production build verification
 npm --prefix web run test

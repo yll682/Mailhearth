@@ -131,7 +131,6 @@ type apiError struct {
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *core.ValidationError
 	var se *sieve.ValidationError
-	var ue *core.UpstreamError
 	var ae *imappool.AuthError
 	var sae *mailops.SendAuthError
 	var sieveAuth *sieve.AuthError
@@ -191,7 +190,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 			status = http.StatusConflict
 		}
 		writeJSON(w, status, apiError{Error: "ManageSieve 认证结果需要检查", Code: sieveAuth.Code})
-	case errors.As(err, &ue), errors.As(err, &pe):
+	case errors.As(err, &pe):
 		s.Log.Warn("upstream request failed", "method", r.Method, "path", r.URL.Path, "requestId", requestID(r), "err", err)
 		writeJSON(w, http.StatusBadGateway, apiError{Error: "服务商请求失败", Code: "upstream_failed"})
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

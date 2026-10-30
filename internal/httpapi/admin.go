@@ -123,10 +123,10 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			s.fail(w, r, err)
 			return
 		}
-		out := make([]map[string]any, 0, len(v))
+		out := make([]DirectoryEntry, 0, len(v))
 		for _, m := range v {
 			if m.Status == model.MemberActive || m.Status == model.MemberInvited {
-				out = append(out, map[string]any{"id": m.ID, "displayName": m.DisplayName, "title": m.Title, "department": m.Department, "status": m.Status})
+				out = append(out, DirectoryEntry{ID: m.ID, DisplayName: m.DisplayName, Title: m.Title, Department: m.Department, Status: m.Status})
 			}
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -616,4 +616,13 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		}
 		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "group.delete", Routing: &core.RoutingOperationInput{GroupID: id, ExpectedRevision: in.ExpectedRevision}}, nil)
 	})))
+}
+
+// DirectoryEntry is the member summary any signed-in member may see.
+type DirectoryEntry struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"displayName"`
+	Title       string `json:"title"`
+	Department  string `json:"department"`
+	Status      string `json:"status"`
 }

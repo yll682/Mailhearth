@@ -1,8 +1,13 @@
 # Mailhearth: single container, single volume. Put a reverse proxy with TLS
 # (Caddy, nginx, Traefik) in front of it and set MAILHEARTH_BASE_URL.
+#
+# Images are published for release tags only: X.Y.Z, and the X.Y release
+# line used here (patch releases within 0.2 are compatible). Change the tag
+# deliberately when moving to a new release line. `docker compose up --build`
+# builds this checkout instead and tags the result with the same name.
 services:
   mailhearth:
-    image: ghcr.io/yll682/mailhearth:latest
+    image: ghcr.io/yll682/mailhearth:0.2
     build: .
     container_name: mailhearth
     restart: unless-stopped
@@ -11,6 +16,7 @@ services:
     environment:
       MAILHEARTH_BASE_URL: "https://mail.example.com"   # public URL, used for invite links and secure cookies
       MAILHEARTH_TRUST_PROXY: "true"                     # trust X-Forwarded-* from the reverse proxy
+      # MAILHEARTH_SETUP_TOKEN: ""                       # optional: otherwise a one-time token is logged at first start
       # MAILHEARTH_MASTER_KEY: ""                        # optional: 32 bytes base64; otherwise generated into /data/master.key
       # MAILHEARTH_IMAP_MAX_CONNS: "24"                  # lower on very small hosts
       # GOMEMLIMIT: "160MiB"

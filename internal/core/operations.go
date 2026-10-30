@@ -46,16 +46,17 @@ type OperationPayload struct {
 }
 
 type OperationView struct {
-	ActorID            int64                 `json:"-"`
-	RequiredPermission string                `json:"-"`
-	ID                 string                `json:"operationId"`
-	Kind               string                `json:"kind"`
-	Status             string                `json:"status"`
-	Result             json.RawMessage       `json:"result"`
-	ErrorCode          *string               `json:"errorCode"`
-	Steps              []model.OperationStep `json:"steps"`
-	CreatedAt          string                `json:"createdAt"`
-	UpdatedAt          string                `json:"updatedAt"`
+	ActorID            int64  `json:"-"`
+	RequiredPermission string `json:"-"`
+	ID                 string `json:"operationId"`
+	Kind               string `json:"kind"`
+	Status             string `json:"status" tstype:"\"queued\" | \"running\" | \"succeeded\" | \"failed\" | \"unknown\" | \"needs_action\" | \"cancelled\""`
+	// Result is the operation's JSON result; its fields depend on the kind.
+	Result    json.RawMessage       `json:"result" tstype:"{ snapshotId?: number; resources?: DiscoverySnapshotResource[]; id?: number; memberId?: number; inviteLink?: string; mailboxIds?: number[]; mailboxId?: number; domainBindingId?: number; errorDetails?: unknown }"`
+	ErrorCode *string               `json:"errorCode"`
+	Steps     []model.OperationStep `json:"steps"`
+	CreatedAt string                `json:"createdAt"`
+	UpdatedAt string                `json:"updatedAt"`
 }
 
 func (s *Service) Operation(ctx context.Context, orgID int64, id string) (*OperationView, error) {

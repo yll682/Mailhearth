@@ -73,6 +73,8 @@ cp .env.example .env            # 修改 .env 文件，将 MAILHEARTH_BASE_URL �
 docker compose up -d --build
 ```
 
+`--build` 会构建当前检出的代码；如需运行已发布的版本，请改用 `docker compose pull && docker compose up -d`（compose 文件固定使用 `0.2` 发布线）。
+
 部署完成后，先从日志中读取一次性初始化令牌（`docker compose logs mailhearth | grep 'FIRST-TIME SETUP'`），或通过 `MAILHEARTH_SETUP_TOKEN` 自行设置，然后在浏览器中打开配置好的公开网址，跟随首次运行向导创建组织管理员、添加邮件连接并按需导入邮箱资源。在正式收发邮件前，请确认配置好各协议凭据并完成连通性检查。
 
 > **数据备份说明**：请务必定期备份持久化挂载的 `/data` 数据卷，系统核心的 SQLite 数据库文件以及主加密密钥 `master.key` 均保存在该目录中。

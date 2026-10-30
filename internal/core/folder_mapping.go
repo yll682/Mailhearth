@@ -17,7 +17,7 @@ type FolderMappingView struct {
 	MailboxID    int64               `json:"mailboxId"`
 	Revision     int64               `json:"revision"`
 	Mapping      model.FolderMapping `json:"mapping"`
-	SentCopyMode string              `json:"sentCopyMode"`
+	SentCopyMode string              `json:"sentCopyMode" tstype:"\"append\" | \"server\""`
 }
 
 type UpdateFolderMappingInput struct {

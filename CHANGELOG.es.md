@@ -8,6 +8,16 @@ El formato sigue las pautas de [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [No publicado]
 
+### Cambios (incompatibles) — previstos para 0.2.0
+
+Mailhearth aún no se ha desplegado para usuarios reales, por lo que esta versión elimina toda compatibilidad con bases de datos, configuración y clientes anteriores.
+
+- **Base de datos**: el esquema es un único `0001_init.sql` aplicado en una sola transacción (versión en `PRAGMA user_version`). Las bases de datos creadas por compilaciones anteriores se rechazan al arrancar; empieza con un directorio de datos vacío. Se eliminaron tablas y columnas heredadas sin uso, el historial de correo (`message_state`, `mail_activity`) ahora impide eliminar buzones mediante claves foráneas `ON DELETE RESTRICT` en lugar de un trigger, y se añadieron las claves foráneas, restricciones `CHECK` e índices que faltaban.
+- **Configuración**: se eliminaron `MAILHEARTH_PURELYMAIL_API_URL`, `MAILHEARTH_IMAP_ADDR`, `MAILHEARTH_IMAP_TLS`, `MAILHEARTH_SMTP_ADDR`, `MAILHEARTH_SMTP_TLS`, `MAILHEARTH_SIEVE_ADDR` y `MAILHEARTH_SIEVE_TLS`. Nuevos valores predeterminados seguros: siempre se exige un token de configuración (se genera y se registra en el log cuando `MAILHEARTH_SETUP_TOKEN` no está definido); las cookies `Secure` están activadas salvo con `MAILHEARTH_SECURE_COOKIES=false`; `MAILHEARTH_UPLOAD_QUOTA_MB` vale 120 por defecto y siempre se aplica; las sesiones duran por defecto 14 días deslizantes y 30 días absolutos.
+- **API HTTP**: se eliminaron las rutas de marcador `410 api_replaced` de los endpoints de conexión única y de escritura de dominios; `DELETE /api/mail/uploads/{id}` devuelve 404 para un id que no pertenece a quien llama; se eliminó `setupTokenRequired` de `/api/setup/status`; `Domain` ya no incluye `isShared`, `allowAccountReset`, `symbolicSubaddressing`, `dns`, `dnsCheckedAt` ni `status`.
+- **Cliente web**: Vite 8, Preact 11 y TypeScript 7; los tipos de la API se generan a partir de los tipos de respuesta de Go.
+- **Versiones**: las imágenes se publican solo para etiquetas `vX.Y.Z` (`X.Y.Z` y `X.Y`), sin `latest`; `docker-compose.yml` fija la línea `0.2`. El análisis de vulnerabilidades (govulncheck, npm audit) y staticcheck son bloqueantes en la CI.
+
 ### Novedades y mejoras
 
 - **Ampliación de localización multilingüe**: Traducciones completas de la interfaz web y del panel de administración para chino tradicional (Taiwán), japonés y español, seleccionables en la pantalla de inicio de sesión y en Ajustes. La cobertura de diccionarios y variables se valida al 100% mediante análisis de AST en TypeScript.

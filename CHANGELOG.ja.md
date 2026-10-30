@@ -8,6 +8,16 @@ Mailhearth のすべての重要な変更履歴をこのファイルに記録し
 
 ## [未リリース]
 
+### 変更（破壊的）— 0.2.0 として予定
+
+Mailhearth はまだ実ユーザー向けにデプロイされていないため、本リリースでは以前のデータベース、設定、クライアントとの互換性をすべて廃止します。
+
+- **データベース**: スキーマは単一トランザクションで適用される 1 つの `0001_init.sql` に統合されました（バージョンは `PRAGMA user_version` に記録）。以前のビルドで作成されたデータベースは起動時に拒否されるため、空のデータディレクトリで起動してください。未使用のレガシーテーブルとカラムを削除し、メール履歴（`message_state`、`mail_activity`）はトリガーではなく `ON DELETE RESTRICT` 外部キーによってメールボックスの削除を防ぐようになりました。不足していた外部キー、`CHECK` 制約、インデックスも追加しました。
+- **設定**: `MAILHEARTH_PURELYMAIL_API_URL`、`MAILHEARTH_IMAP_ADDR`、`MAILHEARTH_IMAP_TLS`、`MAILHEARTH_SMTP_ADDR`、`MAILHEARTH_SMTP_TLS`、`MAILHEARTH_SIEVE_ADDR`、`MAILHEARTH_SIEVE_TLS` を削除しました。新しい安全なデフォルト: セットアップトークンは常に必須（`MAILHEARTH_SETUP_TOKEN` が未設定の場合は生成してログに出力）。`MAILHEARTH_SECURE_COOKIES=false` としない限り `Secure` Cookie が有効。`MAILHEARTH_UPLOAD_QUOTA_MB` のデフォルトは 120 で常に適用。セッションのデフォルトはスライディング 14 日、絶対期限 30 日。
+- **HTTP API**: 単一接続およびドメイン書き込みエンドポイント向けの `410 api_replaced` プレースホルダールートを削除しました。`DELETE /api/mail/uploads/{id}` は呼び出し元のものではない id に対して 404 を返します。`/api/setup/status` から `setupTokenRequired` を削除しました。`Domain` は `isShared`、`allowAccountReset`、`symbolicSubaddressing`、`dns`、`dnsCheckedAt`、`status` を含まなくなりました。
+- **Web クライアント**: Vite 8、Preact 11、TypeScript 7 に移行。API 型は Go のレスポンス型から生成されます。
+- **リリース**: イメージは `vX.Y.Z` タグに対してのみ公開され（`X.Y.Z` と `X.Y`）、`latest` はありません。`docker-compose.yml` は `0.2` ラインに固定されています。脆弱性スキャン（govulncheck、npm audit）と staticcheck は CI でブロッキングとなりました。
+
 ### 追加・改善
 
 - **多言語ローカライズの拡充**: 繁体字中国語（台湾）、日本語、スペイン語の Web インターフェース翻訳を追加。サインイン画面および設定画面で選択可能。TypeScript AST パーサーにより、辞書キーおよび補間変数の 100% 網羅性を検証済み。

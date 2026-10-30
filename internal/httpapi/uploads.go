@@ -45,7 +45,8 @@ func (u *uploadStore) close() {
 	})
 }
 
-type uploadInfo struct {
+// UploadInfo describes a staged attachment.
+type UploadInfo struct {
 	ID       string `json:"id"`
 	Filename string `json:"filename"`
 	MIME     string `json:"mime"`
@@ -77,7 +78,7 @@ func (u *uploadStore) path(id string) string {
 // save stores one upload. limit caps the single file; quota caps the
 // member's pending (unsent, not yet cleaned up) uploads in total so that
 // repeated uploads cannot fill the data volume. quota <= 0 disables it.
-func (u *uploadStore) save(ctx context.Context, memberID int64, filename, mimeType string, r io.Reader, limit, quota int64) (*uploadInfo, error) {
+func (u *uploadStore) save(ctx context.Context, memberID int64, filename, mimeType string, r io.Reader, limit, quota int64) (*UploadInfo, error) {
 	copyLimit := limit
 	if quota > 0 {
 		var used int64
@@ -133,18 +134,18 @@ func (u *uploadStore) save(ctx context.Context, memberID int64, filename, mimeTy
 		}
 		return nil, uploadQuotaError(quota)
 	}
-	return &uploadInfo{ID: id, Filename: filename, MIME: mimeType, Size: n}, nil
+	return &UploadInfo{ID: id, Filename: filename, MIME: mimeType, Size: n}, nil
 }
 
 func uploadQuotaError(quota int64) error {
 	return &core.ValidationError{Msg: fmt.Sprintf("pending attachments exceed your %d MB limit; send or remove some attachments first", quota>>20)}
 }
 
-func (u *uploadStore) get(ctx context.Context, memberID int64, id string) (*uploadInfo, error) {
+func (u *uploadStore) get(ctx context.Context, memberID int64, id string) (*UploadInfo, error) {
 	if !validUploadID(id) {
 		return nil, core.ErrNotFound
 	}
-	var info uploadInfo
+	var info UploadInfo
 	err := u.svc.DB.QueryRowContext(ctx, `SELECT id, filename, mime, size FROM uploads WHERE id = ? AND member_id = ?`, id, memberID).Scan(&info.ID, &info.Filename, &info.MIME, &info.Size)
 	if err != nil {
 		return nil, core.ErrNotFound
