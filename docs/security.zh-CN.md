@@ -30,7 +30,8 @@ Mailhearth 的安全设计针对以下攻击面实施纵深防御：
 
 ### 2. 身份认证与会话防护（Authentication & Sessions）
 - **强密码哈希**：员工登录密码采用 RFC 9106 推荐的 argon2id 密码哈希算法（参数调优为 `m=19MiB, t=2`），高抗 GPU/ASIC 离线暴力破解。
-- **高强度会话令牌**：会话基于 256 位加密安全伪随机数生成，数据库仅保存其 SHA-256 哈希值；Cookie 严格附加 `HttpOnly`、`SameSite=Lax` 并在 HTTPS 环境下强制附加 `Secure`，采用 30 天滑动过期窗口。滑动窗口由 `MAILHEARTH_SESSION_DAYS` 控制，并受 90 天绝对有效期（`MAILHEARTH_SESSION_MAX_DAYS`）约束；修改本人密码后，该成员的其他会话会全部注销。
+- **高强度会话令牌**：会话基于 256 位加密安全伪随机数生成，数据库仅保存其 SHA-256 哈希值；Cookie 严格附加 `HttpOnly`、`SameSite=Lax` 并默认附加 `Secure`（仅纯 HTTP 测试实例可设置 `MAILHEARTH_SECURE_COOKIES=false` 关闭），采用 14 天滑动过期窗口。滑动窗口由 `MAILHEARTH_SESSION_DAYS` 控制，并受 30 天绝对有效期（`MAILHEARTH_SESSION_MAX_DAYS`）约束；修改本人密码后，该成员的其他会话会全部注销。
+- **强制初始化令牌**：在全新实例上创建组织必须提供初始化令牌，避免抢先访问新实例的人占用所有者身份。未设置 `MAILHEARTH_SETUP_TOKEN` 时，在初始化完成前每次启动都会生成一个随机令牌并输出到服务器日志；若没有可用令牌，该接口一律拒绝请求（fail closed）。
 - **防暴力破解速率限制**：对用户登录、邀请链接激活等敏感认证接口实施基于 IP 与账户维度的多层速率限制。只有当请求来自 `MAILHEARTH_TRUSTED_PROXIES` 所列代理时，系统才会从 `X-Forwarded-For` 读取客户端地址。
 - **离职立即吊销**：成员一旦被管理员停用（`disabled`）或标记离职（`departed`），系统在单个本地事务中立即清空并注销该成员的全部在线会话，杜绝幽灵会话残留。
 
@@ -71,7 +72,7 @@ Mailhearth 的安全设计针对以下攻击面实施纵深防御：
 
 ## 生产部署安全建议
 
-1. **强制 HTTPS 并妥善配置反向代理**：务必在前端反向代理（Caddy、Nginx）上配置完备的 TLS 证书终结，并将 `MAILHEARTH_BASE_URL` 设为 `https://...` 协议地址，以确保浏览器 Cookie 的 `Secure` 属性强制生效；仅在反向代理受信且正确注入标头时开启 `MAILHEARTH_TRUST_PROXY=true`。
+1. **强制 HTTPS 并妥善配置反向代理**：务必在前端反向代理（Caddy、Nginx）上配置完备的 TLS 证书终结，并将 `MAILHEARTH_BASE_URL` 设为 `https://...` 协议地址（会话 Cookie 默认附加 `Secure`，除非显式关闭，否则 `http://` 基础地址会导致启动失败）；仅在反向代理受信且正确注入标头时开启 `MAILHEARTH_TRUST_PROXY=true`。
 2. **主加密密钥（master.key）隔离保存**：切勿将 `/data/master.key` 与常规业务数据库混合备份在同一个公网对象存储中。建议将 `master.key` 作为机密文本单独保存在团队的企业级密码管理器（如 1Password、Bitwarden）或硬件加密安全模块中。
 3. **分配专用服务商 API Token**：在 Purelymail 或 Migadu 管理后台创建 API 凭据时，请专卡专用，切勿与其他业务系统共用同一个令牌，以便在出现异常时能独立吊销而互不影响。
 4. **服务商母账号启用两步验证 (2FA)**：务必在邮件服务商的官方网页控制台中为团队管理账户开启多因素认证（2FA/TOTP），为基础设施提供最高级别的底座保障。

@@ -48,6 +48,7 @@ func realTransactionEnvironment(t *testing.T) *realEnvironment {
 	if err != nil {
 		t.Fatal("无法读取真实环境的部署配置")
 	}
+	cfg.SetupToken = "test-setup-token"
 	if cfg.DevStack {
 		t.Fatal("真实检查要求关闭 MAILHEARTH_DEV_STACK")
 	}
@@ -74,7 +75,7 @@ func realTransactionEnvironment(t *testing.T) *realEnvironment {
 			t.Error("无法关闭验收数据库")
 		}
 	})
-	member, err := svc.Init(ctx, core.InitRequest{OrgName: runID, AdminName: "真实事务检查", AdminEmail: "transactions@example.org", Password: uuid.NewString() + "Aa1!"})
+	member, err := svc.Init(ctx, core.InitRequest{OrgName: runID, AdminName: "真实事务检查", AdminEmail: "transactions@example.org", Password: uuid.NewString() + "Aa1!", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal("无法初始化验收组织")
 	}

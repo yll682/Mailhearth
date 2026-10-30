@@ -556,7 +556,7 @@ func (s *Service) LookupSession(ctx context.Context, token string) (*model.Membe
 		return nil, err
 	}
 	now := time.Now().UTC()
-	hardLimit := db.ParseTime(created).Add(s.sessionMaxAge())
+	hardLimit := db.ParseTime(created).Add(s.Cfg.SessionMaxAge)
 	if db.ParseTime(expires).Before(now) || !hardLimit.After(now) {
 		if _, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sid); err != nil {
 			s.Log.Warn("could not delete expired session", "err", err)
@@ -585,21 +585,11 @@ func (s *Service) LookupSession(ctx context.Context, token string) (*model.Membe
 	return m, nil
 }
 
-func (s *Service) sessionMaxAge() time.Duration {
-	if s.Cfg.SessionMaxAge > 0 {
-		return s.Cfg.SessionMaxAge
-	}
-	if s.Cfg.SessionTTL > 0 {
-		return 3 * s.Cfg.SessionTTL
-	}
-	return 90 * 24 * time.Hour
-}
-
 // PurgeExpiredSessions deletes sessions past their expiry or absolute
 // lifetime; it returns how many were removed.
 func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	now := time.Now().UTC()
-	res, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ? OR created_at <= ?`, now.Format(time.RFC3339), now.Add(-s.sessionMaxAge()).Format(time.RFC3339))
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ? OR created_at <= ?`, now.Format(time.RFC3339), now.Add(-s.Cfg.SessionMaxAge).Format(time.RFC3339))
 	if err != nil {
 		return 0, err
 	}

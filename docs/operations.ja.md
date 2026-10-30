@@ -33,27 +33,29 @@ Mailhearth は極めて小さなフットプリントで動作するように設
 
 | 変数 | 既定値 | 用途 |
 | --- | --- | --- |
-| `MAILHEARTH_BASE_URL` | 空 | 公開 URL。招待リンクの生成に使用します。`https://` の URL では `Secure` Cookie が有効になります。 |
+| `MAILHEARTH_BASE_URL` | 空 | 公開 URL。招待リンクの生成に使用します。`MAILHEARTH_SECURE_COOKIES=false` を設定しない限り、`https://` である必要があります。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP の待ち受けアドレス。 |
 | `MAILHEARTH_DATA_DIR` | `./data`（コンテナ内では `/data`） | SQLite データベース、マスターキー、アップロードファイル。 |
 | `MAILHEARTH_MASTER_KEY` | `<data>/master.key` に自動生成 | 保存された認証情報を暗号化する 32 バイトの鍵（base64 または hex）。 |
-| `MAILHEARTH_SETUP_TOKEN` | 空 | 設定すると、新しいインスタンスで組織を作成する際にこのトークンが必要になり、最初にアクセスした人にオーナーを奪われるのを防ぎます。セットアップ完了前にインスタンスへアクセスできる場合は設定を推奨します。 |
+| `MAILHEARTH_SETUP_TOKEN` | 起動時に自動生成 | 新しいインスタンスで組織を作成する際に必要です。未設定の場合、組織が作成されるまで起動のたびにランダムなトークンが生成され、ログに出力されます（`FIRST-TIME SETUP` を探してください。フィールド名は `setupToken`）。自分で設定したトークンがログに出力されることはありません。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` のいずれか。 |
 | `MAILHEARTH_TRUST_PROXY` | `false` | 信頼済みプロキシからの `X-Forwarded-For` / `X-Forwarded-Host` を読み取ります。 |
 | `MAILHEARTH_TRUSTED_PROXIES` | ループバックとプライベートネットワーク | リバースプロキシの CIDR またはアドレス（カンマ区切り）。その他の接続元からの転送ヘッダーは無視されます。 |
-| `MAILHEARTH_SECURE_COOKIES` | `MAILHEARTH_BASE_URL` が `https://` の場合は `true` | Cookie の `Secure` 属性を強制的に有効または無効にします。 |
+| `MAILHEARTH_SECURE_COOKIES` | `true`（`MAILHEARTH_DEV_STACK` 使用時は `false`） | セッション Cookie の `Secure` 属性。`false` にするのは平文 HTTP のテスト用インスタンスに限ってください。 |
 | `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | 空 | メールサーバーを置いてよい CIDR。ここに記載しない限り、プライベート、ループバック、リンクローカルのアドレスへの接続は拒否されます。IMAP/SMTP/ManageSieve サーバーが内部ネットワークにある場合に設定してください。 |
 | `MAILHEARTH_CA_BUNDLES_FILE` | 空 | CA バンドル ID と PEM ファイルを対応付ける JSON ファイル。例：`{"1": "/etc/mailhearth/ca.pem"}`。プロトコルエンドポイントはこの ID を参照してプライベート CA を信頼します。 |
 | `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP 接続数の上限。プールは 4〜24 に対応し、範囲外の値は警告とともに調整されます。 |
 | `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | アイドル状態の IMAP 接続を閉じるまでの秒数（10〜3600）。 |
 | `MAILHEARTH_MAX_UPLOAD_MB` | `25` | 1 つの添付ファイルのアップロード上限。 |
 | `MAILHEARTH_MAX_MESSAGE_MB` | `40` | エンコード後のメッセージの上限。添付ファイルは送信用にエンコードされると約 3 分の 1 大きくなります。 |
-| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | メンバー 1 人あたりの未送信アップロードの合計サイズ。 |
-| `MAILHEARTH_SESSION_DAYS` | `30` | セッションのスライディング有効期限。 |
-| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | セッションの絶対有効期間。`MAILHEARTH_SESSION_DAYS` より短くはできません。 |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | `120` | メンバー 1 人あたりの未送信アップロードの合計サイズ。常に適用され、`MAILHEARTH_MAX_UPLOAD_MB` 以上である必要があります（1〜1048576）。制限を緩めるには値を大きくしてください。 |
+| `MAILHEARTH_SESSION_DAYS` | `14` | セッションのスライディング有効期限（1〜365）。 |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `30` | セッションの絶対有効期間（1〜3650）。`MAILHEARTH_SESSION_DAYS` より短くはできません。大きな値にすると実質的に制限を解除できます。 |
 | `MAILHEARTH_INVITE_DAYS` | `7` | 招待リンクの有効日数（1〜90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 開発専用：プロセス内の疑似プロバイダー、IMAP、SMTP。 |
 | `GOMEMLIMIT` | 未設定時は `160MiB` | Go ヒープの上限。 |
+
+既定値は新規の本番環境を前提に選ばれています。最も保護的な設定が既定であり、緩める場合は必ず明示的に設定します。
 
 ## バックアップとディザスタリカバリ
 

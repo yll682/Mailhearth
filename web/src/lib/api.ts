@@ -113,7 +113,7 @@ export interface ResourceOptions {
 }
 export interface MailboxForwarding { id: number; mailboxId: number; revision: number; targets: string[]; deliveryMode: "redirect" | "copy" | "unverified"; syncState: string; remoteStatus: { desiredTargets?: string[]; observedTargets?: string[]; statusByTarget?: Record<string, string>; remoteStates?: Record<string, string>; systemVerified?: boolean; verificationSource?: string } }
 export interface AuditEntry { id: number; actorId: number | null; actorName: string; action: string; targetType: string; targetId: string; detail: unknown; createdAt: string }
-export interface SetupStatus { needsSetup: boolean; step: "org" | "connection" | "mailboxes" | "done"; orgName?: string; devStack: boolean; setupTokenRequired: boolean }
+export interface SetupStatus { needsSetup: boolean; step: "org" | "connection" | "mailboxes" | "done"; orgName?: string; devStack: boolean }
 
 export type ProviderKind = "purelymail" | "migadu" | "manual";
 export interface ProtocolTemplate { enabled: boolean; host?: string; port?: number; tlsMode?: "tls" | "starttls"; caBundleId?: number | null }

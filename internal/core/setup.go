@@ -21,13 +21,10 @@ type SetupStatus struct {
 	Step       string `json:"step"`
 	OrgName    string `json:"orgName,omitempty"`
 	DevStack   bool   `json:"devStack"`
-	// SetupTokenRequired tells the setup page to ask for
-	// MAILHEARTH_SETUP_TOKEN before the organisation is created.
-	SetupTokenRequired bool `json:"setupTokenRequired"`
 }
 
 func (s *Service) Status(ctx context.Context) (*SetupStatus, error) {
-	st := &SetupStatus{DevStack: s.Cfg.DevStack, SetupTokenRequired: s.Cfg.SetupToken != ""}
+	st := &SetupStatus{DevStack: s.Cfg.DevStack}
 	org, err := s.Org(ctx)
 	if err == ErrNoSetup {
 		st.NeedsSetup, st.Step = true, "org"
@@ -154,9 +151,10 @@ type InitRequest struct {
 	AdminName  string `json:"adminName"`
 	AdminEmail string `json:"adminEmail"`
 	Password   string `json:"password"`
-	// SetupToken must match MAILHEARTH_SETUP_TOKEN when the operator set
-	// one, so that whoever reaches a fresh instance first cannot claim it.
-	SetupToken string `json:"setupToken,omitempty"`
+	// SetupToken must match the instance's setup token (MAILHEARTH_SETUP_TOKEN,
+	// or the one generated and logged at startup), so that whoever reaches a
+	// fresh instance first cannot claim it.
+	SetupToken string `json:"setupToken"`
 }
 
 func (s *Service) Init(ctx context.Context, req InitRequest) (*model.Member, error) {
@@ -165,7 +163,8 @@ func (s *Service) Init(ctx context.Context, req InitRequest) (*model.Member, err
 	} else if !errors.Is(err, ErrNoSetup) {
 		return nil, err
 	}
-	if s.Cfg.SetupToken != "" && subtle.ConstantTimeCompare([]byte(req.SetupToken), []byte(s.Cfg.SetupToken)) != 1 {
+	// An instance without a token refuses setup instead of falling open.
+	if s.Cfg.SetupToken == "" || subtle.ConstantTimeCompare([]byte(req.SetupToken), []byte(s.Cfg.SetupToken)) != 1 {
 		return nil, fmt.Errorf("%w: the setup token is missing or incorrect", ErrForbidden)
 	}
 	orgName, adminName := strings.TrimSpace(req.OrgName), strings.TrimSpace(req.AdminName)

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -32,6 +33,9 @@ import (
 )
 
 var version = "dev"
+
+// logOutput is where the server logs; tests capture it.
+var logOutput io.Writer = os.Stderr
 
 func main() {
 	var (
@@ -67,7 +71,7 @@ func run(ctx context.Context, seedDemo bool, onListen func(net.Addr)) error {
 	case "error":
 		level = slog.LevelError
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	log := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(log)
 	for _, warning := range cfg.Warnings {
 		log.Warn("configuration adjusted", "detail", warning)
@@ -78,7 +82,7 @@ func run(ctx context.Context, seedDemo bool, onListen func(net.Addr)) error {
 		"trustProxy", cfg.TrustProxyHeader, "trustedProxies", len(cfg.TrustedProxies), "allowedMailNetworks", len(cfg.AllowedMailNetworks),
 		"imapMaxConns", cfg.IMAPMaxConns, "imapIdle", cfg.IMAPIdleTimeout, "maxUploadMB", cfg.MaxUploadBytes>>20,
 		"maxMessageMB", cfg.MaxMessageBytes>>20, "uploadQuotaMB", cfg.UploadQuotaBytes>>20, "session", cfg.SessionTTL,
-		"sessionMax", cfg.SessionMaxAge, "invite", cfg.InviteTTL, "devStack", cfg.DevStack, "logLevel", cfg.LogLevel, "setupTokenRequired", cfg.SetupToken != "")
+		"sessionMax", cfg.SessionMaxAge, "invite", cfg.InviteTTL, "devStack", cfg.DevStack, "logLevel", cfg.LogLevel, "setupTokenConfigured", cfg.SetupToken != "")
 
 	// Keep the Go heap modest by default; operators can override via GOMEMLIMIT.
 	if os.Getenv("GOMEMLIMIT") == "" {
@@ -129,6 +133,9 @@ func run(ctx context.Context, seedDemo bool, onListen func(net.Addr)) error {
 	defer pool.Close()
 
 	svc := core.New(database, cfg, box, pool, log)
+	if err := ensureSetupToken(ctx, cfg, svc, log); err != nil {
+		return err
+	}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 	if err := svc.StartOperations(ctx); err != nil {
@@ -178,6 +185,26 @@ func run(ctx context.Context, seedDemo bool, onListen func(net.Addr)) error {
 		return err
 	}
 	return workerErr
+}
+
+// ensureSetupToken makes creating the organisation always require a token.
+// Without MAILHEARTH_SETUP_TOKEN a fresh instance generates a random one
+// per start and logs it for the operator; once the organisation exists no
+// token is needed and none is generated.
+func ensureSetupToken(ctx context.Context, cfg *config.Config, svc *core.Service, log *slog.Logger) error {
+	if cfg.SetupToken != "" {
+		return nil
+	}
+	st, err := svc.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if st.Step != "org" {
+		return nil
+	}
+	cfg.SetupToken = secrets.RandomToken(24)
+	log.Warn("FIRST-TIME SETUP: no MAILHEARTH_SETUP_TOKEN is configured, so a one-time setup token was generated for this start. Enter it on the setup page to create the organisation; it changes on every restart until setup is done.", "setupToken", cfg.SetupToken)
+	return nil
 }
 
 // deriveSignKey returns the key that signs view tokens. It is derived from

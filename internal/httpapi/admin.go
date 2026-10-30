@@ -7,7 +7,6 @@ import (
 
 	"mailhearth/internal/core"
 	"mailhearth/internal/model"
-	"mailhearth/internal/provider"
 )
 
 func (s *Server) routesAdmin(mux *http.ServeMux) {
@@ -78,20 +77,6 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		p := principalFrom(r)
 		v, err := s.Svc.Audit(r.Context(), p.OrgID, int64(queryInt(r, "before", 0)), queryInt(r, "limit", 50))
 		respond(w, r, v, err)
-	}))
-
-	// 管理连接需要明确的 connectionId。
-	mux.HandleFunc("GET /api/admin/connection", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请使用 /api/admin/connections", Code: "api_replaced"})
-	}))
-	mux.HandleFunc("PUT /api/admin/connection", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请使用 /api/admin/connections", Code: "api_replaced"})
-	}))
-	mux.HandleFunc("POST /api/admin/connection/sync", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请通过 connectionId 执行同步", Code: "api_replaced"})
-	}))
-	mux.HandleFunc("GET /api/admin/connection/discover", perm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请通过 connectionId 发现资源", Code: "api_replaced"})
 	}))
 
 	// Roles
@@ -243,11 +228,6 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 		v, err := s.Svc.Domains(r.Context(), principalFrom(r).OrgID)
 		respond(w, r, v, err)
 	}))
-	for _, route := range []string{"GET /api/admin/domains/dns-guide", "POST /api/admin/domains", "POST /api/admin/domains/{id}/recheck", "PATCH /api/admin/domains/{id}", "DELETE /api/admin/domains/{id}"} {
-		mux.HandleFunc(route, perm(model.PermDomainsManage, func(w http.ResponseWriter, r *http.Request) {
-			s.fail(w, r, provider.Errorf("api_replaced", "请通过 domain-bindings 指定邮件连接与域名关联"))
-		}))
-	}
 
 	// Mailboxes
 	mailboxPerm := func(kind string) string {
@@ -452,9 +432,6 @@ func (s *Server) routesAdmin(mux *http.ServeMux) {
 			return
 		}
 		s.acceptOperation(w, r, in.RequestID, core.OperationPayload{Kind: "mailbox.reactivate", MailboxID: id, ExpectedRevision: in.ExpectedRevision}, []string{"mailbox:" + fmt.Sprint(id)})
-	}))
-	mux.HandleFunc("POST /api/admin/mailboxes/{id}/forwarding", s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Code: "api_replaced", Error: "使用 PUT 或 DELETE 邮箱转发接口"})
 	}))
 	for _, method := range []string{"PUT", "DELETE"} {
 		kind := "mailbox.forwarding.set"

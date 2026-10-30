@@ -33,27 +33,29 @@ Todas las opciones son variables de entorno. Los valores mal formados o fuera de
 
 | Variable | Valor por defecto | Uso |
 | --- | --- | --- |
-| `MAILHEARTH_BASE_URL` | vacío | URL pública, usada en los enlaces de invitación. Una URL `https://` activa las cookies `Secure`. |
+| `MAILHEARTH_BASE_URL` | vacío | URL pública, usada en los enlaces de invitación. Debe ser `https://` salvo que `MAILHEARTH_SECURE_COOKIES=false`. |
 | `MAILHEARTH_LISTEN` | `:8080` | Dirección de escucha HTTP. |
 | `MAILHEARTH_DATA_DIR` | `./data` (`/data` en el contenedor) | Base de datos SQLite, clave maestra y archivos subidos. |
 | `MAILHEARTH_MASTER_KEY` | generada en `<data>/master.key` | Clave de 32 bytes (base64 o hex) que cifra las credenciales guardadas. |
-| `MAILHEARTH_SETUP_TOKEN` | vacío | Si se define, crear la organización en una instancia nueva exige este token, para que quien llegue primero a la instancia no pueda apropiarse de ella. Recomendado si la instancia es accesible antes de terminar la configuración. |
+| `MAILHEARTH_SETUP_TOKEN` | generado al arrancar | Necesario para crear la organización en una instancia nueva. Si no se define, en cada arranque se genera un token aleatorio hasta que exista la organización y se escribe en el registro (busca `FIRST-TIME SETUP`, campo `setupToken`). Un token configurado nunca se registra. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` o `error`. |
 | `MAILHEARTH_TRUST_PROXY` | `false` | Leer `X-Forwarded-For` / `X-Forwarded-Host` de los proxies de confianza. |
 | `MAILHEARTH_TRUSTED_PROXIES` | loopback y redes privadas | CIDR o direcciones de tus proxies inversos, separados por comas. Las cabeceras de reenvío de cualquier otro par se ignoran. |
-| `MAILHEARTH_SECURE_COOKIES` | `true` si `MAILHEARTH_BASE_URL` es `https://` | Fuerza el atributo `Secure` de las cookies. |
+| `MAILHEARTH_SECURE_COOKIES` | `true` (`false` con `MAILHEARTH_DEV_STACK`) | Atributo `Secure` de las cookies de sesión. Ponlo a `false` solo en una instancia de prueba con HTTP sin cifrar. |
 | `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | vacío | CIDR donde pueden estar los servidores de correo. Las conexiones a direcciones privadas, loopback y de enlace local se rechazan salvo que aparezcan aquí; configúralo si tu servidor IMAP/SMTP/ManageSieve está en una red privada. |
 | `MAILHEARTH_CA_BUNDLES_FILE` | vacío | Archivo JSON que asocia identificadores de paquetes de CA con archivos PEM, por ejemplo `{"1": "/etc/mailhearth/ca.pem"}`. Los endpoints de protocolo usan ese identificador para confiar en una CA privada. |
 | `MAILHEARTH_IMAP_MAX_CONNS` | `24` | Límite de conexiones IMAP. El pool admite de 4 a 24; otros valores se ajustan con una advertencia. |
 | `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | Segundos tras los que se cierran las conexiones IMAP inactivas (10 a 3600). |
 | `MAILHEARTH_MAX_UPLOAD_MB` | `25` | Tamaño máximo de un adjunto subido. |
 | `MAILHEARTH_MAX_MESSAGE_MB` | `40` | Tamaño máximo del mensaje codificado. Los adjuntos aumentan aproximadamente un tercio al codificarse para el envío. |
-| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | Tamaño total de las subidas no enviadas de un miembro. |
-| `MAILHEARTH_SESSION_DAYS` | `30` | Caducidad deslizante de la sesión. |
-| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | Duración absoluta de la sesión; no puede ser menor que `MAILHEARTH_SESSION_DAYS`. |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | `120` | Tamaño total de las subidas no enviadas de un miembro. Siempre se aplica; debe ser al menos `MAILHEARTH_MAX_UPLOAD_MB` (1 a 1048576). Auméntalo para relajar el límite. |
+| `MAILHEARTH_SESSION_DAYS` | `14` | Caducidad deslizante de la sesión (1 a 365). |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `30` | Duración absoluta de la sesión (1 a 3650); no puede ser menor que `MAILHEARTH_SESSION_DAYS`. Usa un valor alto para levantar el límite en la práctica. |
 | `MAILHEARTH_INVITE_DAYS` | `7` | Validez de los enlaces de invitación (1 a 90). |
 | `MAILHEARTH_DEV_STACK` | `false` | Solo desarrollo: proveedor, IMAP y SMTP simulados en el propio proceso. |
 | `GOMEMLIMIT` | `160MiB` si no se define | Límite del heap de Go. |
+
+Los valores por defecto están pensados para un despliegue de producción nuevo: el ajuste más protector es el predeterminado, y relajarlo siempre requiere un ajuste explícito.
 
 ## Copias de seguridad y recuperación ante desastres
 

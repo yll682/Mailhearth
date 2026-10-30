@@ -73,7 +73,7 @@ cp .env.example .env            # Set MAILHEARTH_BASE_URL to your public domain
 docker compose up -d --build
 ```
 
-Once up and running, open your configured public URL in a browser and follow the first-run wizard to create your organization administrator, connect your mail provider, and import mailboxes. Ensure protocol credentials are verified before reading or sending email.
+Once up and running, read the one-time setup token from the log (`docker compose logs mailhearth | grep 'FIRST-TIME SETUP'`) — or set your own with `MAILHEARTH_SETUP_TOKEN` — then open your configured public URL and follow the first-run wizard to create your organization administrator, connect your mail provider, and import mailboxes. Ensure protocol credentials are verified before reading or sending email.
 
 > **Backup Notice**: Regularly back up the persistent `/data` volume. It contains your core SQLite database and the primary encryption key `master.key`.
 

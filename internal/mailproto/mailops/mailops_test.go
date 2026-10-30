@@ -110,6 +110,7 @@ func newRealMailEnvironment(t *testing.T) *realMailEnvironment {
 	if err != nil {
 		t.Fatal("无法读取部署配置")
 	}
+	cfg.SetupToken = "test-setup-token"
 	if cfg.DevStack {
 		t.Fatal("真实协议测试要求关闭 MAILHEARTH_DEV_STACK")
 	}
@@ -140,7 +141,7 @@ func newRealMailEnvironment(t *testing.T) *realMailEnvironment {
 			t.Error("无法关闭本地测试数据库")
 		}
 	})
-	member, err := svc.Init(ctx, core.InitRequest{OrgName: uuid.NewString(), AdminName: "协议测试", AdminEmail: "protocol-tests@example.org", Password: uuid.NewString() + "Aa1!"})
+	member, err := svc.Init(ctx, core.InitRequest{OrgName: uuid.NewString(), AdminName: "协议测试", AdminEmail: "protocol-tests@example.org", Password: uuid.NewString() + "Aa1!", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal("无法初始化本地测试组织")
 	}

@@ -55,7 +55,11 @@ func newTestEnv(t *testing.T, mutate ...func(*config.Config)) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{DataDir: root, MaxUploadBytes: 1 << 20, MaxMessageBytes: 4 << 20, SessionTTL: time.Hour, InviteTTL: time.Hour}
+	cfg := config.Defaults()
+	cfg.DataDir, cfg.SessionTTL, cfg.InviteTTL = root, time.Hour, time.Hour
+	cfg.MaxUploadBytes, cfg.MaxMessageBytes, cfg.UploadQuotaBytes = 1<<20, 4<<20, 12<<20
+	cfg.SecureCook = false // plain-HTTP test server
+	cfg.SetupToken = testSetupToken
 	for _, fn := range mutate {
 		fn(cfg)
 	}
@@ -76,11 +80,13 @@ func newTestEnv(t *testing.T, mutate ...func(*config.Config)) *testEnv {
 	t.Cleanup(func() { server.Close() })
 	env := &testEnv{t: t, root: root, db: database, svc: svc, base: "http://" + listener.Addr().String()}
 	env.owner = newClient(t, env.base)
-	if cfg.SetupToken == "" {
-		env.setup("")
+	if cfg.SetupToken == testSetupToken {
+		env.setup(testSetupToken)
 	}
 	return env
 }
+
+const testSetupToken = "test-setup-token"
 
 func (e *testEnv) setup(token string) {
 	e.t.Helper()
@@ -177,7 +183,8 @@ func TestUploadDeleteCannotEscapeUploadsDirectory(t *testing.T) {
 	if err := json.Unmarshal(upload(env.owner, "a.txt", []byte("owner file"), 200), &uploads); err != nil {
 		t.Fatal(err)
 	}
-	member.do("DELETE", "/api/mail/uploads/"+uploads[0].ID, nil, 200, nil)
+	// Another member's id is not found (it is not theirs), not silently OK.
+	member.do("DELETE", "/api/mail/uploads/"+uploads[0].ID, nil, 404, nil)
 	if _, err := os.Stat(filepath.Join(env.root, "uploads", uploads[0].ID)); err != nil {
 		t.Fatalf("其他成员删除了所有者的上传文件：%v", err)
 	}
@@ -185,6 +192,8 @@ func TestUploadDeleteCannotEscapeUploadsDirectory(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.root, "uploads", uploads[0].ID)); !os.IsNotExist(err) {
 		t.Fatalf("所有者无法删除自己的上传文件：%v", err)
 	}
+	// Deleting again: the id is well-formed but no longer exists.
+	env.owner.do("DELETE", "/api/mail/uploads/"+uploads[0].ID, nil, 404, nil)
 }
 
 // #2: administrators must not be able to take over the owner account, and
@@ -381,19 +390,25 @@ func TestSessionAbsoluteLifetime(t *testing.T) {
 	}
 }
 
-// #38: with MAILHEARTH_SETUP_TOKEN set, a fresh instance cannot be claimed
-// without the token.
+// A fresh instance can only be claimed with its setup token: missing and
+// wrong tokens are refused, the right one creates the organisation.
 func TestSetupToken(t *testing.T) {
 	env := newTestEnv(t, func(c *config.Config) { c.SetupToken = "operator-token" })
 	var status core.SetupStatus
 	env.owner.do("GET", "/api/setup/status", nil, 200, &status)
-	if !status.NeedsSetup || !status.SetupTokenRequired {
-		t.Fatalf("初始化状态没有要求令牌：%+v", status)
+	if !status.NeedsSetup || status.Step != "org" {
+		t.Fatalf("初始化状态不正确：%+v", status)
 	}
 	request := core.InitRequest{OrgName: "抢注", AdminName: "x", AdminEmail: "x@example.org", Password: "attacker-password"}
 	env.owner.do("POST", "/api/setup/init", request, 403, nil)
 	request.SetupToken = "wrong-token"
 	env.owner.do("POST", "/api/setup/init", request, 403, nil)
+	request.SetupToken = "operator-toke"
+	env.owner.do("POST", "/api/setup/init", request, 403, nil)
+	env.owner.do("GET", "/api/setup/status", nil, 200, &status)
+	if status.Step != "org" {
+		t.Fatal("被拒绝的请求创建了组织")
+	}
 	env.setup("operator-token")
 	env.owner.do("GET", "/api/setup/status", nil, 200, &status)
 	if status.NeedsSetup && status.Step == "org" {

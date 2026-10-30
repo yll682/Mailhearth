@@ -33,27 +33,29 @@ Mailhearth 专为极低资源消耗的轻量级主机设计，能够在市面上
 
 | 变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `MAILHEARTH_BASE_URL` | 空 | 对外公开 URL，用于生成邀请链接。使用 `https://` 地址时会启用 `Secure` Cookie。 |
+| `MAILHEARTH_BASE_URL` | 空 | 对外公开 URL，用于生成邀请链接。除非设置 `MAILHEARTH_SECURE_COOKIES=false`，否则必须为 `https://` 地址。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP 监听地址。 |
 | `MAILHEARTH_DATA_DIR` | `./data`（容器内为 `/data`） | SQLite 数据库、主密钥与上传文件。 |
 | `MAILHEARTH_MASTER_KEY` | 自动生成到 `<data>/master.key` | 32 字节密钥（base64 或 hex），用于加密保存的凭据。 |
-| `MAILHEARTH_SETUP_TOKEN` | 空 | 设置后，在全新实例上创建组织时必须提供该令牌，避免抢先访问实例的人占用所有者身份。若实例在完成初始化前即可被访问，建议设置。 |
+| `MAILHEARTH_SETUP_TOKEN` | 启动时自动生成 | 在全新实例上创建组织时必须提供。未设置时，在组织创建之前每次启动都会生成一个随机令牌并输出到日志（查找 `FIRST-TIME SETUP`，字段为 `setupToken`）。自行配置的令牌永远不会写入日志。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
 | `MAILHEARTH_TRUST_PROXY` | `false` | 从受信代理读取 `X-Forwarded-For` / `X-Forwarded-Host`。 |
 | `MAILHEARTH_TRUSTED_PROXIES` | 本机回环与私有网段 | 反向代理的 CIDR 或地址，以逗号分隔。来自其他对端的转发标头会被忽略。 |
-| `MAILHEARTH_SECURE_COOKIES` | `MAILHEARTH_BASE_URL` 为 `https://` 时为 `true` | 强制开启或关闭 Cookie 的 `Secure` 属性。 |
+| `MAILHEARTH_SECURE_COOKIES` | `true`（启用 `MAILHEARTH_DEV_STACK` 时为 `false`） | 会话 Cookie 的 `Secure` 属性。仅在纯 HTTP 测试实例上设为 `false`。 |
 | `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | 空 | 允许邮件服务器所在的 CIDR。除非列在此处，否则系统会拒绝连接私有、回环与链路本地地址；IMAP/SMTP/ManageSieve 服务器位于内网时需要设置。 |
 | `MAILHEARTH_CA_BUNDLES_FILE` | 空 | 将 CA 证书包编号映射到 PEM 文件的 JSON 文件，例如 `{"1": "/etc/mailhearth/ca.pem"}`。协议端点通过编号引用以信任私有 CA。 |
 | `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP 连接上限。连接池支持 4 到 24，超出范围的取值会被调整并记录警告。 |
 | `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | 空闲 IMAP 连接在多少秒后关闭（10 到 3600）。 |
 | `MAILHEARTH_MAX_UPLOAD_MB` | `25` | 单个附件上传的最大大小。 |
 | `MAILHEARTH_MAX_MESSAGE_MB` | `40` | 编码后邮件的最大大小。附件在发送编码后会增大约三分之一。 |
-| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | 单个成员未发送上传文件的总大小。 |
-| `MAILHEARTH_SESSION_DAYS` | `30` | 会话滑动过期时间。 |
-| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | 会话绝对有效期，不得短于 `MAILHEARTH_SESSION_DAYS`。 |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | `120` | 单个成员未发送上传文件的总大小。始终生效；不得小于 `MAILHEARTH_MAX_UPLOAD_MB`（1 到 1048576）。如需放宽，请调大该值。 |
+| `MAILHEARTH_SESSION_DAYS` | `14` | 会话滑动过期时间（1 到 365）。 |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `30` | 会话绝对有效期（1 到 3650），不得短于 `MAILHEARTH_SESSION_DAYS`。设为较大值即可实际上取消该限制。 |
 | `MAILHEARTH_INVITE_DAYS` | `7` | 邀请链接有效天数（1 到 90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 仅用于开发：进程内模拟服务商、IMAP 与 SMTP。 |
 | `GOMEMLIMIT` | 未设置时为 `160MiB` | Go 堆内存上限。 |
+
+默认值面向全新的生产部署：默认采用最具保护性的设置，任何放宽都必须显式配置。
 
 ## 数据备份与灾难恢复
 

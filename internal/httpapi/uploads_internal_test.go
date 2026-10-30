@@ -28,10 +28,12 @@ func TestUploadSweepAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := core.New(database, &config.Config{DataDir: root, SessionTTL: time.Hour}, box, nil, slog.Default())
+	cfg := config.Defaults()
+	cfg.DataDir, cfg.SessionTTL, cfg.SetupToken = root, time.Hour, "test-setup-token"
+	svc := core.New(database, cfg, box, nil, slog.Default())
 	u := newUploadStore(root, svc, slog.Default())
 	ctx := context.Background()
-	owner, err := svc.Init(ctx, core.InitRequest{OrgName: "o", AdminName: "m", AdminEmail: "m@example.org", Password: "sweep-password-1"})
+	owner, err := svc.Init(ctx, core.InitRequest{OrgName: "o", AdminName: "m", AdminEmail: "m@example.org", Password: "sweep-password-1", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,27 +33,29 @@ All options are environment variables. Malformed or out-of-range values stop sta
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MAILHEARTH_BASE_URL` | empty | Public URL, used for invite links. An `https://` URL enables `Secure` cookies. |
+| `MAILHEARTH_BASE_URL` | empty | Public URL, used for invite links. Must be `https://` unless `MAILHEARTH_SECURE_COOKIES=false`. |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP listen address. |
 | `MAILHEARTH_DATA_DIR` | `./data` (`/data` in the container) | SQLite database, master key and uploads. |
 | `MAILHEARTH_MASTER_KEY` | generated into `<data>/master.key` | 32-byte key (base64 or hex) that encrypts stored credentials. |
-| `MAILHEARTH_SETUP_TOKEN` | empty | When set, creating the organisation on a fresh instance requires this token, so whoever reaches the instance first cannot claim it. Recommended for instances reachable before setup is finished. |
+| `MAILHEARTH_SETUP_TOKEN` | generated at startup | Required to create the organisation on a fresh instance. When unset, a random token is generated at each start until the organisation exists and printed in the log (look for `FIRST-TIME SETUP`, field `setupToken`). A configured token is never logged. |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `MAILHEARTH_TRUST_PROXY` | `false` | Read `X-Forwarded-For` / `X-Forwarded-Host` from trusted proxies. |
 | `MAILHEARTH_TRUSTED_PROXIES` | loopback and private networks | Comma-separated CIDRs or addresses of your reverse proxies. Forwarding headers from any other peer are ignored. |
-| `MAILHEARTH_SECURE_COOKIES` | `true` when `MAILHEARTH_BASE_URL` is `https://` | Force the `Secure` cookie flag on or off. |
+| `MAILHEARTH_SECURE_COOKIES` | `true` (`false` with `MAILHEARTH_DEV_STACK`) | `Secure` flag on session cookies. Set `false` only for a plain-HTTP test instance. |
 | `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | empty | CIDRs where mail servers may live. Connections to private, loopback and link-local addresses are refused unless listed here; set this when your IMAP/SMTP/ManageSieve server is on a private network. |
 | `MAILHEARTH_CA_BUNDLES_FILE` | empty | JSON file mapping bundle ids to PEM files, e.g. `{"1": "/etc/mailhearth/ca.pem"}`. Protocol endpoints refer to a bundle id to trust a private CA. |
 | `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP connection cap. The pool supports 4 to 24; other values are adjusted with a warning. |
 | `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | Idle IMAP connections are closed after this many seconds (10 to 3600). |
 | `MAILHEARTH_MAX_UPLOAD_MB` | `25` | Largest single attachment upload. |
 | `MAILHEARTH_MAX_MESSAGE_MB` | `40` | Largest encoded message. Attachments grow by about a third when encoded for sending. |
-| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | Total size of one member's unsent uploads. |
-| `MAILHEARTH_SESSION_DAYS` | `30` | Sliding session expiry. |
-| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | Absolute session lifetime; must not be shorter than `MAILHEARTH_SESSION_DAYS`. |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | `120` | Total size of one member's unsent uploads. Always enforced; must be at least `MAILHEARTH_MAX_UPLOAD_MB` (1 to 1048576). Raise it to loosen the limit. |
+| `MAILHEARTH_SESSION_DAYS` | `14` | Sliding session expiry (1 to 365). |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `30` | Absolute session lifetime (1 to 3650); must not be shorter than `MAILHEARTH_SESSION_DAYS`. Set it high to effectively lift the limit. |
 | `MAILHEARTH_INVITE_DAYS` | `7` | Invite link validity (1 to 90). |
 | `MAILHEARTH_DEV_STACK` | `false` | Development only: in-process fake provider, IMAP and SMTP. |
 | `GOMEMLIMIT` | `160MiB` when unset | Go heap limit. |
+
+Defaults are chosen for a new production deployment: the most protective setting is the default, and loosening it is always an explicit setting.
 
 ## Backups & Disaster Recovery
 

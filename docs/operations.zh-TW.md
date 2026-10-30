@@ -33,27 +33,29 @@ Mailhearth 專為超低資源耗用的輕量化主機設計，即使在市面上
 
 | 變數 | 預設值 | 用途 |
 | --- | --- | --- |
-| `MAILHEARTH_BASE_URL` | 空 | 對外公開 URL，用於產生邀請連結。使用 `https://` 位址時會啟用 `Secure` Cookie。 |
+| `MAILHEARTH_BASE_URL` | 空 | 對外公開 URL，用於產生邀請連結。除非設定 `MAILHEARTH_SECURE_COOKIES=false`，否則必須為 `https://` 位址。 |
 | `MAILHEARTH_LISTEN` | `:8080` | HTTP 監聽位址。 |
 | `MAILHEARTH_DATA_DIR` | `./data`（容器內為 `/data`） | SQLite 資料庫、主金鑰與上傳檔案。 |
 | `MAILHEARTH_MASTER_KEY` | 自動產生到 `<data>/master.key` | 32 位元組金鑰（base64 或 hex），用於加密儲存的憑證。 |
-| `MAILHEARTH_SETUP_TOKEN` | 空 | 設定後，在全新實例上建立組織時必須提供此權杖，避免搶先存取實例的人佔用擁有者身分。若實例在完成初始化前即可被存取，建議設定。 |
+| `MAILHEARTH_SETUP_TOKEN` | 啟動時自動產生 | 在全新實例上建立組織時必須提供。未設定時，在組織建立之前每次啟動都會產生一組隨機權杖並輸出至日誌（搜尋 `FIRST-TIME SETUP`，欄位為 `setupToken`）。自行設定的權杖永遠不會寫入日誌。 |
 | `MAILHEARTH_LOG_LEVEL` | `info` | `debug`、`info`、`warn` 或 `error`。 |
 | `MAILHEARTH_TRUST_PROXY` | `false` | 從受信代理讀取 `X-Forwarded-For` / `X-Forwarded-Host`。 |
 | `MAILHEARTH_TRUSTED_PROXIES` | 本機迴路與私有網段 | 反向代理的 CIDR 或位址，以逗號分隔。來自其他對端的轉送標頭會被忽略。 |
-| `MAILHEARTH_SECURE_COOKIES` | `MAILHEARTH_BASE_URL` 為 `https://` 時為 `true` | 強制開啟或關閉 Cookie 的 `Secure` 屬性。 |
+| `MAILHEARTH_SECURE_COOKIES` | `true`（啟用 `MAILHEARTH_DEV_STACK` 時為 `false`） | 工作階段 Cookie 的 `Secure` 屬性。僅在純 HTTP 測試實例上設為 `false`。 |
 | `MAILHEARTH_ALLOWED_MAIL_NETWORKS` | 空 | 允許郵件伺服器所在的 CIDR。除非列在此處，否則系統會拒絕連線至私有、迴路與鏈路本機位址；IMAP/SMTP/ManageSieve 伺服器位於內網時需要設定。 |
 | `MAILHEARTH_CA_BUNDLES_FILE` | 空 | 將 CA 憑證包編號對應到 PEM 檔案的 JSON 檔，例如 `{"1": "/etc/mailhearth/ca.pem"}`。協定端點透過編號引用以信任私有 CA。 |
 | `MAILHEARTH_IMAP_MAX_CONNS` | `24` | IMAP 連線上限。連線池支援 4 到 24，超出範圍的設定值會被調整並記錄警告。 |
 | `MAILHEARTH_IMAP_IDLE_SECONDS` | `90` | 閒置 IMAP 連線在多少秒後關閉（10 到 3600）。 |
 | `MAILHEARTH_MAX_UPLOAD_MB` | `25` | 單一附件上傳的最大大小。 |
 | `MAILHEARTH_MAX_MESSAGE_MB` | `40` | 編碼後郵件的最大大小。附件在寄送編碼後會增大約三分之一。 |
-| `MAILHEARTH_UPLOAD_QUOTA_MB` | 3 × `MAILHEARTH_MAX_MESSAGE_MB` | 單一成員未寄出上傳檔案的總大小。 |
-| `MAILHEARTH_SESSION_DAYS` | `30` | 工作階段滑動過期時間。 |
-| `MAILHEARTH_SESSION_MAX_DAYS` | `90` | 工作階段絕對有效期，不得短於 `MAILHEARTH_SESSION_DAYS`。 |
+| `MAILHEARTH_UPLOAD_QUOTA_MB` | `120` | 單一成員未寄出上傳檔案的總大小。始終生效；不得小於 `MAILHEARTH_MAX_UPLOAD_MB`（1 到 1048576）。如需放寬，請調高此值。 |
+| `MAILHEARTH_SESSION_DAYS` | `14` | 工作階段滑動過期時間（1 到 365）。 |
+| `MAILHEARTH_SESSION_MAX_DAYS` | `30` | 工作階段絕對有效期（1 到 3650），不得短於 `MAILHEARTH_SESSION_DAYS`。設為較大值即可實質上取消此限制。 |
 | `MAILHEARTH_INVITE_DAYS` | `7` | 邀請連結有效天數（1 到 90）。 |
 | `MAILHEARTH_DEV_STACK` | `false` | 僅供開發：行程內模擬服務商、IMAP 與 SMTP。 |
 | `GOMEMLIMIT` | 未設定時為 `160MiB` | Go 堆積記憶體上限。 |
+
+預設值以全新的正式環境部署為前提：預設採用最具保護性的設定，任何放寬都必須明確設定。
 
 ## 資料備份與災難復原
 

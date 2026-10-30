@@ -126,7 +126,10 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{DataDir: root, MaxUploadBytes: 1 << 20, SessionTTL: time.Hour, InviteTTL: time.Hour}
+	cfg := config.Defaults()
+	cfg.DataDir, cfg.MaxUploadBytes, cfg.SessionTTL, cfg.InviteTTL = root, 1<<20, time.Hour, time.Hour
+	cfg.SecureCook = false // plain-HTTP test server
+	cfg.SetupToken = "api-test-token"
 	svc := core.New(database, cfg, box, nil, slog.Default())
 	ctx, stop := context.WithCancel(context.Background())
 	if err := svc.StartOperations(ctx); err != nil {
@@ -166,7 +169,7 @@ func TestEndToEnd(t *testing.T) {
 		Member      model.Member `json:"member"`
 		Permissions []string     `json:"permissions"`
 	}
-	c.do("POST", "/api/setup/init", core.InitRequest{OrgName: "HTTP 组织", AdminName: "管理员", AdminEmail: "admin@example.org", Password: password}, 200, &me)
+	c.do("POST", "/api/setup/init", core.InitRequest{OrgName: "HTTP 组织", AdminName: "管理员", AdminEmail: "admin@example.org", Password: password, SetupToken: cfg.SetupToken}, 200, &me)
 	if me.Member.ID < 1 || !core.HasPermission(me.Permissions, model.PermOrgOwner) {
 		t.Fatal("初始化没有创建组织所有者")
 	}

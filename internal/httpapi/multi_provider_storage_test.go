@@ -47,9 +47,12 @@ func TestMultiProviderStorageHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{DataDir: root, SessionTTL: time.Hour, MaxUploadBytes: 1 << 20}
+	cfg := config.Defaults()
+	cfg.DataDir, cfg.SessionTTL, cfg.MaxUploadBytes = root, time.Hour, 1<<20
+	cfg.SecureCook = false // plain-HTTP test server
+	cfg.SetupToken = "test-setup-token"
 	svc := core.New(database, cfg, box, nil, slog.Default())
-	member, err := svc.Init(context.Background(), core.InitRequest{OrgName: "HTTP 验收", AdminName: "管理员", AdminEmail: "admin@example.org", Password: uuid.NewString() + "Aa1!"})
+	member, err := svc.Init(context.Background(), core.InitRequest{OrgName: "HTTP 验收", AdminName: "管理员", AdminEmail: "admin@example.org", Password: uuid.NewString() + "Aa1!", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,15 +106,28 @@ func TestMultiProviderStorageHTTP(t *testing.T) {
 		}
 		return data
 	}
-	for _, route := range []struct{ method, path string }{{"GET", "/api/admin/connection"}, {"PUT", "/api/admin/connection"}, {"POST", "/api/admin/connection/sync"}, {"GET", "/api/admin/connection/discover"}, {"POST", "/api/setup/connect"}, {"GET", "/api/setup/discover"}} {
-		data := request(route.method, route.path, []byte(`{}`), 410)
-		var result apiError
-		if err := json.Unmarshal(data, &result); err != nil {
+	// The single-connection and domain-write endpoints were removed outright
+	// (no 410 tombstones): they must not be served by any handler.
+	removed := func(method, path string) {
+		t.Helper()
+		r, err := http.NewRequest(method, base+path, bytes.NewReader([]byte(`{}`)))
+		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Code != "api_replaced" {
-			t.Fatal("旧接口错误码不正确")
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: token})
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Requested-With", "Mailhearth")
+		response, err := client.Do(r)
+		if err != nil {
+			t.Fatal(err)
 		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNotFound && response.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("%s %s 仍然有处理器：HTTP %d", method, path, response.StatusCode)
+		}
+	}
+	for _, route := range []struct{ method, path string }{{"GET", "/api/admin/connection"}, {"PUT", "/api/admin/connection"}, {"POST", "/api/admin/connection/sync"}, {"GET", "/api/admin/connection/discover"}, {"POST", "/api/setup/connect"}, {"GET", "/api/setup/discover"}, {"POST", "/api/admin/mailboxes/1/forwarding"}} {
+		removed(route.method, route.path)
 	}
 	for _, body := range []string{`{"providerKind":"manual","label":"连接","protocolDefaults":{"imap":{"enabled":false}}}`, `{"providerKind":"manual","label":"连接","internal":"value"}`, `{"providerKind":"manual","label":"连接"} {}`} {
 		request("POST", "/api/admin/connections", []byte(body), 400)
@@ -206,15 +222,8 @@ func TestMultiProviderStorageHTTP(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].ID != connection.ID {
 		t.Fatal("Overview 没有按连接 ID 返回连接")
 	}
-	for _, route := range []struct{ method, path string }{{"POST", "/api/admin/domains"}, {"PATCH", "/api/admin/domains/1"}, {"POST", "/api/admin/domains/1/recheck"}, {"DELETE", "/api/admin/domains/1"}} {
-		data := request(route.method, route.path, []byte(`{}`), 410)
-		var replaced apiError
-		if err := json.Unmarshal(data, &replaced); err != nil {
-			t.Fatal(err)
-		}
-		if replaced.Code != "api_replaced" {
-			t.Fatal("旧域名写入接口没有拒绝")
-		}
+	for _, route := range []struct{ method, path string }{{"GET", "/api/admin/domains/dns-guide"}, {"POST", "/api/admin/domains"}, {"PATCH", "/api/admin/domains/1"}, {"POST", "/api/admin/domains/1/recheck"}, {"DELETE", "/api/admin/domains/1"}} {
+		removed(route.method, route.path)
 	}
 	org, err := svc.Org(context.Background())
 	if err != nil {
@@ -266,7 +275,7 @@ func TestMultiProviderStorageHTTP(t *testing.T) {
 		t.Fatal("资源选项没有保持连接归属和安全字段")
 	}
 	forwardingPath := "/api/admin/mailboxes/" + coreID(mailboxID) + "/forwarding"
-	request("POST", forwardingPath, []byte(`{}`), 410)
+	removed("POST", forwardingPath)
 	request("PUT", forwardingPath, []byte(`{"requestId":"`+uuid.NewString()+`","expectedRevision":1,"targets":["target@example.org"],"deliveryMode":"redirect","password":"sensitive"}`), 400)
 	forwardRequest := uuid.NewString()
 	forwardBody := []byte(`{"requestId":"` + forwardRequest + `","expectedRevision":1,"targets":["target@example.org"],"deliveryMode":"redirect"}`)

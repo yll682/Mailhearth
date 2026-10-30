@@ -30,7 +30,8 @@ Mailhearth 的安全架構針對以下主要攻擊面實施深度防禦：
 
 ### 2. 身分驗證與工作階段防護（Authentication & Sessions）
 - **現代密碼雜湊**：成員登入密碼採用 RFC 9106 推薦的 argon2id 演算法（參數調校為 `m=19MiB, t=2`），高抗 GPU/ASIC 離線暴力破解。
-- **高強度工作階段權杖**：工作階段由 256 位元加密安全隨機數產生，資料庫僅儲存其 SHA-256 雜湊值；Cookie 嚴格附加 `HttpOnly`、`SameSite=Lax` 且在 HTTPS 環境下強制附加 `Secure`，採用 30 天滑動過期視窗。滑動視窗由 `MAILHEARTH_SESSION_DAYS` 控制，並受 90 天絕對有效期（`MAILHEARTH_SESSION_MAX_DAYS`）約束；變更本人密碼後，該成員的其他工作階段會全部登出。
+- **高強度工作階段權杖**：工作階段由 256 位元加密安全隨機數產生，資料庫僅儲存其 SHA-256 雜湊值；Cookie 嚴格附加 `HttpOnly`、`SameSite=Lax` 且預設附加 `Secure`（僅純 HTTP 測試實例可設定 `MAILHEARTH_SECURE_COOKIES=false` 關閉），採用 14 天滑動過期視窗。滑動視窗由 `MAILHEARTH_SESSION_DAYS` 控制，並受 30 天絕對有效期（`MAILHEARTH_SESSION_MAX_DAYS`）約束；變更本人密碼後，該成員的其他工作階段會全部登出。
+- **強制初始化權杖**：在全新實例上建立組織必須提供初始化權杖，避免搶先存取新實例的人佔用擁有者身分。未設定 `MAILHEARTH_SETUP_TOKEN` 時，在初始化完成前每次啟動都會產生一組隨機權杖並輸出至伺服器日誌；若沒有可用權杖，該端點一律拒絕請求（fail closed）。
 - **防暴力破解速率限制**：對登入、邀請連結啟用等敏感驗證介面實施以 IP 與帳號為維度的多層速率限制。只有當請求來自 `MAILHEARTH_TRUSTED_PROXIES` 所列代理時，系統才會從 `X-Forwarded-For` 讀取用戶端位址。
 - **離職立即撤銷**：成員一旦被管理員停用（`disabled`）或標記離職（`departed`），系統在單一本機交易中立即清空並註銷該成員的所有在線工作階段。
 
@@ -71,7 +72,7 @@ Mailhearth 的安全架構針對以下主要攻擊面實施深度防禦：
 
 ## 部署安全實務建議
 
-1. **強制啟用 HTTPS 並配置反向代理**：務必在前端反向代理（Caddy、Nginx）上配置完備的 TLS 憑證，並將 `MAILHEARTH_BASE_URL` 設定為 `https://...` 網址，以確保 Cookie 的 `Secure` 旗標生效；僅在代理伺服器受信任時開啟 `MAILHEARTH_TRUST_PROXY=true`。
+1. **強制啟用 HTTPS 並配置反向代理**：務必在前端反向代理（Caddy、Nginx）上配置完備的 TLS 憑證，並將 `MAILHEARTH_BASE_URL` 設定為 `https://...` 網址（工作階段 Cookie 預設附加 `Secure`，除非明確關閉，否則 `http://` 基礎網址會導致啟動失敗）；僅在代理伺服器受信任時開啟 `MAILHEARTH_TRUST_PROXY=true`。
 2. **主加密金鑰（master.key）隔離保存**：切勿將 `/data/master.key` 與資料庫備份放置於同一個公開儲存空間。建議將金鑰妥善儲存於企業密碼管理器（如 1Password、Bitwarden）或專用硬體模組中。
 3. **分配專用服務商 API 權杖**：在 Purelymail 或 Migadu 管理介面建立專供 Mailhearth 使用的獨立 API 憑證，切勿與其他系統共用，確保發生異常時能獨立撤銷。
 4. **服務商主帳號啟用雙重驗證 (2FA)**：務必在郵件服務商官方控制台中為管理帳號啟用多因素驗證（2FA/TOTP），守護底層基礎設施的安全。

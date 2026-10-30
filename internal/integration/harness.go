@@ -126,15 +126,10 @@ func New(t *testing.T) *Harness {
 	log := slog.New(slog.NewTextHandler(logDest, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	dir := t.TempDir()
-	cfg := &config.Config{
-		DataDir:         dir,
-		IMAPMaxConns:    8,
-		IMAPIdleTimeout: 90 * time.Second,
-		MaxUploadBytes:  25 << 20,
-		MaxMessageBytes: 40 << 20,
-		SessionTTL:      24 * time.Hour,
-		InviteTTL:       24 * time.Hour,
-	}
+	cfg := config.Defaults()
+	cfg.DataDir, cfg.IMAPMaxConns = dir, 8
+	cfg.SessionTTL, cfg.InviteTTL = 24*time.Hour, 24*time.Hour
+	cfg.SetupToken = "integration-setup-token"
 
 	database, err := db.Open(filepath.Join(dir, "mailhearth.db"))
 	if err != nil {
@@ -169,6 +164,7 @@ func New(t *testing.T) *Harness {
 		AdminName:  "Integration Owner",
 		AdminEmail: h.Name("owner") + "@" + env.Domain,
 		Password:   "correct-horse-battery-staple",
+		SetupToken: cfg.SetupToken,
 	})
 	if err != nil {
 		t.Fatalf("init: %v", err)

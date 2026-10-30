@@ -30,7 +30,8 @@ Mailhearth implements defense-in-depth across the following primary threat vecto
 
 ### 2. Authentication & Session Hardening
 - **Modern Password Hashing**: Member passwords are hash-protected using RFC 9106 argon2id (`m=19MiB, t=2`), providing robust defense against offline GPU/ASIC brute-force cracking.
-- **High-Entropy Sessions**: Sessions utilize 256-bit cryptographically secure pseudorandom tokens stored exclusively as SHA-256 hashes. Cookies enforce `HttpOnly`, `SameSite=Lax`, and `Secure` (over HTTPS) with a 30-day sliding expiration window (`MAILHEARTH_SESSION_DAYS`), capped by an absolute lifetime of 90 days (`MAILHEARTH_SESSION_MAX_DAYS`). Changing one's own password signs out every other session.
+- **High-Entropy Sessions**: Sessions utilize 256-bit cryptographically secure pseudorandom tokens stored exclusively as SHA-256 hashes. Cookies enforce `HttpOnly`, `SameSite=Lax`, and `Secure` (on by default; `MAILHEARTH_SECURE_COOKIES=false` only for plain-HTTP test instances) with a 14-day sliding expiration window (`MAILHEARTH_SESSION_DAYS`), capped by an absolute lifetime of 30 days (`MAILHEARTH_SESSION_MAX_DAYS`). Changing one's own password signs out every other session.
+- **Mandatory Setup Token**: Creating the organisation on a fresh instance requires a setup token, so whoever reaches a new instance first cannot claim it. Without `MAILHEARTH_SETUP_TOKEN`, a random token is generated at each start until setup is done and printed in the server log; the endpoint fails closed if no token is available.
 - **Brute-Force Rate Limiting**: Multi-tiered IP and account rate limits protect login endpoints and invite redemption flows. Client addresses are read from `X-Forwarded-For` only when the request comes from a proxy listed in `MAILHEARTH_TRUSTED_PROXIES`.
 - **Instant Offboarding Invalidation**: Disabling (`disabled`) or offboarding (`departed`) a member immediately purges all active sessions in a single database transaction.
 
@@ -71,7 +72,7 @@ Email represents the most volatile source of untrusted content. Mailhearth enfor
 
 ## Deployment Security Best Practices
 
-1. **Enforce HTTPS with Reverse Proxies**: Terminate TLS at your reverse proxy (Caddy or Nginx) and configure `MAILHEARTH_BASE_URL` with an `https://` prefix to enforce `Secure` cookies. Enable `MAILHEARTH_TRUST_PROXY=true` only when the reverse proxy is verified and trusted.
+1. **Enforce HTTPS with Reverse Proxies**: Terminate TLS at your reverse proxy (Caddy or Nginx) and configure `MAILHEARTH_BASE_URL` with an `https://` prefix (session cookies are `Secure` by default and startup refuses an `http://` base URL unless you explicitly disable them). Enable `MAILHEARTH_TRUST_PROXY=true` only when the reverse proxy is verified and trusted.
 2. **Isolate `master.key`**: Never store `/data/master.key` alongside database backups in generic storage. Keep `master.key` in an enterprise password manager (e.g., 1Password, Bitwarden) or hardware security module.
 3. **Use Dedicated Provider API Tokens**: Create dedicated API credentials specifically for Mailhearth within Purelymail or Migadu, avoiding shared tokens to ensure clean revocation boundaries.
 4. **Enable Two-Factor Authentication (2FA)**: Always enable hardware or TOTP 2FA on your primary provider account to safeguard upstream infrastructure.

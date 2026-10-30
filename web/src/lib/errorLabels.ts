@@ -3,7 +3,6 @@ import { t } from "./i18n";
 export function errorLabel(code: string, message = ""): string {
   const labels: Record<string, string> = {
     address_exists: "This address is already registered.", identity_exists: "This identity is already registered.",
-    api_replaced: "Use the current connection-specific interface.",
     connection_in_use: "This resource has dependencies.", domain_in_use: "This resource has dependencies.", mailbox_in_use: "This resource has dependencies.", member_in_use: "This resource has dependencies.",
     credential_decryption_failed: "The saved credential could not be decrypted. Check key configuration and try again.",
     endpoint_disabled: "This protocol or connection is disabled.", endpoint_unconfigured: "Configure this protocol before using it.",

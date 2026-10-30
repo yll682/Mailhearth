@@ -454,9 +454,6 @@ func (s *Server) routesMail(mux *http.ServeMux) {
 			return
 		}
 		quota := s.Cfg.UploadQuotaBytes
-		if quota <= 0 {
-			quota = 3 * s.Cfg.MaxMessageBytes
-		}
 		r.Body = http.MaxBytesReader(w, r.Body, s.Cfg.MaxUploadBytes+1<<20)
 		mr, err := r.MultipartReader()
 		if err != nil {

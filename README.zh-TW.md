@@ -73,7 +73,7 @@ cp .env.example .env            # 編輯 .env 檔案，將 MAILHEARTH_BASE_URL �
 docker compose up -d --build
 ```
 
-服務啟動後，請在瀏覽器中開啟設定好的公開網址，跟隨首次執行精靈建立組織管理員、新增郵件連線並依需求匯入信箱資源。在正式收發郵件前，請確認各協定憑證已設定完成並通過連通性檢查。
+服務啟動後，請先從日誌中讀取一次性初始化權杖（`docker compose logs mailhearth | grep 'FIRST-TIME SETUP'`），或透過 `MAILHEARTH_SETUP_TOKEN` 自行設定，接著在瀏覽器中開啟設定好的公開網址，跟隨首次執行精靈建立組織管理員、新增郵件連線並依需求匯入信箱資源。在正式收發郵件前，請確認各協定憑證已設定完成並通過連通性檢查。
 
 > **資料備份提示**：請定期備份掛載的 `/data` 資料磁碟區，系統核心的 SQLite 資料庫檔案以及主加密金鑰 `master.key` 皆儲存於該目錄中。
 

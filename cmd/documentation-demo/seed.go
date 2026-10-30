@@ -82,6 +82,7 @@ func seedDatabase(ctx context.Context, svc *core.Service, stack *devstack.Stack)
 		_, err = svc.Init(ctx, core.InitRequest{
 			OrgName: "Mailhearth 演示组织", AdminName: "演示管理员",
 			AdminEmail: "admin@acme.test", Password: demoPassword,
+			SetupToken: demoSetupToken,
 		})
 		require(err)
 		org, err = svc.Org(ctx)

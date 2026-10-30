@@ -159,8 +159,6 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 			status = http.StatusServiceUnavailable
 		case "timeout":
 			status = http.StatusGatewayTimeout
-		case "api_replaced":
-			status = http.StatusGone
 		case "message_too_large":
 			status = http.StatusRequestEntityTooLarge
 		}

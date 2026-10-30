@@ -51,8 +51,10 @@ func newStorageService(t *testing.T) (*Service, *storageMember) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := New(database, &config.Config{}, box, nil, slog.Default())
-	member, err := svc.Init(context.Background(), InitRequest{OrgName: t.Name(), AdminName: "管理员", AdminEmail: "admin@example.org", Password: uuid.NewString() + "Aa1!"})
+	cfg := config.Defaults()
+	cfg.SetupToken = "test-setup-token"
+	svc := New(database, cfg, box, nil, slog.Default())
+	member, err := svc.Init(context.Background(), InitRequest{OrgName: t.Name(), AdminName: "管理员", AdminEmail: "admin@example.org", Password: uuid.NewString() + "Aa1!", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal(err)
 	}

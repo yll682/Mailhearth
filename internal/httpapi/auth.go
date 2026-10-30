@@ -209,14 +209,6 @@ func (s *Server) routesSetup(mux *http.ServeMux) {
 		s.startSession(w, r, m, s.clientIP(r))
 	})
 
-	mux.HandleFunc("POST /api/setup/connect", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请使用 /api/admin/connections", Code: "api_replaced"})
-	}))
-
-	mux.HandleFunc("GET /api/setup/discover", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusGone, apiError{Error: "请通过 connectionId 发现资源", Code: "api_replaced"})
-	}))
-
 	mux.HandleFunc("POST /api/setup/complete", s.requirePerm(model.PermOrgManage, func(w http.ResponseWriter, r *http.Request) {
 		p := principalFrom(r)
 		var in struct {

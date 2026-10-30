@@ -29,7 +29,10 @@ import (
 	"mailhearth/internal/web"
 )
 
-const demoPassword = "Mailhearth-Demo-2026!"
+const (
+	demoPassword   = "Mailhearth-Demo-2026!"
+	demoSetupToken = "documentation-demo"
+)
 
 func require(err error) {
 	if err != nil {
@@ -99,13 +102,11 @@ func main() {
 	database, err := db.Open(filepath.Join(abs, "mailhearth.db"))
 	require(err)
 	defer database.Close()
-	cfg := &config.Config{
-		Listen: *listen, DataDir: abs, BaseURL: "http://" + *listen, DevStack: true,
-		CABundles:    map[int64]*x509.CertPool{1: roots},
-		IMAPMaxConns: 24, IMAPIdleTimeout: 90 * time.Second,
-		MaxUploadBytes: 25 << 20, MaxMessageBytes: 40 << 20,
-		SessionTTL: 30 * 24 * time.Hour, InviteTTL: 7 * 24 * time.Hour,
-	}
+	cfg := config.Defaults()
+	cfg.Listen, cfg.DataDir, cfg.BaseURL, cfg.DevStack = *listen, abs, "http://"+*listen, true
+	cfg.SecureCook = false // served over plain HTTP on localhost
+	cfg.SetupToken = demoSetupToken
+	cfg.CABundles = map[int64]*x509.CertPool{1: roots}
 	pool := imappool.New(imappool.Config{MaxConns: 24, PerCredIdle: 2, IdleTimeout: cfg.IMAPIdleTimeout, Logger: log})
 	defer pool.Close()
 	svc := core.New(database, cfg, box, pool, log)

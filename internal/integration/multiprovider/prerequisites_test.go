@@ -146,6 +146,7 @@ func TestRealMultiProviderPrerequisites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.SetupToken = "test-setup-token"
 	if cfg.DevStack {
 		t.Fatal("真实验收要求关闭 MAILHEARTH_DEV_STACK")
 	}
@@ -167,7 +168,7 @@ func TestRealMultiProviderPrerequisites(t *testing.T) {
 	svc := core.New(database, cfg, box, pool, slog.Default())
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	member, err := svc.Init(ctx, core.InitRequest{OrgName: runID, AdminName: "验收管理员", AdminEmail: "integration@example.org", Password: uuid.NewString() + "Aa1!"})
+	member, err := svc.Init(ctx, core.InitRequest{OrgName: runID, AdminName: "验收管理员", AdminEmail: "integration@example.org", Password: uuid.NewString() + "Aa1!", SetupToken: cfg.SetupToken})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 // Package config loads Mailhearth runtime configuration from environment
-// variables. Every option has a sensible default so a fresh deployment only
-// needs a data directory and (optionally) a master key.
+// variables. Defaults are chosen for a new production deployment: the
+// most protective setting is the default and loosening it is explicit.
 package config
 
 import (
@@ -21,11 +21,10 @@ type Config struct {
 	Listen     string
 	DataDir    string
 	BaseURL    string // optional; used to build invite links when set
-	MasterKey  []byte // 32 bytes
 	LogLevel   string
 	DevStack   bool   // start the embedded fake Purelymail/IMAP/SMTP stack
-	SetupToken string // when set, required to create the organisation
-	SecureCook bool   // set Secure on cookies (auto: true when BaseURL is https)
+	SetupToken string // required to create the organisation; generated at startup when unset
+	SecureCook bool   // set Secure on cookies (default on; off only explicitly or with DevStack)
 
 	IMAPMaxConns        int
 	IMAPIdleTimeout     time.Duration
@@ -91,26 +90,60 @@ func (l *loader) int(key string, def, min, max int) int {
 	return v
 }
 
+// Default values, also used by Defaults.
+const (
+	DefaultSessionDays    = 14
+	DefaultSessionMaxDays = 30
+	DefaultUploadQuotaMB  = 120
+)
+
+// Defaults returns the configuration Load produces from an empty
+// environment (apart from SecureCook, which Load turns off for the dev
+// stack). Tests start from it so that every limit is set.
+func Defaults() *Config {
+	proxies, err := ParseCIDRs("", DefaultTrustedProxies)
+	if err != nil {
+		panic(err)
+	}
+	return &Config{
+		Listen:           ":8080",
+		DataDir:          "./data",
+		LogLevel:         "info",
+		SecureCook:       true,
+		IMAPMaxConns:     24,
+		IMAPIdleTimeout:  90 * time.Second,
+		MaxUploadBytes:   25 << 20,
+		MaxMessageBytes:  40 << 20,
+		UploadQuotaBytes: DefaultUploadQuotaMB << 20,
+		TrustedProxies:   proxies,
+		SessionTTL:       DefaultSessionDays * 24 * time.Hour,
+		SessionMaxAge:    DefaultSessionMaxDays * 24 * time.Hour,
+		InviteTTL:        7 * 24 * time.Hour,
+		CABundles:        map[int64]*x509.CertPool{},
+	}
+}
+
 // Load reads configuration from the environment. Malformed or
 // out-of-range values are errors; values the runtime adjusts (such as the
 // IMAP connection cap) are reported in Warnings.
 func Load() (*Config, error) {
 	l := &loader{}
+	d := Defaults()
 	c := &Config{
-		Listen:           env("MAILHEARTH_LISTEN", ":8080"),
-		DataDir:          env("MAILHEARTH_DATA_DIR", "./data"),
+		Listen:           env("MAILHEARTH_LISTEN", d.Listen),
+		DataDir:          env("MAILHEARTH_DATA_DIR", d.DataDir),
 		BaseURL:          strings.TrimRight(env("MAILHEARTH_BASE_URL", ""), "/"),
-		LogLevel:         strings.ToLower(env("MAILHEARTH_LOG_LEVEL", "info")),
+		LogLevel:         strings.ToLower(env("MAILHEARTH_LOG_LEVEL", d.LogLevel)),
 		SetupToken:       env("MAILHEARTH_SETUP_TOKEN", ""),
 		DevStack:         l.bool("MAILHEARTH_DEV_STACK", false),
-		IMAPMaxConns:     l.int("MAILHEARTH_IMAP_MAX_CONNS", 24, 1, 10000),
-		IMAPIdleTimeout:  time.Duration(l.int("MAILHEARTH_IMAP_IDLE_SECONDS", 90, 10, 3600)) * time.Second,
-		MaxUploadBytes:   int64(l.int("MAILHEARTH_MAX_UPLOAD_MB", 25, 1, 2048)) << 20,
-		MaxMessageBytes:  int64(l.int("MAILHEARTH_MAX_MESSAGE_MB", 40, 1, 2048)) << 20,
-		UploadQuotaBytes: int64(l.int("MAILHEARTH_UPLOAD_QUOTA_MB", 0, 0, 1<<20)) << 20,
-		SessionTTL:       time.Duration(l.int("MAILHEARTH_SESSION_DAYS", 30, 1, 365)) * 24 * time.Hour,
-		SessionMaxAge:    time.Duration(l.int("MAILHEARTH_SESSION_MAX_DAYS", 90, 1, 3650)) * 24 * time.Hour,
-		InviteTTL:        time.Duration(l.int("MAILHEARTH_INVITE_DAYS", 7, 1, 90)) * 24 * time.Hour,
+		IMAPMaxConns:     l.int("MAILHEARTH_IMAP_MAX_CONNS", d.IMAPMaxConns, 1, 10000),
+		IMAPIdleTimeout:  time.Duration(l.int("MAILHEARTH_IMAP_IDLE_SECONDS", int(d.IMAPIdleTimeout/time.Second), 10, 3600)) * time.Second,
+		MaxUploadBytes:   int64(l.int("MAILHEARTH_MAX_UPLOAD_MB", int(d.MaxUploadBytes>>20), 1, 2048)) << 20,
+		MaxMessageBytes:  int64(l.int("MAILHEARTH_MAX_MESSAGE_MB", int(d.MaxMessageBytes>>20), 1, 2048)) << 20,
+		UploadQuotaBytes: int64(l.int("MAILHEARTH_UPLOAD_QUOTA_MB", DefaultUploadQuotaMB, 1, 1<<20)) << 20,
+		SessionTTL:       time.Duration(l.int("MAILHEARTH_SESSION_DAYS", DefaultSessionDays, 1, 365)) * 24 * time.Hour,
+		SessionMaxAge:    time.Duration(l.int("MAILHEARTH_SESSION_MAX_DAYS", DefaultSessionMaxDays, 1, 3650)) * 24 * time.Hour,
+		InviteTTL:        time.Duration(l.int("MAILHEARTH_INVITE_DAYS", int(d.InviteTTL/(24*time.Hour)), 1, 90)) * 24 * time.Hour,
 		TrustProxyHeader: l.bool("MAILHEARTH_TRUST_PROXY", false),
 	}
 	var err error
@@ -127,7 +160,15 @@ func Load() (*Config, error) {
 	if c.SessionMaxAge < c.SessionTTL {
 		l.fail("MAILHEARTH_SESSION_MAX_DAYS must not be shorter than MAILHEARTH_SESSION_DAYS")
 	}
-	c.SecureCook = l.bool("MAILHEARTH_SECURE_COOKIES", strings.HasPrefix(c.BaseURL, "https://"))
+	if c.UploadQuotaBytes < c.MaxUploadBytes {
+		l.fail("MAILHEARTH_UPLOAD_QUOTA_MB must not be smaller than MAILHEARTH_MAX_UPLOAD_MB")
+	}
+	// Secure cookies are on unless switched off explicitly; the dev stack
+	// (plain HTTP on a developer machine) defaults to off.
+	c.SecureCook = l.bool("MAILHEARTH_SECURE_COOKIES", !c.DevStack)
+	if c.SecureCook && strings.HasPrefix(c.BaseURL, "http://") {
+		l.fail("MAILHEARTH_BASE_URL is plain http:// but cookies are Secure-only: serve Mailhearth over https, or set MAILHEARTH_SECURE_COOKIES=false for a test instance")
+	}
 	// The IMAP pool supports 4 to 24 connections; other values are
 	// clamped (as before) but now reported.
 	if c.IMAPMaxConns < 4 {
@@ -142,9 +183,6 @@ func Load() (*Config, error) {
 		l.errs = append(l.errs, err)
 	} else {
 		c.AllowedMailNetworks = networks
-	}
-	if c.UploadQuotaBytes <= 0 {
-		c.UploadQuotaBytes = 3 * c.MaxMessageBytes
 	}
 	if len(l.errs) > 0 {
 		return nil, errors.Join(l.errs...)

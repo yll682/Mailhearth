@@ -161,7 +161,8 @@ func (u *uploadStore) open(id string) (io.ReadCloser, error) {
 }
 
 // delete removes the caller's own upload. The file is only touched after
-// the database confirms that the id belongs to memberID.
+// the database confirms that the id belongs to memberID; an id that is
+// unknown or belongs to someone else is not found.
 func (u *uploadStore) delete(ctx context.Context, memberID int64, id string) error {
 	path := u.path(id)
 	if path == "" {
@@ -176,9 +177,7 @@ func (u *uploadStore) delete(ctx context.Context, memberID int64, id string) err
 		return err
 	}
 	if n != 1 {
-		// Already gone (or not ours): deletion is idempotent, but only a
-		// confirmed owner row ever leads to touching the filesystem.
-		return nil
+		return core.ErrNotFound
 	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
